@@ -6,17 +6,17 @@ using { ConditionSystem.EventKit }
 using { ActivationSystem }
 using { _Test }
 
-# テスト用の知らせ（event_received_condition_component が待つ型）
+# Test notification (the type event_received_condition_component waits for)
 condition_test_ping_event<public> := class(scene_event):
 
-# condition_test_ping_event の派生（派生も合うかを見る）
+# Subclass of condition_test_ping_event (checks that subclasses match too)
 condition_test_ping_child_event<public> := class(condition_test_ping_event):
 
-# テスト用の、待っていない型の知らせ
+# Test notification of a type nobody waits for
 condition_test_other_event<public> := class(scene_event):
 
-# 役割：テスト用の条件。コードから SetSatisfied で満たす・満たさないを切り替える（ほかの System のテストからも使う）
-# 置き方：テストのコードが実行時に作る（エディターで置いてもよい）
+# Role: test condition. Toggled between satisfied / unsatisfied from code with SetSatisfied (also used by tests of other Systems)
+# Placement: created by the test code at runtime (may also be placed in the editor)
 test_condition_component<public> := class(condition_component):
 
     var<private> Satisfied:logic = false
@@ -24,13 +24,13 @@ test_condition_component<public> := class(condition_component):
     IsSatisfied<override>()<decides><transacts>:void =
         Satisfied?
 
-    # 満たすかを Value にする。変わったときだけ NotifyChanged する
+    # Set whether it is satisfied to Value. Calls NotifyChanged only when it changed
     SetSatisfied<public>(Value:logic):void =
         if (Satisfied <> Value):
             set Satisfied = Value
             NotifyChanged()
 
-# 役割：ChangedEvent などの logic の知らせを数える（Subscribe に Record を渡す）
+# Role: counts logic notifications such as ChangedEvent (pass Record to Subscribe)
 test_logic_recorder<public> := class:
 
     var<private> Count:int = 0
@@ -44,21 +44,21 @@ test_logic_recorder<public> := class:
 
     GetLast<public>()<transacts>:logic = LastValue
 
-# Parent の子に、Component を 1 つ付けた entity を作って足す。足した entity を返す
+# Creates an entity with one Component under Parent and adds it. Returns the added entity
 (Parent:entity).AddTestChild<public>(Component:component):entity =
     Child := Component.Entity
     Child.AddComponents(array{Component})
     Parent.AddEntities(array{Child})
     Child
 
-# 役割：ConditionSystem の動作確認。condition_all / condition_any の組み合わせ、入れ子、ChangedEvent の届き方、AreChildConditionsSatisfied / IsAnyChildConditionSatisfied、event_received_condition_component（EventKit）を確かめる
-# テストのレベル：この component を付けた entity を 1 つ置くだけ（条件の entity はテストが実行時に作る）。プレイヤーは要らない
-# 結果：出力ログの [TEST] ConditionSystem
+# Role: verification of ConditionSystem. Checks combinations and nesting of condition_all / condition_any, how ChangedEvent arrives, AreChildConditionsSatisfied / IsAnyChildConditionSatisfied, and event_received_condition_component (EventKit)
+# Test level: just one entity with this component (the condition entities are created by the test at runtime). No player needed
+# Result: [TEST] ConditionSystem in the output log
 condition_system_test_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =
         Results := test_log{Name := "ConditionSystem"}
-        # 同じ木の component がみな動き始めてから作る
+        # create them after every component in the same tree has started running
         TickEvents.PrePhysics.Await()
         TestAll(Results)
         TestAny(Results)

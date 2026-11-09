@@ -4,14 +4,14 @@ using { ConditionSystem }
 using { CharacterSystem }
 using { CharacterSystem.TooltipKit }
 
-# 役割：独自キャラクターが State（地面・空中・上昇・落下・動いている・止まっている）のあいだ満たす条件
-#   ability_grant_condition_component の子に置くと「空中にいるあいだだけ使える能力」、enable の部品と組むと「動いているあいだだけ光る」などをコードなしで作れる
-#   毎フレーム（体が動いたあと）状態を見て、変わったときだけ知らせる
-# 置き方：エディターで、独自キャラクターの entity（character_motor_component と同じ entity）の子孫に付ける
-# 親：ability_grant_condition_component / game_transition_component / condition_all / condition_any の entity の直下
+# Role: a condition satisfied while the custom character is in State (grounded, airborne, rising, falling, moving, still)
+#   As a child of ability_grant_condition_component it makes "an ability usable only in the air"; combined with an enable component, "glows only while moving", and so on, without code
+#   Checks the state every frame (after the body has moved) and notifies only when it changes
+# Placement: in the editor, attach to a descendant of the custom character's entity (the same entity as character_motor_component)
+# Parent: directly under the entity of ability_grant_condition_component / game_transition_component / condition_all / condition_any
 character_motor_condition_component<public> := class<final_super>(condition_component):
 
-    # 満たす状態。既定 Airborne
+    # State to satisfy. Default Airborne
     @editable:
         ToolTip := MotorConditionStateToolTip
         Categories := array{CharacterEventCategory}
@@ -30,7 +30,7 @@ character_motor_condition_component<public> := class<final_super>(condition_comp
             set Motor = option{Found}
             set Subscription = option{Found.PostMoveEvent.Subscribe(OnPostMove)}
         else:
-            Print("[character_motor_condition_component] character_motor_component が見つかりません（独自キャラクターの entity の子孫に置いてください）")
+            Print("[character_motor_condition_component] character_motor_component not found (place it on a descendant of the custom character's entity)")
 
     OnEndSimulation<override>():void =
         if (Current := Subscription?):

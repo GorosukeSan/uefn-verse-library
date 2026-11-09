@@ -6,87 +6,90 @@ using { /Verse.org/Input }
 using { EnergySystem }
 using { InputSystem }
 using { CharacterSystem }
+using { CharacterSystem.CellKit }
 using { CharacterSystem.TooltipKit }
 
-# 役割：入力で、短く鋭く突進する（ブーストではなくダッシュ）。決まった時間・距離だけ速く動き、終わると歩く速さまですぐ落とす
-#   1 回の流れ（既定値）：
-#     0 秒：向きを決める（walk の入力の向き → 今の水平の動き → 体の向きの順）。水平の速度をその向き × DashSpeedCmPerSecond（2200 cm/s）にする。空中なら上下の速さを 0 にする（水平に出る）
-#     0〜DurationSeconds（0.18 秒）：毎フレーム同じ速さで突進する。重力は DashGravityScale 倍（0 = 空中のダッシュは高さが変わらない）。walk は速度を変えない（体の SetMoveOverride）
-#       最後のフレームは残りの秒数の分だけ突進の速さで動くので、距離はフレームの長さによらず DashSpeedCmPerSecond × DurationSeconds（396 cm）
-#     終わり：ダッシュの向きの速さを「walk の歩く速さの上限（MaxSpeedCmPerSecond × 変更の速さの倍率。走るボタンは含めない）× DashEndSpeedRatio（1.0）」までに切り、横の速さは消す（突進の速さを残さない）
-#     CooldownSeconds（0.8 秒。出した瞬間から数える）が過ぎるまで次は出せない
-#   突進の途中でジャンプした（jump の Jumped / AirJumped）・入力を止めた（LockInput）ら、その場で終える（速さは同じように切る。ダッシュの速さのまま跳ばない）
-#   突進は勢いを置き換える：動く床から受け継いだ速度（体の GetInheritedVelocity）は出した瞬間に消す
-#   空中では AirDashes 回まで（地面に降りると戻る）。エネルギー（EnergySystem。この entity か祖先・持ち主に付いた energy_component）があれば EnergyCost を使い、足りなければ出せない
-# 置き方：エディターで、character_motor_component と同じ entity に付ける
-# 知らせ：出したら character_motor_component の ActionEvent に Dashed
-# 外から：Dash（入力なしで出させる。出せたら true）、IsDashing
-#   RequiresGrant なら、体に GrantsDash の変更（BuffKit の character_move_grant_component など）があるあいだだけ出せる
-#   体の LockInput で入力を止めているあいだは出さない（ボタン・Dash とも。押しは捨てる）。突進の途中で止められたら、その場で終える
-# 前提・注意：重力は体の ScaleGravityThisFrame で毎フレーム弱める（SetGravityScale は変えない。ほかの部品が決めた倍率を上書きしない）
+# Role: a short, sharp dash on input (a dash, not a boost). Moves fast for a fixed time / distance, then drops straight to walking speed when it ends
+#   One dash (default values):
+#     0 s: pick the direction (walk's input direction -> current horizontal motion -> body facing, in that order). Set the horizontal velocity to that direction x DashSpeedCmPerSecond (2200 cm/s). In the air, zero the vertical speed (dash horizontally)
+#     0..DurationSeconds (0.18 s): dash at the same speed every frame. Gravity is scaled by DashGravityScale (0 = an air dash keeps its height). walk leaves the velocity alone (the body's SetMoveOverride)
+#       The last frame moves at dash speed only for the remaining seconds, so the distance is DashSpeedCmPerSecond x DurationSeconds (396 cm) regardless of frame length
+#     End: the speed along the dash direction is cut to "walk's speed cap (MaxSpeedCmPerSecond x the modifiers' speed multiplier, excluding the run button) x DashEndSpeedRatio (1.0)" and the sideways speed is removed (no dash speed is kept)
+#     No further dash until CooldownSeconds (0.8 s, counted from the moment of dashing) has passed
+#   Jumping mid-dash (jump's Jumped / AirJumped), locking input (LockInput) or clinging to a wall / ceiling (ClingKit's ClingStart) ends the dash on the spot (speed is cut the same way. No jumping at dash speed)
+#   No dash while clinging to a wall / ceiling (the body's IsClinging)
+#   A dash replaces momentum: the velocity inherited from moving ground (the body's GetInheritedVelocity) is cleared at the moment of dashing
+#   In the air, up to AirDashes times (restored on landing). With energy (EnergySystem. An energy_component on this entity, an ancestor or the owner), spends EnergyCost; cannot dash without enough
+# Placement: in the editor, attach to the same entity as character_motor_component
+# Notifications: Dashed on character_motor_component's ActionEvent when dashing
+# From outside: Dash (dash without input. true if it dashed), IsDashing
+#   With RequiresGrant, dashing is possible only while a GrantsDash modifier (e.g. BuffKit's character_move_grant_component) is on the body
+#   If Boost of the action cells (CellKit's character_action_cell_component on the same entity) is usable, dashes by spending one cell even without a grant or remaining air dashes (no cell is spent when a grant / air dash allows it)
+#   No dash while input is locked by the body's LockInput (neither button nor Dash. Presses are discarded). If locked mid-dash, ends on the spot
+# Requirements / notes: gravity is weakened every frame with the body's ScaleGravityThisFrame (SetGravityScale is untouched; does not overwrite a factor set by other components)
 character_dash_component<public> := class<final_super>(component):
 
-    # ダッシュのボタン。使わなければ空（コードの Dash で出す）
+    # Dash button. Empty if unused (dash from code with Dash)
     @editable:
         ToolTip := DashActionToolTip
         Categories := array{CharacterDashCategory}
     DashAction<public>:?input_action(logic) = false
-    # 突進の速さ（cm/s）。既定 2200（DurationSeconds と掛けた距離 396 cm だけ進む）
+    # Dash speed (cm/s). Default 2200 (travels the distance DurationSeconds x this, 396 cm)
     @editable_number(float):
         ToolTip := DashSpeedToolTip
         Categories := array{CharacterDashCategory}
         MinValue := option{0.0}
         MaxValue := option{50000.0}
     DashSpeedCmPerSecond<public>:float = 2200.0
-    # 突進の時間（秒）。既定 0.18
+    # Dash duration (seconds). Default 0.18
     @editable_number(float):
         ToolTip := DashDurationToolTip
         Categories := array{CharacterDashCategory}
         MinValue := option{0.01}
         MaxValue := option{5.0}
     DurationSeconds<public>:float = 0.18
-    # 突進が終わったときに、ダッシュの向きの速さを落とす先の、walk の歩く速さの上限に掛ける倍率（1 なら歩く速さの上限まで、0 ならその場で止まる）。既定 1
+    # Multiplier on walk's speed cap that the speed along the dash direction is cut to when the dash ends (1 cuts to the walking speed cap, 0 stops on the spot). Default 1
     @editable_number(float):
         ToolTip := DashEndSpeedRatioToolTip
         Categories := array{CharacterDashCategory}
         MinValue := option{0.0}
         MaxValue := option{2.0}
     DashEndSpeedRatio<public>:float = 1.0
-    # 突進のあいだ、重力に掛ける倍率（0 なら空中のダッシュは高さが変わらない、1 なら普段どおり落ちる）。既定 0
+    # Multiplier on gravity during the dash (0: an air dash keeps its height, 1: falls as usual). Default 0
     @editable_number(float):
         ToolTip := DashGravityScaleToolTip
         Categories := array{CharacterDashCategory}
         MinValue := option{0.0}
         MaxValue := option{1.0}
     DashGravityScale<public>:float = 0.0
-    # 次に出せるまでの時間（秒。出した瞬間から数える）。既定 0.8
+    # Time until the next dash (seconds, counted from the moment of dashing). Default 0.8
     @editable_number(float):
         ToolTip := DashCooldownToolTip
         Categories := array{CharacterDashCategory}
         MinValue := option{0.0}
         MaxValue := option{60.0}
     CooldownSeconds<public>:float = 0.8
-    # 空中で出せる回数。既定 1
+    # Number of dashes allowed in the air. Default 1
     @editable_number(int):
         ToolTip := DashAirDashesToolTip
         Categories := array{CharacterDashCategory}
         MinValue := option{0}
         MaxValue := option{10}
     AirDashes<public>:int = 1
-    # 1 回に使うエネルギー（0 なら使わない）。既定 0
+    # Energy spent per dash (0 spends none). Default 0
     @editable_number(float):
         ToolTip := DashEnergyCostToolTip
         Categories := array{CharacterDashCategory}
         MinValue := option{0.0}
         MaxValue := option{10000.0}
     EnergyCost<public>:float = 0.0
-    # オンなら、体に「ダッシュを許す変更」（character_modifier の GrantsDash。BuffKit の character_move_grant_component など）が重なっているあいだだけ出せる（拾ったら使える能力にする）。既定オフ
+    # When on, dashing is possible only while a modifier "granting dash" (character_modifier's GrantsDash, e.g. BuffKit's character_move_grant_component) is stacked on the body (a pickup ability). Default off
     @editable:
         ToolTip := DashRequiresGrantToolTip
         Categories := array{CharacterDashCategory}
     RequiresGrant<public>:logic = false
 
-    # walk が見つからないときの、歩く速さの上限（cm/s。終わりの速さを決めるのに使う）
+    # Walking speed cap when walk is not found (cm/s. Used to decide the end speed)
     FallbackWalkSpeedCmPerSecond<private>:float = 600.0
 
     var<private> Motor:?character_motor_component = false
@@ -96,7 +99,7 @@ character_dash_component<public> := class<final_super>(component):
     var<private> CooldownLeftSeconds:float = 0.0
     var<private> AirDashesLeft:int = 0
     var<private> Direction:vector3 = vector3{Forward := 1.0}
-    # 最後のフレームを突進の速さで動いたので、次のフレームの動きの前に速さを切る
+    # The last frame moved at dash speed, so cut the speed before the next frame's move
     var<private> CutPending:logic = false
 
     OnBeginSimulation<override>():void =
@@ -105,7 +108,7 @@ character_dash_component<public> := class<final_super>(component):
             set Motor = option{Found}
             set Subscriptions += array{Found.PreMoveEvent.Subscribe(OnPreMove), Found.ActionEvent.Subscribe(OnAction)}
         else:
-            Print("[character_dash_component] character_motor_component が見つかりません（同じ entity か祖先に置いてください）")
+            Print("[character_dash_component] character_motor_component not found (place it on the same entity or an ancestor)")
 
     OnSimulate<override>()<suspends>:void =
         if (Found := Motor?, Owner := Found.FindOwner[], Action := DashAction?):
@@ -123,31 +126,43 @@ character_dash_component<public> := class<final_super>(component):
         set CutPending = false
         (super:)OnEndSimulation()
 
-    # 突進しているあいだ成功する
+    # Succeeds while dashing
     IsDashing<public>()<decides><transacts>:void =
         DashLeftSeconds > 0.0
 
-    # 入力なしで出させる。待ち時間・空中の回数・エネルギーが足りない、RequiresGrant で許されていない、体の LockInput で止めているなら false
+    # Dashes without input. false if on cooldown, out of air dashes or energy, not granted under RequiresGrant, or input is locked by the body's LockInput
     Dash<public>():logic =
-        if (Found := Motor?, not Found.IsInputLocked[], CooldownLeftSeconds <= 0.0, not IsDashing[], (not RequiresGrant? or Found.IsDashGranted[])):
+        if (Found := Motor?, not Found.IsInputLocked[], not Found.IsClinging[], CooldownLeftSeconds <= 0.0, not IsDashing[]):
             Grounded := logic{Found.IsGrounded[]}
-            if (not Grounded? and AirDashesLeft <= 0):
-                return false
+            MaybeCells:?character_action_cell_component = if (FoundCells := Entity.GetComponent[character_action_cell_component]) then option{FoundCells} else false
+            # Can we dash normally (granted, and grounded or air dashes remaining)? If not, use Boost of the action cells
+            Free := if ((not RequiresGrant? or Found.IsDashGranted[]), (Grounded? or AirDashesLeft > 0)) then true else false
+            var UseCell:logic = false
+            if (not Free?):
+                if (Cells := MaybeCells?, Cells.CanUse[character_cell_action.Boost]):
+                    set UseCell = true
+                else:
+                    return false
             if (EnergyCost > 0.0):
                 if (Energy := Entity.FindEnergyAbove[]):
                     if (not Energy.Spend[EnergyCost]):
                         return false
-            if (not Grounded?):
+            if (UseCell?):
+                if (Cells := MaybeCells?):
+                    Spent := Cells.TrySpend(character_cell_action.Boost)
+                    if (not Spent?):
+                        return false
+            else if (not Grounded?):
                 set AirDashesLeft -= 1
             set Direction = PickDirection(Found)
             set DashLeftSeconds = DurationSeconds
             set CooldownLeftSeconds = CooldownSeconds
             set CutPending = false
             Velocity := Found.GetVelocity()
-            # 空中のダッシュは上下の速さを 0 にして水平に出る（地面では地面に沿う上下の速さのまま）
+            # An air dash zeroes the vertical speed and goes horizontally (on the ground, the vertical speed along the ground is kept)
             StartUp := if (Grounded?) then Velocity.Up else 0.0
             Found.SetVelocity(Direction * DashSpeedCmPerSecond + vector3{Up := StartUp})
-            # 突進は勢いを置き換える（動く床から受け継いだ分も消す。walk が空中で減速しない分として残さない）
+            # A dash replaces momentum (also clears the part inherited from moving ground. Not kept as the part walk does not decelerate in the air)
             Found.SetInheritedVelocity(vector3{})
             Found.SetMoveOverride(true)
             Found.ReportAction(character_action.Dashed)
@@ -161,27 +176,27 @@ character_dash_component<public> := class<final_super>(component):
             if (CooldownLeftSeconds > 0.0):
                 set CooldownLeftSeconds -= DeltaTime
             if (CutPending?):
-                # 前のフレームで突進を終えた：速さを切って、walk に速度を返す
+                # The dash ended on the previous frame: cut the speed and hand the velocity back to walk
                 CutSpeed(Found)
             Locked := if (Found.IsInputLocked[]) then true else false
-            # 入力を止めているあいだの押しは捨てる
+            # Presses while input is locked are discarded
             if (Button.ConsumePress[0.1]):
                 if (not Locked?):
                     Dash()
             if (IsDashing[]):
                 if (Locked?):
-                    # 入力を止めたら、その場で突進を終える
+                    # Input locked: end the dash on the spot
                     EndDash(Found)
                 else:
                     RunDash(Found, DeltaTime)
 
-    # 体の知らせ：突進の途中で跳んだら、その場で終える（ダッシュの速さのまま跳ばない）
+    # Body notifications: jumping or clinging to a wall / ceiling (ClingKit) mid-dash ends it on the spot (no jumping at dash speed, no overwriting the cling velocity)
     OnAction<private>(Action:character_action):void =
-        if (Found := Motor?, IsDashing[], (Action = character_action.Jumped or Action = character_action.AirJumped)):
+        if (Found := Motor?, IsDashing[], (Action = character_action.Jumped or Action = character_action.AirJumped or Action = character_action.ClingStart)):
             EndDash(Found)
 
-    # 突進の 1 フレーム：重力を DashGravityScale 倍にし、水平の速度をダッシュの向き × DashSpeedCmPerSecond にする（上下の速さは変えない）
-    #   最後のフレーム（残りが DeltaTime 以下）は、残りの秒数の分だけ突進の速さ、あとは終わりの速さで動くように速さを混ぜる（距離が DashSpeedCmPerSecond × DurationSeconds ちょうどになる）。次のフレームの動きの前に速さを切る
+    # One frame of the dash: scale gravity by DashGravityScale and set the horizontal velocity to the dash direction x DashSpeedCmPerSecond (vertical speed unchanged)
+    #   On the last frame (remaining <= DeltaTime), blend the speed so it moves at dash speed for the remaining seconds and at the end speed for the rest (the distance becomes exactly DashSpeedCmPerSecond x DurationSeconds). Cut the speed before the next frame's move
     RunDash<private>(Found:character_motor_component, DeltaTime:float):void =
         Found.ScaleGravityThisFrame(DashGravityScale)
         Velocity := Found.GetVelocity()
@@ -195,12 +210,12 @@ character_dash_component<public> := class<final_super>(component):
             set CutPending = true
             Found.SetVelocity(Direction * Speed + vector3{Up := Velocity.Up})
 
-    # 突進をその場で終える（跳んだ・入力を止めた）。速さを切って、walk に速度を返す
+    # Ends the dash on the spot (jumped, input locked). Cuts the speed and hands the velocity back to walk
     EndDash<private>(Found:character_motor_component):void =
         set DashLeftSeconds = 0.0
         CutSpeed(Found)
 
-    # ダッシュの向きの速さを終わりの速さ（GetEndSpeed）までに切り、横の速さを消す（上下の速さは変えない。壁で止まっていれば 0 のまま）。walk に速度を返す
+    # Cuts the speed along the dash direction to the end speed (GetEndSpeed) and removes the sideways speed (vertical speed unchanged. Stays 0 if stopped by a wall). Hands the velocity back to walk
     CutSpeed<private>(Found:character_motor_component):void =
         set CutPending = false
         Velocity := Found.GetVelocity()
@@ -208,12 +223,12 @@ character_dash_component<public> := class<final_super>(component):
         Found.SetVelocity(Direction * Along + vector3{Up := Velocity.Up})
         Found.SetMoveOverride(false)
 
-    # 終わりの速さ（cm/s）：walk の歩く速さの上限 × 体に重ねた変更の速さの倍率 × DashEndSpeedRatio（突進の速さより速くはしない）。walk が無ければ 600 cm/s を上限とする
+    # End speed (cm/s): walk's speed cap x the speed multiplier of the modifiers on the body x DashEndSpeedRatio (never faster than the dash speed). Without walk, capped at 600 cm/s
     GetEndSpeed<private>(Found:character_motor_component)<transacts>:float =
         WalkSpeed := if (Walk := Found.FindCharacterWalk[]) then Walk.MaxSpeedCmPerSecond else FallbackWalkSpeedCmPerSecond
         Min(DashSpeedCmPerSecond, WalkSpeed * Found.GetSpeedMultiplier() * DashEndSpeedRatio)
 
-    # ダッシュの向き（水平の単位ベクトル）：walk の入力の向き → 今の水平の動き → 体の向き の順。体の AxisLock で縛った軸の分は除く（除いて 0 なら前の向きのまま）
+    # Dash direction (horizontal unit vector): walk's input direction -> current horizontal motion -> body facing, in that order. The axis locked by the body's AxisLock is removed (if that leaves 0, keep the previous direction)
     PickDirection<private>(Found:character_motor_component)<transacts>:vector3 =
         Input := if (Walk := Found.FindCharacterWalk[]) then Walk.GetInputDirection() else vector3{}
         Velocity := Found.GetVelocity()

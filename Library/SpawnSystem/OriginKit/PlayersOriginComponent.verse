@@ -9,62 +9,62 @@ using { SceneGraphSystem }
 using { SpawnSystem }
 using { SpawnSystem.TooltipKit }
 
-# 役割：参加している全プレイヤーについて、デッドゾーンの真ん中を spawner の基準の点にする。デッドゾーンは、プレイヤーの位置を真ん中にした水平 ±DeadHalfCells・上下 ±DeadHeightCells マスの箱で、置いたら動かない。プレイヤーについて動くセーフゾーン（水平 ±SafeHalfCells・上下 ±SafeHeightCells マス）が、そのデッドゾーンの外へはみ出したときだけ、そのプレイヤーの位置に置き直す（少し上下しているあいだは基準の点が変わらないので、spawner は計算し直さない）。生成用（SpawnPoints、狭い）と消去用（DespawnPoints、Despawn… の値、広い）で別々に持つ。だれも使っていないデッドゾーンは消す。1 人もいない（位置が取れない）ときは点を返さず、spawner はその回は何もしない。近くに残す点（KeepPoints）は、プレイヤーの今の位置
-# 置き方：エディターで entity に付ける
-# 同じ entity：spawner_component
-# 前提：区画（game_scope_component。無ければ世界）に player_manager_component と grid_component が 1 つずつ（グリッドが無ければ 1 マス 250 センチメートルとみなす）。どちらも最初に見つけたものを覚えておき、毎回は探さない
+# Role: for every participating player, makes the center of a dead zone the spawner's reference point. The dead zone is a box of +/- DeadHalfCells horizontally and +/- DeadHeightCells vertically centered on the player's position, and it stays where it was placed. Only when the safe zone that moves with the player (+/- SafeHalfCells horizontally, +/- SafeHeightCells vertically) sticks out of that dead zone is it placed again at the player's position (the reference point does not change while the player moves up and down a little, so the spawner does not recompute). Kept separately for spawning (SpawnPoints, narrow) and despawning (DespawnPoints, the Despawn... values, wide). Dead zones nobody uses are dropped. When there is no player (no position available), no points are returned and the spawner does nothing that round. The keep points (KeepPoints) are the players' current positions
+# Placement: attach to an entity in the editor
+# Same entity: spawner_component
+# Requirements: one player_manager_component and one grid_component in the scope (game_scope_component; the world if there is none) (without a grid, one cell is taken as 250 centimeters). Both are remembered once found and not looked up every time
 players_origin_component<public> := class<final_super>(spawn_origin_component):
 
-    # 生成用：プレイヤーについて動くセーフゾーンの、水平の半分の幅（マス）。既定 2
+    # Spawning: horizontal half width (cells) of the safe zone that moves with the player. Default 2
     @editable_number(int):
         ToolTip := OriginSafeHalfCellsToolTip
         Categories := array{SpawnerCategory, OriginZoneCategory}
         MinValue := option{0}
         MaxValue := option{400}
     SafeHalfCells<public>:int = 2
-    # 生成用：セーフゾーンの、上下の半分の高さ（マス）。既定 2
+    # Spawning: vertical half height (cells) of the safe zone. Default 2
     @editable_number(int):
         ToolTip := OriginSafeHeightCellsToolTip
         Categories := array{SpawnerCategory, OriginZoneCategory}
         MinValue := option{0}
         MaxValue := option{400}
     SafeHeightCells<public>:int = 2
-    # 生成用：デッドゾーン（置いたら動かない箱）の、水平の半分の幅（マス）。セーフゾーンより広くする。既定 4
+    # Spawning: horizontal half width (cells) of the dead zone (a box that stays where it was placed). Make it wider than the safe zone. Default 4
     @editable_number(int):
         ToolTip := OriginDeadHalfCellsToolTip
         Categories := array{SpawnerCategory, OriginZoneCategory}
         MinValue := option{0}
         MaxValue := option{400}
     DeadHalfCells<public>:int = 4
-    # 生成用：デッドゾーンの、上下の半分の高さ（マス）。セーフゾーンより広くする。既定 8
+    # Spawning: vertical half height (cells) of the dead zone. Make it taller than the safe zone. Default 8
     @editable_number(int):
         ToolTip := OriginDeadHeightCellsToolTip
         Categories := array{SpawnerCategory, OriginZoneCategory}
         MinValue := option{0}
         MaxValue := option{400}
     DeadHeightCells<public>:int = 8
-    # 消去用：セーフゾーンの、水平の半分の幅（マス）。生成用より広くする。既定 8
+    # Despawning: horizontal half width (cells) of the safe zone. Make it wider than the spawning one. Default 8
     @editable_number(int):
         ToolTip := OriginDespawnSafeHalfCellsToolTip
         Categories := array{SpawnerCategory, OriginDespawnZoneCategory}
         MinValue := option{0}
         MaxValue := option{400}
     DespawnSafeHalfCells<public>:int = 8
-    # 消去用：セーフゾーンの、上下の半分の高さ（マス）。生成用より広くする。既定 8
+    # Despawning: vertical half height (cells) of the safe zone. Make it taller than the spawning one. Default 8
     @editable_number(int):
         ToolTip := OriginDespawnSafeHeightCellsToolTip
         Categories := array{SpawnerCategory, OriginDespawnZoneCategory}
         MinValue := option{0}
         MaxValue := option{400}
     DespawnSafeHeightCells<public>:int = 8
-    # 消去用：デッドゾーンの、水平の半分の幅（マス）。既定 16
+    # Despawning: horizontal half width (cells) of the dead zone. Default 16
     @editable_number(int):
         ToolTip := OriginDespawnDeadHalfCellsToolTip
         Categories := array{SpawnerCategory, OriginDespawnZoneCategory}
         MinValue := option{0}
         MaxValue := option{400}
     DespawnDeadHalfCells<public>:int = 16
-    # 消去用：デッドゾーンの、上下の半分の高さ（マス）。既定 40
+    # Despawning: vertical half height (cells) of the dead zone. Default 40
     @editable_number(int):
         ToolTip := OriginDespawnDeadHeightCellsToolTip
         Categories := array{SpawnerCategory, OriginDespawnZoneCategory}
@@ -79,7 +79,7 @@ players_origin_component<public> := class<final_super>(spawn_origin_component):
     var SpawnAnchors<private>:[]vector3 = array{}
     var DespawnAnchors<private>:[]vector3 = array{}
 
-    # 今のプレイヤーの位置から、生成用・消去用のデッドゾーンを置き直して返す（はみ出したときだけ置き直す）。近くに残す点はプレイヤーの今の位置
+    # Re-places the spawning and despawning dead zones from the players' current positions and returns them (re-placed only when the safe zone sticks out). The keep points are the players' current positions
     UpdateOrigins<override>()<transacts>:spawn_origins =
         Positions := GetPlayerPositions()
         set SpawnAnchors = UpdateAnchors(Positions, SpawnAnchors, DeadHalfCells - SafeHalfCells, DeadHeightCells - SafeHeightCells)
@@ -120,12 +120,12 @@ players_origin_component<public> := class<final_super>(spawn_origin_component):
         else:
             array{}
 
-    # 区画の player_manager_component を探して覚える（覚えていれば探さない）。見つからなければ false
+    # Finds and remembers the scope's player_manager_component (no lookup once remembered). False if not found
     GetManager<private>()<transacts>:?player_manager_component =
         set Manager = Entity.ResolveScopedComponent(Manager, player_manager_component)
         Manager
 
-    # 区画の grid_component を探して覚える（覚えていれば探さない。FindGrid と同じく区画から探す）。見つからなければ false
+    # Finds and remembers the scope's grid_component (no lookup once remembered; searches the scope like FindGrid). False if not found
     GetGrid<private>()<transacts>:?grid_component =
         set Grid = Entity.ResolveScopedComponent(Grid, grid_component)
         Grid

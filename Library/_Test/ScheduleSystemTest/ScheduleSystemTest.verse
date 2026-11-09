@@ -5,8 +5,8 @@ using { ScheduleSystem }
 using { ScheduleSystem.ConditionKit }
 using { _Test }
 
-# 役割：schedule_component の StateChangedEvent / SecondEvent と、子に届く activated_event / deactivated_event を数える
-# 置き方：テストのコードが実行時に作る（スケジュールの entity の子）
+# Role: counts schedule_component's StateChangedEvent / SecondEvent and the activated_event / deactivated_event reaching children
+# Placement: created by the test code at runtime (child of the schedule entity)
 test_schedule_probe_component<public> := class<final_super>(component):
 
     var<private> ActivatedCount:int = 0
@@ -36,22 +36,22 @@ test_schedule_probe_component<public> := class<final_super>(component):
     GetSecondCount<public>()<transacts>:int = SecondCount
     GetSceneEventCount<public>()<transacts>:int = SceneEventCount
 
-# Snapshot の状態が State なら true
+# True when the Snapshot's state is State
 IsState(Snapshot:schedule_snapshot, State:schedule_state):logic =
     if (Snapshot.State = State) then true else false
 
-# 2 つの文字列が同じなら true
+# True when the two strings are equal
 SameString(Actual:string, Expected:string):logic =
     if (Actual = Expected) then true else false
 
-# Low 以上 High 以下なら true
+# True when between Low and High inclusive
 InRange(Value:int, Low:int, High:int):logic =
     if (Value >= Low and Value <= High) then true else false
 
-# 役割：ScheduleSystem の動作確認。Evaluate の純粋な計算（毎日・一定間隔・単発、日付の境目、45 日 → 45）、時計の単調性とデバッグの時刻移動、StateChangedEvent が変化のときだけ届くこと、子への activated_event / deactivated_event、条件 Kit を確かめる
-# テストのレベル：この component を付けた entity を 1 つ置くだけ（時計・スケジュール・子はテストが実行時に作る）。レベルに別の realtime_clock_component を置かない（世界に 2 つあるとどれが使われるか決まらない）。プレイヤーは要らない
-# かかる時間：約 12 秒
-# 結果：出力ログの [TEST] ScheduleSystem
+# Role: verification of ScheduleSystem. Checks Evaluate's pure math (daily / fixed interval / one-shot, day boundaries, 45 days -> 45), clock monotonicity and debug time travel, that StateChangedEvent arrives only on change, activated_event / deactivated_event to children, and the condition Kit
+# Test level: just one entity with this component (the clock, schedule and children are created by the test at runtime). Do not place another realtime_clock_component in the level (with 2 in the world, which one is used is undefined). No player needed
+# Duration: about 12 seconds
+# Result: [TEST] ScheduleSystem in the output log
 schedule_system_test_component<public> := class<final_super>(component):
 
     # 2026-01-01 00:00 UTC
@@ -79,7 +79,7 @@ schedule_system_test_component<public> := class<final_super>(component):
         Entity.AddEntities(array{ClockEntity})
         Clock
 
-    # 純粋な計算のテスト用。世界には入れない entity に付ける（時計が無くても Evaluate は動く）
+    # For the pure math tests. Attached to an entity that is not added to the world (Evaluate works without a clock)
     MakeDaily<private>(Hour:int, Minute:int, Duration:float):schedule_component =
         schedule_component{Entity := entity{}, Kind := schedule_kind.Daily, StartHour := Hour, StartMinute := Minute, StartSecond := 0, DurationSeconds := Duration}
 
@@ -87,7 +87,7 @@ schedule_system_test_component<public> := class<final_super>(component):
         Results.CheckInt("days: 45 days + 100 s -> 45", DaysBetween(0.0, 45.0 * 86400.0 + 100.0), 45)
         Results.CheckInt("days: 59 days -> 59", DaysBetween(1000.0, 1000.0 + 59.0 * 86400.0), 59)
         Results.CheckInt("days: 0.9 day -> 0", DaysBetween(0.0, 80000.0), 0)
-        # 2026-01-01 00:00 JST は UTC では前日の 15:00。日本の「何日目」はそこで切り替わり、UTC の「何日目」はまだ前日
+        # 2026-01-01 00:00 JST is 15:00 on the previous day in UTC. Japan's "day number" switches there while UTC's is still the previous day
         LocalMidnight := EpochOf20260101 - TimeZone * 1.0
         Results.CheckInt("day index: changes at local midnight (after)", GetDayIndex(LocalMidnight, TimeZone) - GetDayIndex(LocalMidnight - 1.0, TimeZone), 1)
         Results.CheckInt("day index: UTC does not change at JST midnight", GetDayIndex(LocalMidnight, 0) - GetDayIndex(LocalMidnight - 1.0, 0), 0)
@@ -128,13 +128,13 @@ schedule_system_test_component<public> := class<final_super>(component):
         Results.Check("daily: Before again at end", IsState(AtEnd, schedule_state.Before))
         Results.CheckInt("daily: cycle advances to tomorrow at end", AtEnd.CycleIndex, Day + 1)
         Results.CheckFloat("daily: 86400 - 600 to next start", AtEnd.SecondsToStart, 85800.0, 0.001)
-        # 日付の境目：23:50 から 20 分の回は、0 時を越えても前日の回として続く
+        # Day boundary: a 20-minute run starting at 23:50 continues as the previous day's run past midnight
         Late := MakeDaily(23, 50, 1200.0)
         AfterMidnight := Late.EvaluateWithOffset(LocalMidnight + 300.0, TimeZone)
         Results.Check("daily: show crossing midnight is Active", IsState(AfterMidnight, schedule_state.Active))
         Results.CheckInt("daily: crossing midnight keeps yesterday's cycle", AfterMidnight.CycleIndex, Day - 1)
         Results.CheckFloat("daily: crossing midnight elapsed 900", AfterMidnight.ElapsedSeconds, 900.0, 0.001)
-        # 同じ時刻でも時間帯が違えば別の日・別の状態になる
+        # The same instant is a different day / state in a different time zone
         Utc := Schedule.EvaluateWithOffset(Start, 0)
         Results.Check("daily: same instant is 11:00 UTC -> Before", IsState(Utc, schedule_state.Before))
 
@@ -191,7 +191,7 @@ schedule_system_test_component<public> := class<final_super>(component):
         Results.Check("clock: SecondEvent arrives within 1.5 s", if (Arrived?) then true else false)
 
     TestRuntime<private>(Results:test_log, Clock:realtime_clock_component)<suspends>:void =
-        # 次の整数秒から 2 秒 Active・2 秒 Before を繰り返すスケジュール。子に probe と条件 Kit
+        # Schedule repeating 2 seconds Active / 2 seconds Before from the next whole second. Probe and condition Kit as children
         FlooredNow := if (Floored := Floor[Clock.GetNowEpochSeconds()]) then Floored else 0
         Anchor := (FlooredNow + 1) * 1.0
         ScheduleEntity := entity{}
@@ -210,20 +210,20 @@ schedule_system_test_component<public> := class<final_super>(component):
         Results.CheckInt("runtime: clock lists the schedule", Clock.GetSchedules().Length, 1)
         Results.Check("runtime: condition not satisfied before start", if (Condition.IsSatisfied[]) then false else true)
 
-        # 1.5 秒後：開始の 1 回目の Active の途中。最初の評価（Before）と Active への変化で、変化の知らせは 2 回
+        # After 1.5 seconds: midway through the first Active run. The first evaluation (Before) and the change to Active make 2 change notifications
         Sleep(1.5)
         Results.Check("runtime: Active during first cycle", if (Schedule.IsActive[]) then true else false)
         Results.Check("runtime: condition satisfied while Active", if (Condition.IsSatisfied[]) then true else false)
         Results.CheckInt("runtime: activated_event reached child once", Probe.GetActivatedCount(), 1)
         Results.Check("runtime: state changes so far are 1 or 2", InRange(Probe.GetStateChangedCount(), 1, 2))
 
-        # 2 秒後：Before（1 回目が終わった）
+        # After 2 seconds: Before (the first run ended)
         Sleep(2.0)
         Results.Check("runtime: Before after first cycle", if (Schedule.IsActive[]) then false else true)
         Results.Check("runtime: condition not satisfied after cycle", if (Condition.IsSatisfied[]) then false else true)
         Results.CheckInt("runtime: deactivated_event reached child once", Probe.GetDeactivatedCount(), 1)
 
-        # さらに 6 秒：Active（+5〜+7）→ Before（+7〜）→ Active（+9〜）。合計約 9.5 秒で、変化は 5〜6 回、秒の知らせは 9〜11 回
+        # 6 more seconds: Active (+5 to +7) -> Before (+7 to) -> Active (+9 to). About 9.5 seconds in total, 5 to 6 changes, 9 to 11 second notifications
         Sleep(6.0)
         Results.Check("runtime: StateChangedEvent only on changes (5..6 in 9.5 s)", InRange(Probe.GetStateChangedCount(), 5, 6))
         Results.CheckInt("runtime: scene event count equals StateChangedEvent count", Probe.GetSceneEventCount(), Probe.GetStateChangedCount())
@@ -235,7 +235,7 @@ schedule_system_test_component<public> := class<final_super>(component):
         else:
             Results.Fail("runtime: FindLastSnapshot", "no snapshot after 9.5 s")
 
-        # デバッグで時刻を飛ばすと、その場で評価し直される（途中の変化は再生されず、1 回の変化になる）
+        # Debug time travel re-evaluates on the spot (intermediate changes are not replayed; it is one change)
         CountBeforeJump := Probe.GetStateChangedCount()
         Clock.JumpTo(Anchor + 400.0 + 0.5)
         Sleep(0.1)

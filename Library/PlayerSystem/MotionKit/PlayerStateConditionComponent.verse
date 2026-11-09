@@ -4,14 +4,14 @@ using { ConditionSystem }
 using { SceneGraphSystem }
 using { PlayerSystem.TooltipKit }
 
-# 役割：持ち主のキャラクターが State（空中・しゃがみ・スプリント・水中など）にいるあいだ満たす条件
-#   ability_grant_condition_component の子に置くと「しゃがんでいるあいだだけ使える能力」、game_transition_component の子に置くと「空中に出たら次へ」などをコードなしで作れる
-#   毎フレーム状態を見て、変わったときだけ知らせる
-# 置き方：エディターで entity に付ける。ロードアウトのプレハブ（loadout_component の Prefab）の中に置く（持ち主がいないと満たさない）
-# 親：ability_grant_condition_component / game_transition_component / condition_all / condition_any の entity の直下
+# Role: condition satisfied while the owner's character is in State (in air, crouching, sprinting, in water, etc.)
+#   Placed as a child of an ability_grant_condition_component it gives "an ability usable only while crouching"; as a child of a game_transition_component, "advance when airborne", and so on, without code
+#   Looks at the state every frame and notifies only when it changes
+# Placement: attach to an entity in the editor. Place it inside a loadout prefab (loadout_component's Prefab) (never satisfied without an owner)
+# Parent: directly under the entity of an ability_grant_condition_component / game_transition_component / condition_all / condition_any
 player_state_condition_component<public> := class<final_super>(condition_component):
 
-    # 満たす状態。既定 Crouching
+    # The state that satisfies. Default Crouching
     @editable:
         ToolTip := PlayerStateToolTip
         Categories := array{PlayerMotionCategory}
@@ -32,7 +32,7 @@ player_state_condition_component<public> := class<final_super>(condition_compone
             Watchers.Start(Entity, OnMotion, TickEvents.PrePhysics)
             set Subscription = option{TickEvents.PrePhysics.Subscribe(OnTick)}
         else:
-            Print("[player_state_condition_component] 持ち主がいません（ロードアウトのプレハブの中など、持ち主のいる場所に置いてください）")
+            Print("[player_state_condition_component] No owner (place it somewhere with an owner, such as inside a loadout prefab)")
 
     OnEndSimulation<override>():void =
         Subscription.CancelIfSet()

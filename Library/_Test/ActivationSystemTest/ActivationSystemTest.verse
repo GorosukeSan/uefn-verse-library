@@ -3,8 +3,8 @@ using { /Verse.org/Simulation }
 using { ActivationSystem }
 using { _Test }
 
-# 役割：起動・停止の合図を受けた回数を数える
-# 置き方：テストのコードが実行時に作る
+# Role: counts how many activate / deactivate signals it received
+# Placement: created by the test code at runtime
 test_activation_probe_component<public> := class<final_super>(component):
 
     var<private> ActivatedCount:int = 0
@@ -21,16 +21,16 @@ test_activation_probe_component<public> := class<final_super>(component):
 
     GetDeactivatedCount<public>()<transacts>:int = DeactivatedCount
 
-# 役割：ActivationSystem の動作確認。SendActivated / SendDeactivated が子孫に届くこと、activate_on_begin_component が開始の次のフレームで 1 回だけ起動の合図を送ることを確かめる
-# テストのレベル：この component を付けた entity を 1 つ置くだけ。プレイヤーは要らない
-# 結果：出力ログの [TEST] ActivationSystem
+# Role: verification of ActivationSystem. Checks that SendActivated / SendDeactivated reach descendants and that activate_on_begin_component sends the activate signal exactly once on the frame after begin
+# Test level: just one entity with this component. No player needed
+# Result: [TEST] ActivationSystem in the output log
 activation_system_test_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =
         Results := test_log{Name := "ActivationSystem"}
         TickEvents.PrePhysics.Await()
 
-        # 親 ─ 子（probe）。親から送ると子に届く
+        # parent - child (probe). Sending from the parent reaches the child
         Parent := entity{}
         Entity.AddEntities(array{Parent})
         ChildEntity := entity{}
@@ -43,7 +43,7 @@ activation_system_test_component<public> := class<final_super>(component):
         Results.CheckInt("SendDeactivated reaches a child", Probe.GetDeactivatedCount(), 1)
         Parent.RemoveFromParent()
 
-        # activate_on_begin_component と probe を同じ entity に
+        # activate_on_begin_component and probe on the same entity
         BeginEntity := entity{}
         BeginProbe := test_activation_probe_component{Entity := BeginEntity}
         BeginEntity.AddComponents(array{activate_on_begin_component{Entity := BeginEntity}, BeginProbe})

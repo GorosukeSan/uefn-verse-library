@@ -4,30 +4,30 @@ using { ActivationSystem }
 using { SceneGraphSystem }
 using { InteractSystem.TooltipKit }
 
-# 押し終わった知らせ
-# 方向：interact_trigger_component の entity から根へ（SendUp）
-# 送り手：interact_trigger_component。受け手：祖先の interacted_condition_component など。消費しない
+# Notification that a press completed
+# Direction: from the interact_trigger_component's entity to the root (SendUp)
+# Sender: interact_trigger_component. Receivers: ancestor interacted_condition_components etc. Not consumed
 interacted_event<public> := class(scene_event):
-    # 送ったトリガー
+    # The trigger that sent it
     Trigger<public>:interact_trigger_component
-    # 押した人
+    # The presser
     Agent<public>:agent
 
-# 役割：押し終わる（interactable_component の SucceededEvent）たびに、押した人を上へ知らせ、Targets の entity へ起動の合図を送る（Toggle なら、押すたびに起動の合図と停止の合図を交互に送る：スイッチ・レバー）
-# 置き方：エディターで entity に付ける
-# 親：押されたことを受けたいものの子孫（ゲームの流れの条件なら interacted_condition_component の entity の下）。どこでもよい
-# 同じ entity：interactable_component（basic_interactable_component など）。起動中だけ押せるようにするなら interact_gate_component
-# 知らせ：interacted_event をこの entity から上へ送る。実行時のコードは InteractedEvent（押し終わった）、StartedEvent（押し始めた。長押しの開始。v43.00 から開始の時点で届く）、CanceledEvent（長押しを途中でやめた）を Await / Subscribe できる
-# 外から：IsOn（Toggle のとき、今オンか）、SetOn（オン・オフを直接決めて合図を送る）
+# Role: each time a press completes (the interactable_component's SucceededEvent), notifies the presser upward and sends the activation signal to the Targets entities (with Toggle, alternates the activation and deactivation signals on each press: switch, lever)
+# Placement: attach to an entity in the editor
+# Parent: a descendant of whatever wants to know about the press (for a game flow condition, under the interacted_condition_component entity). Anywhere works
+# Same entity: interactable_component (basic_interactable_component, etc.). interact_gate_component to make it pressable only while active
+# Notifies: sends interacted_event upward from this entity. Run-time code can Await / Subscribe InteractedEvent (press completed), StartedEvent (press started; the start of a hold; fires at the start as of v43.00) and CanceledEvent (hold canceled mid-way)
+# From outside: IsOn (with Toggle, whether it is on now), SetOn (sets on / off directly and sends the signal)
 interact_trigger_component<public> := class<final_super>(component):
 
-    # 押し終わるたびに起動の合図を送る entity（その entity と子孫に届く）。空なら上へ知らせるだけ
+    # Entities that receive the activation signal each time a press completes (the entity and its descendants receive it). When empty, only notifies upward
     @editable:
         ToolTip := InteractTargetsToolTip
         Categories := array{InteractCategory, InteractTargetsCategory}
     Targets<public>:[]entity = array{}
 
-    # true なら押すたびに Targets へ起動の合図と停止の合図を交互に送る（スイッチ・レバー）。false なら起動の合図だけ（既定 false）
+    # true alternates the activation and deactivation signals to Targets on each press (switch, lever). false sends only the activation signal (default false)
     @editable:
         ToolTip := InteractToggleToolTip
         Categories := array{InteractCategory}
@@ -35,16 +35,16 @@ interact_trigger_component<public> := class<final_super>(component):
 
     InteractedEventInternal<private><final>:event(agent) = event(agent){}
 
-    # 押し終わるたびに、押した人で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires with the presser each time a press completes (Await / Subscribe; cannot be signaled from outside)
     InteractedEvent<public><final>:listenable(agent) = MakeProxyListenable(InteractedEventInternal)
 
     StartedEventInternal<private><final>:event(agent) = event(agent){}
     CanceledEventInternal<private><final>:event(agent) = event(agent){}
 
-    # 押し始めるたびに、押した人で届く（長押しなら押し始めた時点。押す時間が 0 なら InteractedEvent と同じ時点）
+    # Fires with the presser each time a press starts (for a hold, when the hold starts; with a hold time of 0, at the same time as InteractedEvent)
     StartedEvent<public><final>:listenable(agent) = MakeProxyListenable(StartedEventInternal)
 
-    # 長押しを途中でやめるたびに、その人で届く
+    # Fires with the player each time a hold is canceled mid-way
     CanceledEvent<public><final>:listenable(agent) = MakeProxyListenable(CanceledEventInternal)
 
     var Subscription<private>:?cancelable = false
@@ -65,12 +65,12 @@ interact_trigger_component<public> := class<final_super>(component):
         set Subscription = false
         (super:)OnEndSimulation()
 
-    # Toggle のとき、今オン（最後に起動の合図を送った）なら成功する。Toggle でなければ失敗する
+    # With Toggle, succeeds if on now (the last signal sent was activation). Fails without Toggle
     IsOn<public>()<decides><transacts>:void =
         Toggle?
         On?
 
-    # オン・オフを Value にして、Targets へ起動の合図（オン）か停止の合図（オフ）を送る。変わらなければ何もしない
+    # Sets on / off to Value and sends the activation signal (on) or the deactivation signal (off) to Targets. Does nothing if unchanged
     SetOn<public>(Value:logic):void =
         if (On <> Value):
             set On = Value

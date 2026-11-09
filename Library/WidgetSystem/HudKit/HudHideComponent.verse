@@ -7,54 +7,59 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { WidgetSystem.TooltipKit }
 
-# 役割：起動しているあいだ、Fortnite 標準の HUD の一部（チェックを入れたもの）を、区画の全員について人ごとに隠す。止まると、自分が隠した人の分だけ元に戻す（島全体の設定には触らない）
-# 置き方：エディターで entity に付ける
-# いつ：ActiveOnBegin なら開始から。起動の合図で隠し、停止の合図で戻す。途中参加の人にも隠す
-# 外から：Activate / Deactivate / IsActive
-# 前提：区画（または世界）に player_manager_component が 1 つ
+# Role: while activated, hides part of the standard Fortnite HUD (the checked elements) per person for everyone in the area. When it stops, restores only the people it hid (does not touch the island-wide settings)
+# Placement: in the editor, attach to an entity
+# When: with ActiveOnBegin, from the start. Hides on an activation signal and restores on a deactivation signal. Also hides for late joiners
+# From outside: Activate / Deactivate / IsActive
+# Requirements: one player_manager_component in the area (or world)
 hud_hide_component<public> := class<final_super>(component):
 
-    # オンならゲームの開始から隠す。既定オフ
+    # When on, hides from the start of the game. Default off
     @editable:
         ToolTip := HudHideActiveOnBeginToolTip
         Categories := array{HudHideCategory}
     ActiveOnBegin<public>:logic = false
-    # ミニマップ
+    # When on, hides the whole standard HUD (creative_hud_identifier_all, player_hud_identifier_all. The individual settings below are ignored). Default off
+    @editable:
+        ToolTip := HudHideAllToolTip
+        Categories := array{HudHideCategory}
+    HideAll<public>:logic = false
+    # Minimap
     @editable:
         ToolTip := HudHideElementToolTip
         Categories := array{HudHideCategory}
     HideMinimap<public>:logic = true
-    # 建築メニューと素材
+    # Build menu and materials
     @editable:
         ToolTip := HudHideElementToolTip
         Categories := array{HudHideCategory}
     HideBuild<public>:logic = true
-    # チーム情報・人数・撃破数
+    # Team info, player count, eliminations
     @editable:
         ToolTip := HudHideElementToolTip
         Categories := array{HudHideCategory}
     HideTeamInfo<public>:logic = true
-    # ラウンド・ストームの情報
+    # Round and storm info
     @editable:
         ToolTip := HudHideElementToolTip
         Categories := array{HudHideCategory}
     HideRoundInfo<public>:logic = true
-    # 経験値
+    # Experience
     @editable:
         ToolTip := HudHideElementToolTip
         Categories := array{HudHideCategory}
     HideExperience<public>:logic = true
-    # 体力とシールド
+    # Health and shields
     @editable:
         ToolTip := HudHideElementToolTip
         Categories := array{HudHideCategory}
     HideHealth<public>:logic = false
-    # 手持ちのアイテム欄
+    # Inventory bar
     @editable:
         ToolTip := HudHideElementToolTip
         Categories := array{HudHideCategory}
     HideInventory<public>:logic = false
-    # インタラクトの案内
+    # Interaction prompts
     @editable:
         ToolTip := HudHideElementToolTip
         Categories := array{HudHideCategory}
@@ -80,20 +85,20 @@ hud_hide_component<public> := class<final_super>(component):
         Deactivate()
         (super:)OnEndSimulation()
 
-    # 隠し始める（今いる全員と、これから参加する人）。もう隠していれば何もしない
+    # Start hiding (everyone present now and anyone who joins later). Does nothing if already hiding
     Activate<public>():void =
         if (Active?):
             return
         set Active = true
         if (OwningPlayer := Entity.FindOwningPlayer[]):
-            # 持ち主のいる entity（キャラクターの中など）なら、持ち主の分だけ隠す
+            # On an entity that has an owner (inside a character, etc.), hide only for the owner
             HideFor(OwningPlayer)
         else if (Manager := Entity.FindScopedComponent[player_manager_component]):
             set AddedSubscription = option{Manager.PlayerAddedEvent.Subscribe(HideFor)}
             for (Slot : Manager.GetSlots()):
                 HideFor(Slot.Player)
 
-    # 自分が隠した人の分を元に戻す。隠していなければ何もしない
+    # Restore the people this component hid. Does nothing if not hiding
     Deactivate<public>():void =
         if (not Active?):
             return
@@ -106,7 +111,7 @@ hud_hide_component<public> := class<final_super>(component):
                 Controller.ResetElementsForPlayer(Player, GetElements())
         set Hidden = array{}
 
-    # 隠しているあいだ成功する
+    # Succeeds while hiding
     IsActive<public>()<decides><transacts>:void =
         Active?
 
@@ -117,6 +122,13 @@ hud_hide_component<public> := class<final_super>(component):
 
     GetElements<private>()<transacts>:[]hud_element_identifier =
         var Elements:[]hud_element_identifier = array{}
+        if (HideAll?):
+            # Everything (health, inventory, materials, minimap, rounds, interaction prompts, etc.). The individual ones are listed too (in case some element survives "all" alone)
+            return array{creative_hud_identifier_all{}, player_hud_identifier_all{}, creative_hud_identifier_minimap{}, creative_hud_identifier_build_menu{}, creative_hud_identifier_crafting_resources{},
+                creative_hud_identifier_team_info{}, creative_hud_identifier_player_count{}, creative_hud_identifier_elimination_counter{}, creative_hud_identifier_round_info{}, creative_hud_identifier_round_timer{},
+                creative_hud_identifier_storm_timer{}, creative_hud_identifier_storm_notifications{}, creative_hud_identifier_experience_level{}, creative_hud_identifier_experience_ui{}, creative_hud_identifier_experience_supercharged{},
+                creative_hud_identifier_health{}, creative_hud_identifier_health_numbers{}, creative_hud_identifier_shields{}, creative_hud_identifier_shield_numbers{}, creative_hud_identifier_player_inventory{},
+                creative_hud_identifier_equipped_item{}, creative_hud_identifier_interaction_prompts{}, creative_hud_identifier_pickup_stream{}, creative_hud_identifier_map_prompts{}, creative_hud_identifier_hud_info{}}
         if (HideMinimap?):
             set Elements += array{creative_hud_identifier_minimap{}}
         if (HideBuild?):

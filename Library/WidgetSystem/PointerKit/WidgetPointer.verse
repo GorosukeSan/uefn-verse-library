@@ -4,17 +4,18 @@ using { /Verse.org/Input }
 using { /Verse.org/Input/UI }
 using { /Fortnite.com/Characters }
 using { MovementSystem }
+using { InputSystem }
 using { WidgetSystem }
 using { WidgetSystem.CardKit }
 
-# Virtual Pointer（入力の割り当て TouchMapping の PointerSelect）と画面の部品をつなぐ（実験的。v43.00）
-#   ・ポインターの位置が届くのは押しているあいだ（BeginDetect → DetectionOngoing → EndDetect）だけ。押していないときの位置（ホバー）は取れない
-#   ・届く位置は「viewport の座標」。画面の大きさを取る API が無いので、DeprojectViewportToWorld の光線と視点の向きの差から画面の割合（左上 0,0 〜 右下 1,1）に直す。
-#     カメラの水平の画角（FieldOfViewDegrees）と 16:9 を前提にするので、違う画角・画面の比では少しずれる
-#   ⚠ 未確認：メニュー（Mode = Menu）を出しているあいだに PointerSelect が届くか。届かなければ何も起きない（ボタンはふだんどおり押せる）
+# Connects the Virtual Pointer (PointerSelect of the TouchMapping input mapping) to screen parts (experimental; v43.00)
+#   - The pointer position arrives only while pressed (BeginDetect -> DetectionOngoing -> EndDetect). The position while not pressed (hover) is not available
+#   - The position arrives in "viewport coordinates". There is no API for the screen size, so it is converted to a screen ratio (top-left 0,0 to bottom-right 1,1) from the difference between the DeprojectViewportToWorld ray and the view direction.
+#     It assumes the horizontal camera field of view (FieldOfViewDegrees) and 16:9, so it drifts slightly with a different field of view or aspect ratio
+#   ⚠ Unconfirmed: whether PointerSelect arrives while a menu (Mode = Menu) is shown. If not, nothing happens (buttons can still be pressed as usual)
 
-# Player の viewport の座標 ViewportPosition（PointerSelect の値）を、画面の割合 (横, 縦)（左上 0,0 〜 右下 1,1）に直す。視点の後ろなど直せなければ失敗する
-#   FieldOfViewDegrees は今のカメラの水平の画角（度）
+# Convert Player's viewport coordinate ViewportPosition (the PointerSelect value) to a screen ratio (horizontal, vertical) (top-left 0,0 to bottom-right 1,1). Fails if it cannot be converted, e.g. behind the view
+#   FieldOfViewDegrees is the current horizontal camera field of view (degrees)
 (Player:player).PointerToScreenRatio<public>(ViewportPosition:vector3, FieldOfViewDegrees:float)<decides><transacts>:tuple(float, float) =
     Ray := Player.DeprojectViewportToWorld(ViewportPosition)
     Forward := Player.GetFortCharacter[].GetViewDirection()
@@ -29,17 +30,21 @@ using { WidgetSystem.CardKit }
     Y := DotProduct(Ray.Direction, Up) / Depth / TanV
     (0.5 + 0.5 * X, 0.5 - 0.5 * Y)
 
-# View が出ているあいだ、その人の Virtual Pointer で押したカードを押し込む（Cards[i] の範囲は Rects[i]。CardGridRect で作る）。閉じたら終わる（spawn で呼ぶ）
-#   押した位置のカードが沈み、ドラッグに合わせて沈む位置が動き、離すと戻る。押しているあいだは選ばれている表示（マウスが乗る）より押し込みを優先する
-#   この人に TouchMapping を足し、終わると外す（ほかの部品が同じ人に TouchMapping を足していると、それも外れる）
-RunCardPointerPress<public>(View:widget_view, Cards:[]widget_card_button, Rects:[]widget_screen_rect, FieldOfViewDegrees:float)<suspends>:void =
+# While View is shown, press in the card that person presses with the Virtual Pointer (the rectangle of Cards[i] is Rects[i]; build them with CardGridRect). Ends when closed (call with spawn)
+#   The card at the pressed position sinks, the sunken point follows the drag, and releasing restores it. While pressed, the press-in takes priority over the selected look (mouse over)
+#   Leases the TouchMapping for this person (InputSystem's LeaseInputMapping, name "touch") and returns it when done (it stays if another part leased it under the same name)
+#   Only when ?AddTouchMapping is true does it add the TouchMapping to this person and receive the Virtual Pointer (default false).
+#   ⚠ Adding the TouchMapping can make the mouse captured by the pointer so the view (camera) cannot be turned (reported as "cannot move the camera" in UEFN v43.00).
+#   When false, only injections from code (widget_view.InjectPointer; MCP's widget.pointer) are received
+RunCardPointerPress<public>(View:widget_view, Cards:[]widget_card_button, Rects:[]widget_screen_rect, FieldOfViewDegrees:float, ?AddTouchMapping:logic = false)<suspends>:void =
     defer:
         for (Card : Cards):
             Card.ClearPressed()
-    if (PlayerInput := GetPlayerInput[View.Player]):
-        PlayerInput.AddInputMapping(TouchMapping)
+    if (AddTouchMapping?, PlayerInput := GetPlayerInput[View.Player]):
+        MaybeLease := View.Player.LeaseInputMapping(TouchMappingLeaseKey, TouchMapping)
         defer:
-            PlayerInput.RemoveInputMapping(TouchMapping)
+            if (Lease := MaybeLease?):
+                Lease.Release()
         Events := PlayerInput.GetInputEvents(PointerSelect)
         race:
             View.HiddenEvent.Await()
@@ -59,7 +64,7 @@ RunCardPointerPress<public>(View:widget_view, Cards:[]widget_card_button, Rects:
             View.HiddenEvent.Await()
             RunFedPointer(View, Cards, Rects)
 
-# コードから差し込んだポインター（widget_view.InjectPointer。MCP の widget.pointer など）を、押下と同じに扱う
+# Treat a pointer injected from code (widget_view.InjectPointer; MCP's widget.pointer, etc.) the same as a press
 RunFedPointer<internal>(View:widget_view, Cards:[]widget_card_button, Rects:[]widget_screen_rect)<suspends>:void =
     loop:
         Fed := View.PointerFed.Await()
@@ -69,12 +74,12 @@ RunFedPointer<internal>(View:widget_view, Cards:[]widget_card_button, Rects:[]wi
             for (Card : Cards):
                 Card.ClearPressed()
 
-# ViewportPosition の下のカードを押し込み、ほかのカードの押し込みを戻す
+# Press in the card under ViewportPosition and release the press-in of the other cards
 PressCardAt<internal>(Player:player, ViewportPosition:vector3, Cards:[]widget_card_button, Rects:[]widget_screen_rect, FieldOfViewDegrees:float):void =
     if (Point := Player.PointerToScreenRatio[ViewportPosition, FieldOfViewDegrees]):
         PressCardAtRatio(Point(0), Point(1), Cards, Rects)
 
-# 画面の割合 (X, Y) の下のカードを押し込み、ほかのカードの押し込みを戻す
+# Press in the card under screen ratio (X, Y) and release the press-in of the other cards
 PressCardAtRatio<public>(X:float, Y:float, Cards:[]widget_card_button, Rects:[]widget_screen_rect):void =
     for (Index -> Card : Cards):
         if (Rect := Rects[Index], Local := Rect.LocalOf[X, Y]):

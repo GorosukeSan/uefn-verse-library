@@ -1,79 +1,79 @@
 # ScheduleSystem
 
-実時刻（エポック秒）で決まるスケジュール（毎日 20:00 から 10 分、1 時間ごと、決まった日時に 1 回など）を扱う System です。区画に 1 つの `realtime_clock_component` が毎秒 1 回すべてのスケジュールを評価し、`schedule_component` は状態が変わったときに知らせ、期間（Active）に入る・出るときに起動・停止の合図（`activated_event` / `deactivated_event`）を子孫へ送ります。値はいつも「今の時刻」から計算するので、途中参加・サーバの再起動でも同じ状態になります。
+A System for schedules decided by real time (epoch seconds): 10 minutes from 20:00 every day, every hour, once at a fixed date and time, and so on. One `realtime_clock_component` per scope evaluates every schedule once per second; `schedule_component` notifies when its state changes and sends the activate / deactivate signals (`activated_event` / `deactivated_event`) to its descendants on entering / leaving the period (Active). Values are always computed from "the current time", so late joiners and server restarts end up in the same state.
 
-## 置き方
+## Placement
 
-| component | 置く場所 | すること |
+| component | Where | What it does |
 |---|---|---|
-| `realtime_clock_component` | 区画（`game_scope_component` の配下）か世界に 1 つ | 実時刻の時計。登録されたスケジュールを、整数秒の境目のすぐあとに 1 回ずつ評価して配る |
-| `schedule_component` | スケジュールに合わせて動かすものの親の entity | `Kind` と時刻・長さで期間を決める。状態か回が変わったときに知らせ、Active に入る・出るとき起動・停止の合図を自分と子孫へ送る |
-| `schedule_active_condition_component`（ConditionKit） | `game_transition_component` か `condition_all` / `condition_any`（または `ability_grant_condition_component`）の entity の直下。そのうえで `schedule_component` の entity の子孫 | スケジュールが Active のあいだ満たす |
-| `schedule_text_component`（DisplayKit） | `schedule_component` の entity かその子孫 | 残り時間を "MM:SS" などの文字にして、変わったときだけ知らせる |
-| `schedule_digit_display_component`（DisplayKit） | `schedule_component` の entity の子孫。桁ごとに 1 entity | 残り時間の 1 桁を、子の数字メッシュの表示・非表示で出す |
-| `schedule_digit_glyph_component`（DisplayKit） | 数字の形のメッシュを持つ entity。`schedule_digit_display_component` の entity の直下に 0〜9 を並べる | 数字 1 つ分のメッシュの目印 |
-| `schedule_countdown_hud_component`（HudKit） | `schedule_component` の entity の子孫 | 開始の `ShowWithinSeconds` 秒前から開始まで、区画の全プレイヤー（途中参加も）の画面にカウントダウンの文字を出す |
+| `realtime_clock_component` | one per scope (under `game_scope_component`) or world | Real-time clock. Evaluates the registered schedules once right after each whole-second boundary and delivers the results |
+| `schedule_component` | the parent entity of the things driven by the schedule | Decides the period from `Kind`, the time and the duration. Notifies when the state or the cycle changes, and sends the activate / deactivate signals to itself and its descendants on entering / leaving Active |
+| `schedule_active_condition_component` (ConditionKit) | directly under the entity of `game_transition_component` or `condition_all` / `condition_any` (or `ability_grant_condition_component`), itself a descendant of the `schedule_component` entity | Satisfied while the schedule is Active |
+| `schedule_text_component` (DisplayKit) | the `schedule_component` entity or a descendant | Turns the remaining time into text such as "MM:SS" and notifies only when it changes |
+| `schedule_digit_display_component` (DisplayKit) | a descendant of the `schedule_component` entity. One entity per digit position | Shows one digit of the remaining time by showing / hiding the child digit meshes |
+| `schedule_digit_glyph_component` (DisplayKit) | an entity with a digit-shaped mesh. Arrange 0-9 directly under the `schedule_digit_display_component` entity | Marker for the mesh of one digit |
+| `schedule_countdown_hud_component` (HudKit) | a descendant of the `schedule_component` entity | From `ShowWithinSeconds` seconds before the start until the start, shows countdown text on the screen of every player in the scope (late joiners too) |
 
-Kit の component は、自分の entity か一番近い祖先の `schedule_component` を見ます（`schedule_follower`）。
+The Kit components follow the `schedule_component` on their own entity or the nearest ancestor (`schedule_follower`).
 
-期間中にシネマティック シーケンス デバイスを再生する `schedule_sequence_component` は、デバイスに依存するので FNDeviceSystem（`FNDeviceSystem/ScheduleKit/`）にあります。置き方は同じく `schedule_component` の entity かその子孫です。
+`schedule_sequence_component`, which plays a Cinematic Sequence device during the period, lives in FNDeviceSystem (`FNDeviceSystem/ScheduleKit/`) because it depends on devices. Its placement is the same: the `schedule_component` entity or a descendant.
 
-例：「毎日 20:00 から 10 分のイベント」
+Example: "a 10-minute event from 20:00 every day"
 ```
-区画（game_scope_component）
-├ 時計（realtime_clock_component）
-└ 夜のイベント（schedule_component、Kind = Daily、StartHour = 20、DurationSeconds = 600）
-  ├ 看板の文字（schedule_text_component）
-  ├ カウントダウン（schedule_countdown_hud_component）
-  └ 足場（spawner_component など。起動の合図で動き出すもの）
+Scope (game_scope_component)
+├ Clock (realtime_clock_component)
+└ Night event (schedule_component, Kind = Daily, StartHour = 20, DurationSeconds = 600)
+  ├ Sign text (schedule_text_component)
+  ├ Countdown (schedule_countdown_hud_component)
+  └ Platform (spawner_component etc.; something that starts on the activate signal)
 ```
 
-## 設定（@editable）
-- `realtime_clock_component.TimeZoneOffsetSeconds : int = DefaultTimeZoneOffsetSeconds（32400）` — 現地時刻と UTC のずれ（秒。-50400〜50400）。日本標準時は +9 時間。夏時間は考えない。
-- `realtime_clock_component.WakeMarginSeconds : float = 0.02` — 整数秒の境目からどれだけ遅れて起きるか（秒。0〜0.5）。小さすぎると 1 秒ずれることがある。
-- `schedule_component.Kind : schedule_kind = Daily` — 繰り返しの種類。`Daily` = 毎日同じ時刻、`FixedInterval` = 基準の時刻から一定間隔、`OneShot` = 1 回だけ。
-- `schedule_component.StartHour : int = 20` / `StartMinute : int = 0` / `StartSecond : int = 0` — Daily の開始時刻（現地時刻。時 0〜23、分・秒 0〜59）。
-- `schedule_component.DurationSeconds : float = 600.0` — 期間（Active）の長さ（秒。0 以上）。Daily では 86400 未満、FixedInterval では間隔未満にする（それ以上だと常に Active）。
-- `schedule_component.IntervalSeconds : float = 3600.0` — FixedInterval の間隔（秒）。0 以下なら 1 回だけ（OneShot と同じ）。
-- `schedule_component.EpochAnchorSeconds : float = 0.0` — FixedInterval の基準の時刻、OneShot の開始の時刻（エポック秒）。
-- `schedule_component.SendActivation : logic = true` — オンなら Active に入るとき `activated_event`、出るとき `deactivated_event` を自分と子孫へ送る。
-- `schedule_text_component.Format : schedule_text_format = MinutesSeconds` — 文字の形。
-- `schedule_text_component.RemainingKind : schedule_remaining_kind = UntilEnd` — `UntilStart` は次の開始まで、`UntilEnd` は期間中は終わりまで・それ以外は次の開始まで。
-- `schedule_text_component.Prefix : string = ""` — 文字の前に付ける固定の文字列。
-- `schedule_text_component.OnlyWhileShown : logic = false` — オンなら `Show` を呼んでから `Hide` までのあいだだけ更新する。
-- `schedule_digit_display_component.Digit : int = 1` — 何桁目か（1 = 一の位。1〜9）。
-- `schedule_digit_display_component.Field : schedule_time_field = Seconds` — 残り時間のどの部分の桁か。
-- `schedule_digit_display_component.RemainingKind : schedule_remaining_kind = UntilEnd`。
-- `schedule_digit_display_component.BlankLeadingZero : logic = false` — オンなら上の桁が 0 のとき数字を出さない（全部の数字のメッシュを隠す）。
-- `schedule_digit_glyph_component.Value : int = 0` — このメッシュが表す数字（0〜9）。同じ値のメッシュが何個あってもよい。
-- `schedule_countdown_hud_component.ShowWithinSeconds : float = 300.0` — 開始の何秒前から出すか（秒。1 以上）。
-- `schedule_countdown_hud_component.Format : schedule_text_format = MinutesSeconds` / `Prefix : string = ""`。
-- `schedule_countdown_hud_component.TextSize : float = 48.0` — 文字の大きさ（8〜200）。
-- `schedule_countdown_hud_component.PositionXRatio : float = 0.5` / `PositionYRatio : float = 0.15` — 画面の位置（0〜1。0 = 左端・上端、1 = 右端・下端。その点を文字の真ん中にする）。WidgetSystem/HudKit の HUD（`text_hud_component` など）と同じ名前・同じ意味で、ToolTip も WidgetSystem のもの（`WidgetPositionXToolTip` / `WidgetPositionYToolTip`）を使う。
-- `schedule_countdown_hud_component` は `player_widget_component`（WidgetSystem）の派生なので、`Mode` / `Audience` / `ZOrder` / `MenuConflict` / `ActiveOnBegin` / `ForwardReceivedEvents` も持ちます。`Audience` は既定の `Everyone` のままにします（`Chosen` だと、だれかに `ShowFor` するまでだれにも出ません）。
+## Settings (@editable)
+- `realtime_clock_component.TimeZoneOffsetSeconds : int = DefaultTimeZoneOffsetSeconds (32400)` — offset between local time and UTC (seconds; -50400 to 50400). Japan Standard Time is +9 hours. Daylight saving time is not considered.
+- `realtime_clock_component.WakeMarginSeconds : float = 0.02` — how long after the whole-second boundary to wake (seconds; 0-0.5). Too small may drift by 1 second.
+- `schedule_component.Kind : schedule_kind = Daily` — kind of repetition. `Daily` = at the same time every day, `FixedInterval` = at a fixed interval from an anchor time, `OneShot` = once.
+- `schedule_component.StartHour : int = 20` / `StartMinute : int = 0` / `StartSecond : int = 0` — Daily start time (local time; hour 0-23, minute and second 0-59).
+- `schedule_component.DurationSeconds : float = 600.0` — length of the period (Active) in seconds (0 or more). Keep under 86400 for Daily and under the interval for FixedInterval (otherwise always Active).
+- `schedule_component.IntervalSeconds : float = 3600.0` — FixedInterval interval (seconds). 0 or less means once (same as OneShot).
+- `schedule_component.EpochAnchorSeconds : float = 0.0` — anchor time of FixedInterval, start time of OneShot (epoch seconds).
+- `schedule_component.SendActivation : logic = true` — when on, sends `activated_event` to itself and its descendants on entering Active, and `deactivated_event` on leaving.
+- `schedule_text_component.Format : schedule_text_format = MinutesSeconds` — text format.
+- `schedule_text_component.RemainingKind : schedule_remaining_kind = UntilEnd` — `UntilStart` is until the next start; `UntilEnd` is until the end during the period, otherwise until the next start.
+- `schedule_text_component.Prefix : string = ""` — fixed string put before the text.
+- `schedule_text_component.OnlyWhileShown : logic = false` — when on, updated only between `Show` and `Hide`.
+- `schedule_digit_display_component.Digit : int = 1` — digit position (1 = ones; 1-9).
+- `schedule_digit_display_component.Field : schedule_time_field = Seconds` — which part of the remaining time the digit belongs to.
+- `schedule_digit_display_component.RemainingKind : schedule_remaining_kind = UntilEnd`.
+- `schedule_digit_display_component.BlankLeadingZero : logic = false` — when on, no digit is shown when the higher positions are 0 (all digit meshes are hidden).
+- `schedule_digit_glyph_component.Value : int = 0` — the digit (0-9) this mesh represents. Any number of meshes may share the same value.
+- `schedule_countdown_hud_component.ShowWithinSeconds : float = 300.0` — how many seconds before the start to show (seconds; 1 or more).
+- `schedule_countdown_hud_component.Format : schedule_text_format = MinutesSeconds` / `Prefix : string = ""`.
+- `schedule_countdown_hud_component.TextSize : float = 48.0` — text size (8-200).
+- `schedule_countdown_hud_component.PositionXRatio : float = 0.5` / `PositionYRatio : float = 0.15` — screen position (0-1. 0 = left / top edge, 1 = right / bottom edge; the text is centered on that point). Same name and meaning as the WidgetSystem/HudKit HUDs (`text_hud_component` etc.), and the ToolTips are WidgetSystem's (`WidgetPositionXToolTip` / `WidgetPositionYToolTip`).
+- `schedule_countdown_hud_component` is a `player_widget_component` (WidgetSystem) subclass, so it also has `Mode` / `Audience` / `ZOrder` / `MenuConflict` / `ActiveOnBegin` / `ForwardReceivedEvents`. Leave `Audience` at the default `Everyone` (with `Chosen`, nobody sees it until `ShowFor` is called for someone).
 
-## イベント
-- `schedule_state_changed_event`（scene_event、SendDown）: `Schedule : schedule_component`、`Previous : ?schedule_snapshot`（最初の評価なら false）、`Current : schedule_snapshot`。`schedule_component` が送る。状態（Before / Active / After）か回が変わったときだけ。最初の評価でも 1 回届く。受け手はその entity と子孫。消費しない。
-- `schedule_component` は Active に入るとき・出るとき、この知らせの直後に `activated_event` / `deactivated_event` を自分と子孫へ送る（`SendActivation` がオン）。期間の途中でサーバが立ち上がったときは、最初の評価で Active になり `activated_event` が届く。
-- `schedule_text_changed_event`（scene_event、SendDown）: `Sender : component`、`Text : message`（Prefix 付き）、`RemainingWholeSeconds : int`（切り上げた整数）。`schedule_text_component` が自分の entity から下へ送る。`schedule_countdown_hud_component` は自分の widget へ（`SendToWidgets`）渡す。文字が変わったときだけ。受け手は文字を出す widget・看板など。消費しない。
-- `schedule_component.StateChangedEvent : listenable(schedule_snapshot)` — 状態か回が変わったときだけ、新しい値で届く。最初の評価でも 1 回。
-- `schedule_component.SecondEvent : listenable(schedule_snapshot)` — 毎秒 1 回。同じ秒の `StateChangedEvent` より後。購読者の数だけ毎秒の処理が増えるので、状態だけ要るなら `StateChangedEvent` を使う。
-- `realtime_clock_component.SecondEvent : listenable(float)` — 毎秒 1 回、評価に使った時刻（`GetNowEpochSeconds`）で届く。全スケジュールの知らせを配ったあと。
-- `schedule_text_component.TextChangedEvent : listenable(message)` — 文字が変わったとき。
-- `schedule_digit_display_component.DigitChangedEvent : listenable(int)` — 桁の値（0〜9。何も出さないときは -1）が変わったとき。マテリアルのパラメータで数字を出すときは、これを購読して自分の MI に書く。
-- 受けるもの: `schedule_countdown_hud_component` は、スケジュールから届く `activated_event` / `deactivated_event` を無視する（表示の切り替えは開始前の窓の判定だけで決め、`Activate` / `Deactivate` を自分で呼ぶ）。ほかの scene_event は `player_widget_component` と同じに扱う。
+## Events
+- `schedule_state_changed_event` (scene_event, SendDown): `Schedule : schedule_component`, `Previous : ?schedule_snapshot` (false on the first evaluation), `Current : schedule_snapshot`. Sent by `schedule_component`. Only when the state (Before / Active / After) or the cycle changes. Arrives once on the first evaluation too. Receivers are that entity and its descendants. Not consumed.
+- On entering / leaving Active, `schedule_component` sends `activated_event` / `deactivated_event` to itself and its descendants right after this notification (when `SendActivation` is on). When the server starts in the middle of a period, the first evaluation is Active and `activated_event` arrives.
+- `schedule_text_changed_event` (scene_event, SendDown): `Sender : component`, `Text : message` (with Prefix), `RemainingWholeSeconds : int` (rounded-up integer). `schedule_text_component` sends it down from its own entity. `schedule_countdown_hud_component` passes it to its own widgets (`SendToWidgets`). Only when the text changes. Receivers are widgets, signs and the like that show the text. Not consumed.
+- `schedule_component.StateChangedEvent : listenable(schedule_snapshot)` — fires with the new value only when the state or the cycle changes. Once on the first evaluation too.
+- `schedule_component.SecondEvent : listenable(schedule_snapshot)` — once per second. After the same second's `StateChangedEvent`. Each subscriber adds per-second work, so use `StateChangedEvent` when only the state matters.
+- `realtime_clock_component.SecondEvent : listenable(float)` — once per second, with the time used for evaluation (`GetNowEpochSeconds`). After every schedule's notifications are delivered.
+- `schedule_text_component.TextChangedEvent : listenable(message)` — when the text changes.
+- `schedule_digit_display_component.DigitChangedEvent : listenable(int)` — when the digit value (0-9; -1 when showing nothing) changes. To show digits through material parameters, subscribe to this and write to your own MI.
+- Received: `schedule_countdown_hud_component` ignores the `activated_event` / `deactivated_event` from the schedule (showing is decided only by the pre-start window check, calling `Activate` / `Deactivate` itself). Other scene_events are handled like `player_widget_component`.
 
-## 持ち主
-- `schedule_countdown_hud_component` は `player_widget_component` の派生なので、プレイヤーの slot の下（ロードアウトの中など）に置くと、区画の全員ではなく持ち主の画面にだけ出します。ほかの component は持ち主で動きを変えません。
+## Owner
+- `schedule_countdown_hud_component` is a `player_widget_component` subclass, so when placed under a player's slot (inside a loadout, for example) it shows only on the owner's screen rather than for everyone in the scope. The other components do not change behavior by owner.
 
-## 公開 API
+## Public API
 ```verse
-# ScheduleTime.verse（状態を持たない補助）
+# ScheduleTime.verse (stateless helpers)
 SecondsPerDay<public>:int = 86400
 SecondsPerHour<public>:int = 3600
 SecondsPerMinute<public>:int = 60
 DefaultTimeZoneOffsetSeconds<public>:int = 32400
-ToWholeSeconds<public>(Seconds:float)<transacts>:int             # 0 以下は 0、それ以外は切り上げ（表示に使う整数）
+ToWholeSeconds<public>(Seconds:float)<transacts>:int             # 0 or less gives 0, otherwise rounded up (the integer used for display)
 GetDayIndex<public>(EpochSeconds:float, TimeZoneOffsetSeconds:int)<transacts>:int
 GetSecondsOfDay<public>(EpochSeconds:float, TimeZoneOffsetSeconds:int)<transacts>:float
 GetDayStartSeconds<public>(DayIndex:int, TimeZoneOffsetSeconds:int)<computes>:float
@@ -97,13 +97,13 @@ realtime_clock_component<public> := class<final_super>(component):
     WakeMarginSeconds<public>:float
     var<private> DebugOffsetSeconds<public>:float
     SecondEvent<public><final>:listenable(float)
-    GetNowEpochSeconds<public>()<transacts>:float             # 同じトランザクションでは同じ値。OS の時計が戻っても戻らない
+    GetNowEpochSeconds<public>()<transacts>:float             # Same value within one transaction. Never goes backward even if the OS clock does
     GetTimeZoneOffsetSeconds<public>()<computes>:int
     GetDayIndex<public>(EpochSeconds:float)<transacts>:int
     GetSecondsOfDay<public>(EpochSeconds:float)<transacts>:float
-    SetDebugOffsetSeconds<public>(OffsetSeconds:float):void   # デバッグ用。その場で評価し直す
-    JumpTo<public>(EpochSeconds:float):void                   # デバッグ用
-    GetSchedules<public>()<transacts>:[]schedule_component    # 登録順
+    SetDebugOffsetSeconds<public>(OffsetSeconds:float):void   # For debugging. Re-evaluates immediately
+    JumpTo<public>(EpochSeconds:float):void                   # For debugging
+    GetSchedules<public>()<transacts>:[]schedule_component    # Registration order
 
 schedule_kind<public> := enum:
     Daily
@@ -122,17 +122,17 @@ schedule_component<public> := class<final_super>(component):
     StateChangedEvent<public><final>:listenable(schedule_snapshot)
     SecondEvent<public><final>:listenable(schedule_snapshot)
     FindClock<public>()<decides><transacts>:realtime_clock_component
-    GetTimeZoneOffsetSeconds<public>()<transacts>:int                  # 時計が無ければ DefaultTimeZoneOffsetSeconds
-    FindLastSnapshot<public>()<decides><transacts>:schedule_snapshot   # まだ評価していなければ失敗する
+    GetTimeZoneOffsetSeconds<public>()<transacts>:int                  # DefaultTimeZoneOffsetSeconds without a clock
+    FindLastSnapshot<public>()<decides><transacts>:schedule_snapshot   # Fails until the first evaluation
     GetCurrentSnapshot<public>()<transacts>:schedule_snapshot
     IsActive<public>()<decides><transacts>:void
-    Evaluate<public>(T:float)<transacts>:schedule_snapshot             # 状態を変えない純粋な計算
+    Evaluate<public>(T:float)<transacts>:schedule_snapshot             # Pure computation that changes no state
     EvaluateWithOffset<public>(T:float, TimeZoneOffsetSeconds:int)<transacts>:schedule_snapshot
 
 schedule_state<public> := enum:
     Before
     Active
-    After      # 単発だけ
+    After      # One-shot only
 
 schedule_snapshot<public> := struct:
     NowSeconds<public>:float = 0.0
@@ -145,7 +145,7 @@ schedule_snapshot<public> := struct:
     HasNextStart<public>:logic = false
 (Snapshot:schedule_snapshot).IsActive<public>()<decides><computes>:void
 (Snapshot:schedule_snapshot).IsSameStateAndCycle<public>(Other:schedule_snapshot)<decides><computes>:void
-(Snapshot:schedule_snapshot).GetRemainingSeconds<public>(Kind:schedule_remaining_kind)<computes>:float   # 小数。整数にするなら ToWholeSeconds
+(Snapshot:schedule_snapshot).GetRemainingSeconds<public>(Kind:schedule_remaining_kind)<computes>:float   # Fraction. Use ToWholeSeconds for an integer
 
 schedule_remaining_kind<public> := enum:
     UntilStart
@@ -156,10 +156,10 @@ schedule_state_changed_event<public> := class(scene_event):
     Previous<public>:?schedule_snapshot
     Current<public>:schedule_snapshot
 
-# 自分の entity か祖先の schedule_component を見つけて購読する補助（フィールドに 1 つ持つ）
+# Helper that finds and subscribes to the schedule_component on its own entity or an ancestor (held as one field)
 schedule_follower<public> := class<unique>:
     FindSchedule<public>()<decides><transacts>:schedule_component
-    Attach<public>(Owner:entity, OnChanged:type{_(:schedule_snapshot):void}, OnSecond:?type{_(:schedule_snapshot):void}):logic   # 見つからなければ false
+    Attach<public>(Owner:entity, OnChanged:type{_(:schedule_snapshot):void}, OnSecond:?type{_(:schedule_snapshot):void}):logic   # false when not found
     Detach<public>():void
 
 # ConditionKit
@@ -184,7 +184,7 @@ schedule_digit_display_component<public> := class<final_super>(component):
     RemainingKind<public>:schedule_remaining_kind
     BlankLeadingZero<public>:logic
     DigitChangedEvent<public><final>:listenable(int)
-    GetDigitValue<public>()<transacts>:int        # 何も出していなければ -1
+    GetDigitValue<public>()<transacts>:int        # -1 when showing nothing
 
 schedule_text_format<public> := enum:
     HoursMinutesSeconds
@@ -207,7 +207,7 @@ schedule_text_component<public> := class<final_super>(component):
     OnlyWhileShown<public>:logic
     TextChangedEvent<public><final>:listenable(message)
     GetText<public>():message
-    GetRemainingWholeSeconds<public>()<transacts>:int  # 文字にした残り秒数（切り上げた整数）。まだなら -1
+    GetRemainingWholeSeconds<public>()<transacts>:int  # The remaining seconds the text was made from (rounded-up integer). -1 until then
     Show<public>():void
     Hide<public>():void
     IsShown<public>()<decides><transacts>:void
@@ -222,30 +222,30 @@ schedule_countdown_hud_component<public> := class<final_super>(player_widget_com
     PositionYRatio<public>:float
 ```
 
-## 名前の決まり
-- 秒の値は、小数（float）なら `…Seconds`、切り上げた整数（int。画面に出す値）なら `…WholeSeconds` と書きます。CountdownSystem（`GetRemainingSeconds():float` / `GetRemainingWholeSeconds():int`）とそろえています。
+## Naming rules
+- Second values are written `...Seconds` when fractional (float) and `...WholeSeconds` when rounded up to an integer (int; the value shown on screen). Aligned with CountdownSystem (`GetRemainingSeconds():float` / `GetRemainingWholeSeconds():int`).
 
-## 前提・注意
-- 区画（または世界）に `realtime_clock_component` が 1 つ要ります。無ければ `schedule_component` は評価されません（1 フレーム待って探し直し、それでも無ければ見つかるまで 1 秒ごとに探します（`AwaitScopedComponent`。プレハブで後から足した時計も拾う）。1 秒たっても無ければ 1 回だけ Print します）。Kit は `schedule_component` が自分の entity にも祖先にも無いと Print して何もしません。
-- 実時刻は止められません（Pause はありません）。一時停止が要るものは CountdownSystem などシミュレーション時間のものを使います。
-- 「日」は常に 86400 秒です（暦の月・年は使いません）。夏時間は考えません。
-- OS の時計が逆に戻っても `GetNowEpochSeconds` は戻りません。デバッグで時刻を飛ばしたときは、途中の変化はまとめて 1 回の変化（飛んだ先の状態）になります。デバッグ用の `SetDebugOffsetSeconds` / `JumpTo` を公開する島に残すかは利用者が決めます。
-- 毎フレームの処理はありません。時計が 1 秒に 1 回起きて、スケジュールの数だけ計算します。表示の Kit（文字・桁・HUD）は `SecondEvent` を購読するので、毎秒 1 回の計算があります（書き込みは値が変わったときだけ）。
-- `schedule_countdown_hud_component` は区画（または世界）に `player_manager_component` が要ります（`player_widget_component` の前提）。開始前の窓の外では画面に何も出しません（毎秒の残り秒の比較だけは続きます）。
-- `message` は連結できないので、前に付ける文字は `Prefix`（string）で持ちます。
-- `schedule_sequence_component` は FNDeviceSystem に移りました（`FNDeviceSystem/ScheduleKit/`）。使い方と実機で確かめていない点は FNDeviceSystem の README にあります。ツールチップ（`ScheduleSequencesToolTip` など）はこの System の TooltipKit に残っています。
-- この System のコードには `⚠ 未検証` の印はなく、`@experimental` の API も使っていません。
+## Requirements, caveats and limits
+- One `realtime_clock_component` is needed in the scope (or the world). Without it, `schedule_component` is not evaluated (it waits one frame and looks again, and if still none, keeps looking every second until found (`AwaitScopedComponent`; also picks up a clock added later by a prefab). If none after 1 s, it Prints once). A Kit Prints and does nothing when `schedule_component` is on neither its own entity nor an ancestor.
+- Real time cannot be stopped (there is no Pause). For things that need pausing, use simulation-time Systems such as CountdownSystem.
+- A "day" is always 86400 seconds (calendar months and years are not used). Daylight saving time is not considered.
+- `GetNowEpochSeconds` never goes backward even if the OS clock does. When the time is jumped for debugging, the intermediate changes collapse into one change (the state at the destination). Whether to leave the debug `SetDebugOffsetSeconds` / `JumpTo` on a published island is up to you.
+- No per-frame work. The clock wakes once per second and computes once per schedule. The display Kits (text, digits, HUD) subscribe to `SecondEvent`, so they compute once per second (writes only when the value changes).
+- `schedule_countdown_hud_component` needs a `player_manager_component` in the scope (or the world) (a `player_widget_component` requirement). Outside the pre-start window nothing is shown on screen (only the per-second comparison of the remaining seconds continues).
+- `message` cannot be concatenated, so the leading text is held as `Prefix` (string).
+- `schedule_sequence_component` moved to FNDeviceSystem (`FNDeviceSystem/ScheduleKit/`). Its usage and the points not confirmed in UEFN are in the FNDeviceSystem README. Its tooltips (`ScheduleSequencesToolTip` etc.) remain in this System's TooltipKit.
+- This System's code has no `⚠ Unverified` marks and uses no `@experimental` API.
 
-## 確かめ方
-- テスト：`_Test/ScheduleSystemTest/` の `schedule_system_test_component`。この component を付けた entity を 1 つ置くだけ（時計・スケジュール・子はテストが実行時に作る）。レベルに別の `realtime_clock_component` を置かない（世界に 2 つあるとどれが使われるか決まらない）。プレイヤーは要らない。`Evaluate` の計算（毎日・一定間隔・単発、日付の境目）、`ToWholeSeconds`、日数・文字の形（`Format*`）・桁（`GetDigit` / `IsLeadingZero`）の補助、時計が戻らないこととデバッグの時刻移動、`StateChangedEvent` が変化のときだけ届くこと、子への `activated_event` / `deactivated_event`、条件 Kit を確かめます。約 12 秒。結果は出力ログの `[TEST] ScheduleSystem`。
-- DisplayKit・HudKit の component そのもの（メッシュの切り替え・画面表示）はテストしていません。
-- `_Samples/` に ScheduleSystem の見本はありません。
+## Verifying
+- Test: `schedule_system_test_component` in `_Test/ScheduleSystemTest/`. Just place one entity with this component (the test creates the clock, the schedule and the children at runtime). Do not place another `realtime_clock_component` in the level (with two in the world, which one is used is undefined). No player needed. Checks the `Evaluate` computation (daily / fixed interval / one-shot, day boundaries), `ToWholeSeconds`, the day count / text format (`Format*`) / digit (`GetDigit` / `IsLeadingZero`) helpers, that the clock never goes backward and the debug time jump, that `StateChangedEvent` fires only on change, `activated_event` / `deactivated_event` to the children, and the condition Kit. About 12 s. Results go to the output log as `[TEST] ScheduleSystem`.
+- The DisplayKit and HudKit components themselves (mesh toggling, screen display) are not tested.
+- There is no ScheduleSystem sample in `_Samples/`.
 
-## 移行が要るもの（2026-11-08）
-- `ToDisplaySeconds` → `ToWholeSeconds`。
-- `schedule_text_component.GetRemainingSeconds():int` → `GetRemainingWholeSeconds():int`。
-- `schedule_text_changed_event.RemainingSeconds` → `RemainingWholeSeconds`。
-- `GetTimeField` / `FormatRemaining` の 1 つ目の引数の名前 `RemainingSeconds` → `RemainingWholeSeconds`（位置で渡していれば変更不要）。
-- ToolTip の `ScheduleHudPositionXToolTip` / `ScheduleHudPositionYToolTip` を消した（HUD の位置は WidgetSystem の `WidgetPositionXToolTip` / `WidgetPositionYToolTip` を使う）。設定名 `PositionXRatio` / `PositionYRatio` は WidgetSystem/HudKit と同じだったので変えていない。
-- `schedule_state_changed_event.Sender` → `Schedule`（送り元の項目名を Library 全体でそろえた。`schedule_text_changed_event.Sender : component` は送り手が 2 種類あるのでそのまま）。
-- `schedule_follower`（Kit と FNDeviceSystem の `schedule_sequence_component` が使う）は、入れ子のスケジュールで必ず一番近いものを選ぶように直した（今までは自身に無いとき `FindAncestorComponents` の最初のものを使っていて、並び順が決まっていなかった）。名前・使い方は同じ。
+## Migration notes (2026-11-08)
+- `ToDisplaySeconds` -> `ToWholeSeconds`.
+- `schedule_text_component.GetRemainingSeconds():int` -> `GetRemainingWholeSeconds():int`.
+- `schedule_text_changed_event.RemainingSeconds` -> `RemainingWholeSeconds`.
+- The first parameter of `GetTimeField` / `FormatRemaining` renamed `RemainingSeconds` -> `RemainingWholeSeconds` (no change needed when passed by position).
+- Removed the ToolTips `ScheduleHudPositionXToolTip` / `ScheduleHudPositionYToolTip` (the HUD position uses WidgetSystem's `WidgetPositionXToolTip` / `WidgetPositionYToolTip`). The setting names `PositionXRatio` / `PositionYRatio` were already the same as WidgetSystem/HudKit and are unchanged.
+- `schedule_state_changed_event.Sender` -> `Schedule` (the sender field name was aligned across the Library. `schedule_text_changed_event.Sender : component` stays because it has two kinds of sender).
+- `schedule_follower` (used by the Kits and FNDeviceSystem's `schedule_sequence_component`) now always picks the nearest schedule when nested (previously, when its own entity had none, it used the first of `FindAncestorComponents`, whose order is undefined). Name and usage are unchanged.

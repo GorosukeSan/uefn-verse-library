@@ -4,17 +4,17 @@ using { ConditionSystem }
 using { PlayerSystem }
 using { SceneGraphSystem }
 
-# 役割：参加者が 1 人以上いて、全員が「準備 OK」なら満たす
-# 置き方：エディターで entity に付ける
-# 親：game_transition_component か condition_all / condition_any の entity の直下
-# 前提：区画（または世界）に player_manager_component と player_ready_component が 1 つずつ（開始時と知らせを受けたときに探して、見つけたら覚えておく）
+# Role: satisfied when there is at least one participant and everyone is "ready"
+# Placement: attach to an entity in the editor
+# Parent: directly under the entity of game_transition_component or condition_all / condition_any
+# Requirements: one player_manager_component and one player_ready_component in the zone (or the world) (looked up at start and when a notification arrives; remembered once found)
 all_players_ready_condition_component<public> := class<final_super>(condition_component):
 
     var<private> Manager:?player_manager_component = false
     var<private> Ready:?player_ready_component = false
 
     IsSatisfied<override>()<decides><transacts>:void =
-        # 判定の中では探さない（覚えているものだけを見る）
+        # No lookup inside the check (only what is remembered is used)
         PlayerCount := Manager?.GetPlayerCount()
         PlayerCount > 0
         Ready?.GetReadyCount() = PlayerCount
@@ -38,7 +38,7 @@ all_players_ready_condition_component<public> := class<final_super>(condition_co
         set Ready = false
         (super:)OnEndSimulation()
 
-    # 区画から player_manager_component と player_ready_component を探して覚える（覚えていれば探さない）。OnBeginSimulation と知らせを受けたときに呼ぶ
+    # Finds player_manager_component and player_ready_component in the zone and remembers them (no lookup when already remembered). Called in OnBeginSimulation and when a notification arrives
     Resolve<private>():void =
         set Manager = Entity.ResolveScopedComponent(Manager, player_manager_component)
         set Ready = Entity.ResolveScopedComponent(Ready, player_ready_component)

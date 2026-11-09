@@ -4,25 +4,25 @@ using { ActivationSystem }
 using { SceneGraphSystem }
 using { PlayerSystem.TooltipKit }
 
-# 役割：キャラクターの一瞬の動き（Motion：ジャンプ・着地・しゃがみ・スプリント・倒された・ダメージなど）が起きるたびに、Targets へ起動の合図（activated_event）を送り、player_motion_event を上へ送る
-#   反応（通知・アイテムを配る・付ける物・有効化など）は、Targets の entity に置いた起動を待つ部品が受け持つ（コードを書かずに組み合わせる）
-#   CooldownSeconds のあいだは、同じ人の次の動きを無視する（続けて何度も起きる動きの重複を防ぐ）
-# 置き方：エディターで entity に付ける。ロードアウトのプレハブ（loadout_component の Prefab）の中に置くと持ち主だけを見る。持ち主のいない場所に置くと区画の全員を見る
-# 知らせ：player_motion_event を上へ、MotionEvent に（その人, 動き）
-# 前提：持ち主がいないときは、区画（または世界）に player_manager_component が 1 つ
+# Role: each time a momentary character motion (Motion: jump, landing, crouch, sprint, eliminated, damaged, etc.) happens, sends the activation signal (activated_event) to Targets and sends player_motion_event upward
+#   The reaction (notification, giving items, attachments, enabling, etc.) is handled by activation-awaiting parts placed on the Targets entities (combine without writing code)
+#   During CooldownSeconds, the same player's next motion is ignored (prevents duplicates of motions that repeat in quick succession)
+# Placement: attach to an entity in the editor. Placed inside a loadout prefab (loadout_component's Prefab), it watches only the owner. Placed somewhere without an owner, it watches everyone in the scope
+# Notifies: player_motion_event upward, MotionEvent with (the player, the motion)
+# Requirements: when there is no owner, one player_manager_component in the scope (or world)
 player_motion_trigger_component<public> := class<final_super>(component):
 
-    # 見張る動き。既定 Jumped
+    # The motion to watch. Default Jumped
     @editable:
         ToolTip := PlayerMotionToolTip
         Categories := array{PlayerMotionCategory}
     Motion<public>:player_motion = player_motion.Jumped
-    # 起動の合図を送る entity（その entity と子孫に届く）。空なら、この entity とその子孫へ送る
+    # Entities that receive the activation signal (reaches the entity and its descendants). If empty, sent to this entity and its descendants
     @editable:
         ToolTip := PlayerMotionTargetsToolTip
         Categories := array{PlayerMotionCategory}
     Targets<public>:[]entity = array{}
-    # 同じ人の次の動きを無視する時間（秒）。0 なら無視しない。既定 0
+    # Time (seconds) during which the same player's next motion is ignored. 0 ignores nothing. Default 0
     @editable_number(float):
         ToolTip := PlayerMotionCooldownToolTip
         Categories := array{PlayerMotionCategory}
@@ -32,7 +32,7 @@ player_motion_trigger_component<public> := class<final_super>(component):
 
     MotionEventInternal<private><final>:event(tuple(agent, player_motion)) = event(tuple(agent, player_motion)){}
 
-    # Motion が起きるたびに、（その人, 動き）で届く（Await / Subscribe する。外から Signal はできない）
+    # Delivered with (the player, the motion) each time Motion happens (Await / Subscribe to it; it cannot be Signaled from outside)
     MotionEvent<public><final>:listenable(tuple(agent, player_motion)) = MakeProxyListenable(MotionEventInternal)
 
     Watchers<private>:player_motion_watcher_set = player_motion_watcher_set{}

@@ -6,13 +6,13 @@ using { SpawnSystem.PrefabKit }
 using { MCPSystem }
 using { MCPSystem.TooltipKit }
 
-# 役割：Spawn ツールセット（宛先 "spawn"）。置いてある出し手（SpawnSystem の spawn_prefab_component と spawner_component）でプレハブを出す・消す、動かす・止める
-#   出し手は entity の番号か mcp_name_component の名前で指す（list の "id"）。プレハブは出し手に設定したもの（Verse はプレハブを名前から作れない）
-# 置き方：受け箱と同じ entity に付けるとよい
-# タグ：自分の entity に mcp_controllable_tag
+# Role: Spawn toolset (destination "spawn"). Spawns and despawns prefabs through placed spawners (SpawnSystem's spawn_prefab_component and spawner_component), starts and stops them
+#   A spawner is addressed by entity id or mcp_name_component name (the "id" of list). The prefab is the one set on the spawner (Verse cannot create a prefab from a name)
+# Placement: best attached to the same entity as the inbox
+# Tags: mcp_controllable_tag on its own entity
 mcp_spawn_toolset_component<public> := class<final_super>(component, mcp_controllable):
 
-    # 同じツールセットを複数置くときの名前（空なら "spawn" だけで届く）
+    # Name used when the same toolset is placed more than once (when empty, "spawn" alone reaches it)
     @editable:
         ToolTip := McpToolsetIdToolTip
         Categories := array{McpCategory}
@@ -34,15 +34,15 @@ mcp_spawn_toolset_component<public> := class<final_super>(component, mcp_control
 
     McpTools<override>()<transacts>:[]mcp_tool =
         array:
-            McpTool("list", "出し手の一覧。data に [\{id,name,kind,count,max,running,pos\}]（kind は prefab か spawner）", array{})
-            McpTool("spawn", "spawn_prefab_component の決めた場所に count 個出す。data に出した entity の [\{id\}]", array{McpArg("spawner", "entity", "出し手"), McpOptArg("count", "int", "数（既定 1）")})
-            McpTool("spawn_at", "spawn_prefab_component で好きな位置に 1 つ出す", array{McpArg("spawner", "entity", "出し手"), McpArg("pos", "vector3", "位置（cm）"), McpOptArg("yaw", "float", "向き（度）")})
-            McpTool("despawn", "出し手が出したもの 1 つを消す", array{McpArg("spawner", "entity", "出し手"), McpArg("entity", "entity", "消すもの（spawn の返した id）")})
-            McpTool("despawn_all", "出し手が出したものを全部消す", array{McpArg("spawner", "entity", "出し手")})
-            McpTool("start", "spawner_component を動かす", array{McpArg("spawner", "entity", "出し手")})
-            McpTool("stop", "spawner_component を止める（出したものは消える）", array{McpArg("spawner", "entity", "出し手")})
-            McpTool("refill", "spawner_component を今すぐ 1 回分補充する", array{McpArg("spawner", "entity", "出し手")})
-            McpTool("spawned", "出し手が出しているもの。data に [\{id,pos\}]", array{McpArg("spawner", "entity", "出し手")})
+            McpTool("list", "List of spawners. data: [\{id,name,kind,count,max,running,pos\}] (kind is prefab or spawner)", array{})
+            McpTool("spawn", "Spawns count instances at the places decided by spawn_prefab_component. data: [\{id\}] of the spawned entities", array{McpArg("spawner", "entity", "spawner"), McpOptArg("count", "int", "count (default 1)")})
+            McpTool("spawn_at", "Spawns one instance at an arbitrary position with spawn_prefab_component", array{McpArg("spawner", "entity", "spawner"), McpArg("pos", "vector3", "position (cm)"), McpOptArg("yaw", "float", "yaw (degrees)")})
+            McpTool("despawn", "Removes one entity the spawner spawned", array{McpArg("spawner", "entity", "spawner"), McpArg("entity", "entity", "entity to remove (an id returned by spawn)")})
+            McpTool("despawn_all", "Removes everything the spawner spawned", array{McpArg("spawner", "entity", "spawner")})
+            McpTool("start", "Starts the spawner_component", array{McpArg("spawner", "entity", "spawner")})
+            McpTool("stop", "Stops the spawner_component (spawned instances disappear)", array{McpArg("spawner", "entity", "spawner")})
+            McpTool("refill", "Refills the spawner_component once, right now", array{McpArg("spawner", "entity", "spawner")})
+            McpTool("spawned", "What the spawner currently has out. data: [\{id,pos\}]", array{McpArg("spawner", "entity", "spawner")})
 
     McpHandle<override>(Call:mcp_call):mcp_reply =
         Tool := Call.Tool
@@ -63,7 +63,7 @@ mcp_spawn_toolset_component<public> := class<final_super>(component, mcp_control
             else if (Spawner := Target.GetComponent[spawner_component]):
                 HandleSpawner(Call, Spawner)
             else:
-                McpFail("no_entity", "spawner（spawn_prefab_component か spawner_component の entity）")
+                McpFail("no_entity", "spawner (an entity with spawn_prefab_component or spawner_component)")
         else:
             McpFail("no_entity", "spawner")
 
@@ -81,7 +81,7 @@ mcp_spawn_toolset_component<public> := class<final_super>(component, mcp_control
                 if (E := Spawned?):
                     McpOkData("spawned", McpObject(array{McpField("id", "{Inbox.GetHandle(E)}")}))
                 else:
-                    McpFail("failed", "MaxCount に届いている")
+                    McpFail("failed", "MaxCount reached")
             else:
                 McpBadArg("pos")
         else if (Tool = "despawn"):
@@ -97,7 +97,7 @@ mcp_spawn_toolset_component<public> := class<final_super>(component, mcp_control
         else if (Tool = "spawned"):
             McpOkData("{Spawner.GetSpawnedCount()} spawned", McpArray(for (E : Spawner.GetSpawned()) { McpObject(array{McpField("id", "{Inbox.GetHandle(E)}"), McpField("pos", McpVector(E.GetGlobalTransform().Translation))}) }))
         else:
-            McpFail("unknown_tool", "{Tool}（spawn_prefab_component は spawn / spawn_at / despawn / despawn_all / spawned）")
+            McpFail("unknown_tool", "{Tool} (spawn_prefab_component supports spawn / spawn_at / despawn / despawn_all / spawned)")
 
     HandleSpawner<private>(Call:mcp_call, Spawner:spawner_component):mcp_reply =
         Tool := Call.Tool
@@ -117,4 +117,4 @@ mcp_spawn_toolset_component<public> := class<final_super>(component, mcp_control
         else if (Tool = "spawned"):
             McpOkData("{Spawner.GetSpawnedCount()} spawned", McpArray(for (S : Spawner.GetSpawned()) { McpObject(array{McpField("id", "{Inbox.GetHandle(S.Entity)}"), McpField("pos", McpVector(S.Entity.GetGlobalTransform().Translation))}) }))
         else:
-            McpFail("unknown_tool", "{Tool}（spawner_component は start / stop / refill / despawn_all / spawned）")
+            McpFail("unknown_tool", "{Tool} (spawner_component supports start / stop / refill / despawn_all / spawned)")

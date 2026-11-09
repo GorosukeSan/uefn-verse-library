@@ -1,26 +1,26 @@
 using { /Verse.org/Random }
 
-# GridPath：借りた範囲（grid_box）の中に、マスの角を結ぶ軸に沿った道（線の並び）を作る小道具。ライブラリの中では使っていない（利用者が、線を並べた足場や、mover_path_route_component に渡す地点の列を作るときに使う）。座標はすべてマスの番号で、世界の位置にするには grid_component.CellToPosition か spawn_area.GetMinPosition() + マス × CellSizeCm
+# GridPath: a helper that builds an axis-aligned path (a sequence of lines joining cell corners) inside a reserved region (grid_box). Not used inside the library (you use it to build a platform of lines or the list of points passed to mover_path_route_component). All coordinates are cell indices; to get world positions use grid_component.CellToPosition or spawn_area.GetMinPosition() + cells x CellSizeCm
 
-# 役割：グリッドの線の 1 本（From のマスの角から、軸に沿って To のマスの角まで）
+# Role: one line of the grid (from the corner of the From cell along an axis to the corner of the To cell)
 grid_segment<public> := struct<computes>:
-    # 線の始まりのマス（の角）
+    # The cell (corner) where the line starts
     From<public>:grid_cell = grid_cell{}
-    # 線の終わりのマス（の角）。From と 1 軸だけ違う
+    # The cell (corner) where the line ends. Differs from From on exactly one axis
     To<public>:grid_cell = grid_cell{}
 
-# 役割：道の作り方。SegmentCount は線の本数（進めない 1 本は飛ばすので、できる本数はこれ以下）、MaxStepCells は 1 本の長さの上限（マス）。VerticalChance は上下に曲がる割合（0〜1。小さいほど横に広がる）、BranchChance は、次の 1 本を今の先ではなく、これまでの角のどれかから出す割合（枝分かれ）
+# Role: how the path is built. SegmentCount is the number of lines (a line that cannot advance is skipped, so the result has at most this many), MaxStepCells is the maximum length of one line (cells). VerticalChance is the chance of turning up or down (0 to 1; smaller spreads more horizontally), BranchChance is the chance that the next line starts from one of the previous corners instead of the current end (branching)
 grid_path_style<public> := struct<computes>:
-    # 線の本数（進めない 1 本は飛ばすので、できる本数はこれ以下）。既定 4
+    # Number of lines (a line that cannot advance is skipped, so the result has at most this many). Default 4
     SegmentCount<public>:int = 4
-    # 1 本の長さの上限（マス）。既定 4
+    # Maximum length of one line (cells). Default 4
     MaxStepCells<public>:int = 4
-    # 上下に曲がる割合（0〜1。小さいほど横に広がる）。既定 0.33
+    # Chance of turning up or down (0 to 1; smaller spreads more horizontally). Default 0.33
     VerticalChance<public>:float = 0.33
-    # これまでの角のどれかから枝分かれする割合（0〜1）。既定 0.0（枝分かれしない）
+    # Chance of branching from one of the previous corners (0 to 1). Default 0.0 (no branching)
     BranchChance<public>:float = 0.0
 
-# 役割：Box の中（マスの角を結ぶ線）を、軸に沿って曲がりながら進む道を作る。最初は Box の中のランダムな角から、1 本ごとに今の向きと違う軸を選び（上下は VerticalChance の割合）、Box の外へ出ない長さ（1〜MaxStepCells マス）だけ進む。BranchChance の割合で、これまでの角のどれかから枝分かれする。進めない向きのときは、その 1 本は飛ばす
+# Role: builds a path inside Box (lines joining cell corners) that advances along the axes with turns. Starts at a random corner inside Box; for each line, picks an axis different from the current direction (vertical with the VerticalChance chance) and advances a length (1 to MaxStepCells cells) that stays inside Box. With the BranchChance chance, branches from one of the previous corners. When it cannot advance in the chosen direction, that line is skipped
 MakeGridPath<public>(Box:grid_box, Style:grid_path_style)<transacts>:[]grid_segment =
     Upper := Box.GetEnd()
     var Current:grid_cell = grid_cell:
@@ -46,7 +46,7 @@ MakeGridPath<public>(Box:grid_box, Style:grid_path_style)<transacts>:[]grid_segm
         set Index += 1
     Segments
 
-# Segments を順につないだ角の列（枝分かれしていても、出てきた順に From と To を並べる。同じ角が続くときは 1 つにする）
+# The corners of Segments joined in order (even with branches, lists From and To in the order they appear. Consecutive identical corners are merged into one)
 GetPathCorners<public>(Segments:[]grid_segment)<transacts>:[]grid_cell =
     var Result:[]grid_cell = array{}
     for (Segment : Segments):

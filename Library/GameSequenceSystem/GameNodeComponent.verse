@@ -5,40 +5,40 @@ using { ConditionSystem }
 using { SceneGraphSystem }
 using { GameSequenceSystem.TooltipKit }
 
-# ノードに入った知らせ（起動の合図 activated_event の派生なので、起動を待つ部品はこれで動き出す）
-# 方向：ノードの entity から下へ（SendDown）
-# 送り手：game_node_component。受け手：ノードの配下の部品。消費しない
+# Notification that a node was entered (derived from the activation signal activated_event, so parts waiting for activation start on it)
+# Direction: downward from the node's entity (SendDown)
+# Sender: game_node_component. Receivers: parts under the node. Not consumed
 game_node_entered_event<public> := class(activated_event):
-    # 入ったノード
+    # The node entered
     Node<public>:game_node_component
 
-# ノードから出た理由
+# Why the node was exited
 game_node_exit_reason<public> := enum:
-    # 遷移の条件を満たして、次のノードへ進んだ（または流れを終えた）
+    # A transition's conditions were satisfied and the sequence advanced to the next node (or ended)
     Transitioned
-    # 流れが止まった（Stop・ラウンドの終わり・シミュレーションの終わり）
+    # The sequence stopped (Stop, end of round, end of simulation)
     Stopped
-    # JumpTo / Restart で別のノードへ移った
+    # Moved to another node by JumpTo / Restart
     Jumped
 
-# ノードから出た知らせ（停止の合図 deactivated_event の派生なので、起動を待つ部品はこれで止まる）
-# 方向：ノードの entity から下へ（SendDown）
-# 送り手：game_node_component。受け手：ノードの配下の部品。消費しない
+# Notification that a node was exited (derived from the deactivation signal deactivated_event, so parts waiting for activation stop on it)
+# Direction: downward from the node's entity (SendDown)
+# Sender: game_node_component. Receivers: parts under the node. Not consumed
 game_node_exited_event<public> := class(deactivated_event):
-    # 出たノード
+    # The node exited
     Node<public>:game_node_component
-    # 出た理由
+    # The reason for exiting
     Reason<public>:game_node_exit_reason
 
-# 役割：ゲームの流れの 1 段階。入ると配下へ起動、出ると停止を知らせ、子の遷移が進めるようになるまで待つ
-# 置き方：エディターで entity に付ける
-# 親：game_sequence_component の entity の直下
-# 子：遷移（game_transition_component）を付けた entity。この段階の間だけ動かしたい機能もここに置く
-# 知らせ：game_node_entered_event / game_node_exited_event を下へ送り、EnteredEvent / ExitedEvent に届ける
-# 外から：入る・出るは game_sequence_component が決める（Start / JumpTo / Restart / Stop）
+# Role: one stage of the game flow. On entering, notifies activation to its descendants; on exiting, deactivation. Waits until one of its child transitions can advance
+# Placement: attach to an entity in the editor
+# Parent: directly under the entity of game_sequence_component
+# Children: entities with transitions (game_transition_component). Features that should run only during this stage go here too
+# Notifies: sends game_node_entered_event / game_node_exited_event downward and fires EnteredEvent / ExitedEvent
+# From outside: entering and exiting are decided by game_sequence_component (Start / JumpTo / Restart / Stop)
 game_node_component<public> := class<final_super>(component):
 
-    # game_sequence_component の FirstNode が空のときに、最初のノードを選ぶ順番（小さいほど先）。同じ値が複数あると、どれが選ばれるかは決まらない
+    # The order used to pick the first node when FirstNode of game_sequence_component is empty (smaller first). With several equal values, which one is picked is unspecified
     @editable_number(int):
         ToolTip := NodeOrderToolTip
         Categories := array{GameSequenceCategory}
@@ -50,17 +50,17 @@ game_node_component<public> := class<final_super>(component):
 
     EnteredEventInternal<private><final>:event() = event(){}
 
-    # この段階に入ったときに届く（game_node_entered_event と同じタイミング）（Await / Subscribe する。外から Signal はできない）
+    # Fires when this stage is entered (same timing as game_node_entered_event) (Await / Subscribe; cannot be Signaled from outside)
     EnteredEvent<public><final>:listenable(tuple()) = MakeProxyListenable(EnteredEventInternal)
 
     ExitedEventInternal<private><final>:event(game_node_exit_reason) = event(game_node_exit_reason){}
 
-    # この段階から出たときに、出た理由で届く（game_node_exited_event と同じタイミング）（Await / Subscribe する。外から Signal はできない）
+    # Fires with the reason when this stage is exited (same timing as game_node_exited_event) (Await / Subscribe; cannot be Signaled from outside)
     ExitedEvent<public><final>:listenable(game_node_exit_reason) = MakeProxyListenable(ExitedEventInternal)
 
     TransitionChangedEvent<private>:event() = event(){}
 
-    # この段階に入ってから出るまで（game_node_entered_event から game_node_exited_event まで）成功する
+    # Succeeds from entering this stage until exiting it (from game_node_entered_event to game_node_exited_event)
     IsActive<public>()<decides><reads>:void =
         Active?
 
@@ -69,7 +69,7 @@ game_node_component<public> := class<final_super>(component):
             TransitionChangedEvent.Signal()
         false
 
-    # game_sequence_component から呼ばれる。もう入っていれば何もしない
+    # Called by game_sequence_component. Does nothing when already entered
     Enter<internal>():void =
         if (Active?):
             return
@@ -77,7 +77,7 @@ game_node_component<public> := class<final_super>(component):
         Entity.SendDown(game_node_entered_event{Node := Self})
         EnteredEventInternal.Signal()
 
-    # game_sequence_component から呼ばれる。入っていなければ何もしない
+    # Called by game_sequence_component. Does nothing when not entered
     Exit<internal>(Reason:game_node_exit_reason):void =
         if (not Active?):
             return
@@ -85,14 +85,14 @@ game_node_component<public> := class<final_super>(component):
         Entity.SendDown(game_node_exited_event{Node := Self, Reason := Reason})
         ExitedEventInternal.Signal(Reason)
 
-    # 直下の遷移のどれかが進めるようになるまで待ち、その遷移を返す
+    # Waits until one of the direct child transitions can advance and returns it
     AwaitTransition<internal>()<suspends>:game_transition_component =
         loop:
             if (Transition := FindReadyTransition[]):
                 return Transition
             TransitionChangedEvent.Await()
 
-    # 今進める遷移のうち、Priority が一番大きいもの。同じ Priority で複数進めるときは、どれが選ばれるかは決まらない（Priority を分ける）
+    # Among the transitions that can advance now, the one with the largest Priority. When several with the same Priority can advance, which one is picked is unspecified (give them different Priorities)
     FindReadyTransition<public>()<decides><transacts>:game_transition_component =
         var Best:?game_transition_component = false
         for:

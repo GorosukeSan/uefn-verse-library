@@ -8,7 +8,7 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：テスト用。独自キャラクターに起きたことを数える
+# Role: test helper. Counts what happened to the custom character
 test_character_action_counter<public> := class:
     var<private> Landed:int = 0
 
@@ -18,9 +18,9 @@ test_character_action_counter<public> := class:
 
     GetLandedCount<public>()<transacts>:int = Landed
 
-# 役割：CharacterSystem の体（character_motor_component）の動作確認。プレイヤーの横・3 m 上に持ち主のいない体を作り、重力で落ちて地面に着く（IsGrounded・Landed・着地の速さ）、LockInput を重ねて外す、AxisLock で左右の位置が変わらない、SetVelocity で前へ動く、TeleportTo で移ることを見る
-# テストのレベル：player_manager_component を付けた entity を 1 つと、この component を付けた entity を 1 つ。プレイヤー 1 人が平らな床に立った状態で始める（体はその横の床に落ちる）
-# 結果：出力ログの [TEST] CharacterSystem
+# Role: verification of the CharacterSystem body (character_motor_component). Creates an ownerless body 3 m above and beside the player and checks that it falls under gravity and lands (IsGrounded, Landed, landing speed), that LockInput stacks and releases, that AxisLock keeps the sideways position, that SetVelocity moves it forward and that TeleportTo moves it
+# Test level: one entity with player_manager_component and one entity with this component. Start with one player standing on a flat floor (the body falls onto the floor beside them)
+# Result: [TEST] CharacterSystem in the output log
 character_system_test_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =
@@ -53,10 +53,10 @@ character_system_test_component<public> := class<final_super>(component):
         Results.CheckInt("Landed once", Counter.GetLandedCount(), 1)
         Landed := Pawn.GetGlobalTransform().Translation
         Results.Check("fell below the start", if (Landed.Up < Start.Up - 100.0) then true else false)
-        # 3 m 落ちたので、着地の速さは 100 cm/s よりずっと速い（重力 1960 × FallGravityMultiplier 1.6 なら約 1370 cm/s）
+        # After a 3 m fall the landing speed is far above 100 cm/s (about 1370 cm/s with gravity 1960 x FallGravityMultiplier 1.6)
         Results.Check("landing speed recorded", if (Motor.GetLastLandingSpeed() > 100.0) then true else false)
 
-        # LockInput：別々に止めて、全部外れたときだけ戻る
+        # LockInput: locked independently; input returns only when every lock is released
         FirstLock := Motor.LockInput()
         SecondLock := Motor.LockInput()
         Results.Check("input locked", if (Motor.IsInputLocked[]) then true else false)

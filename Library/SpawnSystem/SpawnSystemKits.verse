@@ -1,7 +1,7 @@
-# SpawnSystem の Kit をライブラリの外（利用者のコード）から使えるように public にする。
-# フォルダから作られるモジュールは既定で internal なので、宣言しないと外から using できない。
+# Make the Kits of SpawnSystem public so they can be used from outside the library (your code).
+# Modules created from folders are internal by default, so they cannot be used with `using` from outside unless declared.
 OriginKit<public> := module {}
-# prefab を出す部品（spawner の factory の prefab_spawn_factory_component、起動や関数で好きな場所・数を出す spawn_prefab_component と出す場所の spawn_point_component）
+# Parts that spawn prefabs (prefab_spawn_factory_component as the spawner's factory, spawn_prefab_component that spawns any number at chosen places on activation or from functions, and spawn_point_component for the places)
 PrefabKit<public> := module {}
-# エディターに出す説明（message）
+# Descriptions shown in the editor (message)
 TooltipKit<public> := module {}

@@ -6,14 +6,14 @@ using { ActivationSystem }
 using { SceneGraphSystem }
 using { MovementSystem.TooltipKit }
 
-# 役割：だれが起こしたかの分かる起動の合図（activated_by_agent_event。ボタン・選択メニュー・ボリュームの入り口など）を受けたら、その人のキャラクターをこの entity の位置（＋OffsetCm）へ移す（ワープ・選んだ場所へ行く）
-#   移すのはキャラクターの entity の位置（当たり判定は見ない）。だれが起こしたか分からない合図では何もしない
-# 置き方：エディターで、行き先の entity に付ける。選択メニューの Targets・インタラクトの Targets などにこの entity を入れる
-# 外から：TeleportAgent(Agent) で直接移す
-# ⚠ 未検証：キャラクターの entity の位置を書き換えたときに、移動の状態（落下中など）がそのまま続くか
+# Role: when an activation signal that knows who triggered it arrives (activated_by_agent_event: button, choice menu, volume entrance, etc.), move that person's character to this entity's position (+ OffsetCm) (warp / go to the chosen place)
+#   It moves the character entity's position (ignores collision). A signal that does not know who triggered it does nothing
+# Placement: in the editor, attach to the destination entity. Put this entity in the Targets of a choice menu, an interact, etc.
+# From outside: TeleportAgent(Agent) moves directly
+# ⚠ Unverified: whether the movement state (falling, etc.) continues as is when the character entity's position is rewritten
 teleport_on_activation_component<public> := class<final_super>(component):
 
-    # この entity の位置からのずらし（cm。キャラクターの原点は体の真ん中なので、床の上なら上に 100 くらい）。既定は上に 100
+    # Offset from this entity's position (cm; the character origin is the middle of the body, so about 100 up when on a floor). Default is 100 up
     @editable:
         ToolTip := TeleportOffsetToolTip
         Categories := array{TeleportCategory}
@@ -24,7 +24,7 @@ teleport_on_activation_component<public> := class<final_super>(component):
             TeleportAgent(Agent)
         false
 
-    # Agent のキャラクターを、この entity の位置（＋OffsetCm）へ移す。キャラクターがいなければ何もしない
+    # Move the Agent's character to this entity's position (+ OffsetCm). Does nothing if there is no character
     TeleportAgent<public>(Agent:agent):void =
         if (Character := Agent.GetFortCharacter[], Body := Character.GetEntity[]):
             Target := Entity.GetGlobalTransform().Translation + OffsetCm

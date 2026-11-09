@@ -4,13 +4,13 @@ using { ConditionSystem }
 using { SceneGraphSystem }
 using { PlayerSystem.TooltipKit }
 
-# 役割：参加人数が MinPlayerCount 以上なら満たす
-# 置き方：エディターで entity に付ける
-# 親：game_transition_component か condition_all / condition_any の entity の直下
-# 前提：区画（または世界）に player_manager_component が 1 つ（開始時と知らせを受けたときに探して、見つけたら覚えておく）
+# Role: satisfied when the number of participants is MinPlayerCount or more
+# Placement: attach to an entity in the editor
+# Parent: directly under the entity of a game_transition_component or condition_all / condition_any
+# Requirements: one player_manager_component in the scope (or world) (looked up at start and when a notification arrives, then remembered)
 player_count_condition_component<public> := class<final_super>(condition_component):
 
-    # この人数以上が参加していれば満たす（1〜100、既定 2）
+    # Satisfied when at least this many players participate (1-100, default 2)
     @editable_number(int):
         ToolTip := MinPlayerCountToolTip
         Categories := array{PlayerCategory}
@@ -21,7 +21,7 @@ player_count_condition_component<public> := class<final_super>(condition_compone
     var<private> Manager:?player_manager_component = false
 
     IsSatisfied<override>()<decides><transacts>:void =
-        # 判定の中では探さない（覚えているものだけを見る）
+        # Do not look up inside the check (only read what is remembered)
         Manager?.GetPlayerCount() >= MinPlayerCount
 
     OnBeginSimulation<override>():void =

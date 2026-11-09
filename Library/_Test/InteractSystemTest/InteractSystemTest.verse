@@ -5,21 +5,21 @@ using { InteractSystem.ConditionKit }
 using { InteractSystem.GateKit }
 using { _Test }
 
-# 役割：InteractSystem の動作確認。interact_gate_component の Open / Close / IsOpen、押したときの InteractedEvent と interacted_event、interacted_condition_component（Trigger で選ぶ形）と Reset を確かめる
-# テストのレベル：
-#   - ボタンの entity：メッシュ + basic_interactable_component + interact_trigger_component + interact_gate_component（OpenOnBegin はオフ）。プレイヤーの近くに置く
-#   - この component を付けた entity を 1 つ置き、Button にボタンの entity を入れる
-# 操作：ログに「interact」と出たら 15 秒以内にボタンを押す（押し終わるまで）。押さなければその項目だけ失敗になる
-# 結果：出力ログの [TEST] InteractSystem
+# Role: verification of InteractSystem. Checks interact_gate_component's Open / Close / IsOpen, InteractedEvent and interacted_event on press, interacted_condition_component (chosen by Trigger) and Reset
+# Test level:
+#   - the button entity: mesh + basic_interactable_component + interact_trigger_component + interact_gate_component (OpenOnBegin off). Place it near the player
+#   - one entity with this component; put the button entity into Button
+# Input: when "interact" appears in the log, press the button within 15 seconds (hold until it completes). If not pressed, only that item fails
+# Result: [TEST] InteractSystem in the output log
 interact_system_test_component<public> := class<final_super>(component):
 
-    # interact_trigger_component と interact_gate_component を付けたボタンの entity
+    # Button entity that carries interact_trigger_component and interact_gate_component
     @editable
     Button<public>:?entity = false
 
     OnSimulate<override>()<suspends>:void =
         Results := test_log{Name := "InteractSystem"}
-        # ゲートが interactable_component に合わせ終わるまで待つ
+        # wait until the gate has finished syncing with the interactable_component
         Sleep(0.5)
         if:
             ButtonEntity := Button?

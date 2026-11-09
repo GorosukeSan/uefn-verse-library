@@ -3,25 +3,25 @@ using { /Verse.org/SpatialMath }
 using { /Verse.org/Random }
 using { MoverSystem }
 
-# 役割：BoxMinCm〜BoxMaxCm（世界の位置、センチメートル）の直方体の中のランダムな点を、次々に行き先にする道のり（終わらない）。MarginCm だけ内側を使う（自分の大きさの半分を入れると、はみ出さない）。行き先は今の位置から MinStepCm 以上先を選ぶ（何回か選んでもだめならそのまま）
-# 置き方：実行時に作る（グリッドの範囲を借りた spawner などが、借りた範囲を BoxMinCm / BoxMaxCm に入れて付ける）
-# 同じ entity：mover_component（ぶつかって跳ね返したいなら Motion = Physics）
+# Role: a route (never ends) whose targets are random points inside the box BoxMinCm-BoxMaxCm (world positions, centimeters). Uses the inside shrunk by MarginCm (pass half of your own size to stay inside). Targets are chosen at least MinStepCm away from the current position (kept as is when several tries fail)
+# Placement: created at runtime (e.g. a spawner that borrowed a grid volume puts the borrowed volume in BoxMinCm / BoxMaxCm and attaches it)
+# Same entity: mover_component (Motion = Physics to bounce on hits)
 mover_box_route_component<public> := class<final_super>(mover_route_component):
 
-    # 直方体の小さい側の角（世界の位置、センチメートル）
+    # Corner of the box on the small side (world position, centimeters)
     BoxMinCm<public>:vector3 = vector3{}
-    # 直方体の大きい側の角（世界の位置、センチメートル）
+    # Corner of the box on the large side (world position, centimeters)
     BoxMaxCm<public>:vector3 = vector3{}
-    # 各面から内側へ空ける幅（センチメートル）。軸の長さより大きいと、その軸は真ん中だけを使う
+    # Inset from each face (centimeters). When larger than the axis length, only the middle of that axis is used
     MarginCm<public>:float = 0.0
-    # 次の行き先を、今の位置から少なくともこれだけ先にする（センチメートル）
+    # The next target is at least this far from the current position (centimeters)
     MinStepCm<public>:float = 100.0
 
     MaxAttempts<private>:int = 8
 
     var Picked<private>:int = 0
 
-    # 選んだ回数（mover_target.Index）を 0 に戻す（mover_component の Restart が呼ぶ）
+    # Reset the pick count (mover_target.Index) to 0 (called by mover_component's Restart)
     Reset<override>():void =
         set Picked = 0
 

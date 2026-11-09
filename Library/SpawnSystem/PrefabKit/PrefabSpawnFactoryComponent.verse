@@ -5,12 +5,12 @@ using { SceneGraphSystem }
 using { SpawnSystem }
 using { SpawnSystem.TooltipKit }
 
-# 役割：spawner が出すものを Prefab にする（大きさ・置き方は spawner の FootprintX/Y/Z・FitToArea・MeshSizeCm）
-# 置き方：エディターで、spawner_component と同じ entity に付ける
-# 同じ entity：spawner_component
+# Role: makes the spawner spawn Prefab (size and placement come from the spawner's FootprintX/Y/Z, FitToArea and MeshSizeCm)
+# Placement: attach in the editor to the same entity as spawner_component
+# Same entity: spawner_component
 prefab_spawn_factory_component<public> := class<final_super>(spawn_factory_component):
 
-    # 出す prefab。既定の entity のままなら、何も無い entity を出す
+    # The prefab to spawn. Left at the default entity, an empty entity is spawned
     @editable:
         ToolTip := SpawnerPrefabToolTip
         Categories := array{SpawnerCategory, SpawnerPrefabCategory}

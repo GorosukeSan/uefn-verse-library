@@ -1,20 +1,20 @@
 using { GridSystem }
 
-# 役割：出し入れする範囲（帯）1 つ。水平は Center ± Half マス、縦は Bottom〜Top マス。Bottom より下に外れたものは消える。新しく出すのは SpawnBottom〜Top のあいだ
+# Role: one spawn / despawn range (band). Horizontally Center +/- Half cells, vertically Bottom to Top cells. Items that fall below Bottom are despawned. New items are spawned between SpawnBottom and Top
 spawn_band<public> := struct<computes>:
-    # 帯の水平の真ん中のマス（X）
+    # Horizontal center cell of the band (X)
     CenterX<public>:int = 0
-    # 帯の水平の真ん中のマス（Y）
+    # Horizontal center cell of the band (Y)
     CenterY<public>:int = 0
-    # X の半分の幅（マス）。CenterX ± HalfX が帯
+    # Half width in X (cells). The band is CenterX +/- HalfX
     HalfX<public>:int = 0
-    # Y の半分の幅（マス）。CenterY ± HalfY が帯
+    # Half width in Y (cells). The band is CenterY +/- HalfY
     HalfY<public>:int = 0
-    # 下限のマス（Z）。これより下に外れたものは消える
+    # Lower limit cell (Z). Items that fall below this are despawned
     Bottom<public>:int = 0
-    # 新しく出す高さの最低のマス（Z）
+    # Lowest cell (Z) at which new items are spawned
     SpawnBottom<public>:int = 0
-    # 上限のマス（Z）
+    # Upper limit cell (Z)
     Top<public>:int = 0
 
 (Band:spawn_band).Contains<internal>(Box:grid_box)<decides><computes>:void =
@@ -46,7 +46,7 @@ spawn_band<public> := struct<computes>:
         SpawnBottom := Min(Band.SpawnBottom, Other.SpawnBottom)
         Top := Max(Band.Top, Other.Top)
 
-# 帯を、近いもの（GapCells マス以内で重なるもの）がなくなるまでまとめる
+# Merges bands until no nearby ones (overlapping within GapCells cells) remain
 MergeBands<internal>(Bands:[]spawn_band, GapCells:int)<transacts>:[]spawn_band =
     var Result:[]spawn_band = Bands
     var Merged:logic = true

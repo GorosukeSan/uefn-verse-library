@@ -1,73 +1,73 @@
 # EnergySystem
 
-能力やアイテムが使う「エネルギー」の量を持つ System です。`energy_component` が量を持ち、減らす・戻すと上へ知らせます。エネルギーを回復する能力（RestoreKit の `energy_restore_ability_component`）もあります。チェックポイントに乗ったら満たすときは CheckpointSystem の EnergyKit（`checkpoint_energy_refill_component`）を使います（EnergySystem はチェックポイントを知りません）。
+A System that holds the amount of "energy" used by abilities and items. `energy_component` holds the amount and notifies upward when it is consumed or restored. There is also an ability that restores energy (RestoreKit's `energy_restore_ability_component`). To refill on a checkpoint, use CheckpointSystem's EnergyKit (`checkpoint_energy_refill_component`) (EnergySystem knows nothing about checkpoints).
 
-## 置き方
+## Placement
 
-| component | 置く場所 | すること |
+| component | Where to place | What it does |
 |---|---|---|
-| `energy_component` | エネルギーを使う能力・アイテムの entity か、その子。ロードアウト・独自キャラクターの根に 1 つ置けば、その中の部品が同じエネルギーを使う。プレイヤーごとに持たせるなら、実行時にプレイヤー（agent の entity）に付ける | 量を持つ（`StartFull` なら満タン、そうでなければ 0 で始まる）。量が変わったら `energy_changed_event` を上へ送る |
-| `energy_restore_ability_component`（RestoreKit） | 能力の entity。付与の仕方は同じ entity に置く component（AbilitySystem / ItemSystem）で選ぶ | 付与された人が `RestoreAction` を押すと、その人のエネルギー（`FindRestoreTarget`）を `RestoreAmount` 回復する。アイテムなら 1 つ減らす |
+| `energy_component` | the entity of the ability or item that uses energy, or a child of it. Place one at the root of a loadout or custom character and every part inside shares the same energy. For per-player energy, attach it at run time to the player (the agent's entity) | holds the amount (starts full with `StartFull`, otherwise at 0). Sends `energy_changed_event` upward when the amount changes |
+| `energy_restore_ability_component` (RestoreKit) | the ability's entity. How it is granted is chosen by a component on the same entity (AbilitySystem / ItemSystem) | when a granted player presses `RestoreAction`, restores `RestoreAmount` to that player's energy (`FindRestoreTarget`). As an item, consumes one |
 
-`energy_restore_ability_component` の付与の仕方：
-- アイテムとして（装備しているあいだ。使うと 1 つ減る） → アイテムの entity に `item_component`・`item_holder_component`・`ability_grant_item_component` と一緒に置く。重ねて持つなら `basic_stackable_component`。
-- 全員に最初から（回数無制限） → `ability_grant_players_component`。連打を防ぐなら `CooldownSeconds` を決める。
-- 条件を満たしているあいだ → `ability_grant_condition_component`（子に条件）。
-- コードから → `Grant` / `Revoke`。
+How to grant `energy_restore_ability_component`:
+- As an item (while equipped; using it consumes one) → place it on the item's entity together with `item_component`, `item_holder_component` and `ability_grant_item_component`. Add `basic_stackable_component` to hold several.
+- To everyone from the start (unlimited uses) → `ability_grant_players_component`. Set `CooldownSeconds` to prevent spamming.
+- While a condition holds → `ability_grant_condition_component` (conditions as children).
+- From code → `Grant` / `Revoke`.
 
-例：エネルギーを使う能力（jetpack・hover は `FindEnergyFor` で探す）と、回復アイテム
+Example: an ability that uses energy (jetpack and hover find it with `FindEnergyFor`) and a restore item
 ```
-ジェットパック（jetpack_ability_component + 付与の component）
-└ 燃料（energy_component）
+Jetpack (jetpack_ability_component + a grant component)
+└ Fuel (energy_component)
 
-回復薬（item_component + item_holder_component + ability_grant_item_component + basic_stackable_component + energy_restore_ability_component）
+Potion (item_component + item_holder_component + ability_grant_item_component + basic_stackable_component + energy_restore_ability_component)
 ```
 
-## 設定（@editable）
-- `energy_component.MaxEnergy : float = 100.0` — 最初の最大量（1〜10000）。`SetMax` で変えたあとの最大は `GetMax` で読む。
-- `energy_component.StartFull : logic = true` — オンなら満タンで始める。オフなら 0 で始める（チェックポイントや回復で満たしてから使うとき）。
-- `energy_restore_ability_component.RestoreAmount : float = 100.0` — 使ったときに回復する量（0〜10000）。
-- `energy_restore_ability_component.CooldownSeconds : float = 0.0` — 回復してから次に使えるまでの秒数（0〜600）。0 ならすぐ使える。
-- `energy_restore_ability_component.ConsumeItemOnUse : logic = true` — オンなら、アイテムに置いたとき回復するたびにアイテムを 1 つ減らす（最後の 1 つなら無くなり、能力も剥奪される）。アイテムでなければ使わない。
-- `energy_restore_ability_component.RestoreAction : input_action(logic) = Character.WeaponPrimary` — 押すと回復する操作（攻撃のボタン）。
-- `energy_restore_ability_component.RestoreMapping : input_mapping = Character.RangedWeaponMapping` — 付与しているあいだ足すキー割り当て。`RestoreAction` を含むものを選ぶ。
-- `energy_restore_ability_component.RemoveMappingOnRevoke : logic = false` — オンなら剥奪したとき（アイテムなら装備を外したとき）に `RestoreMapping` を外す。この能力専用の割り当てのときだけオンにする。
+## Settings (@editable)
+- `energy_component.MaxEnergy : float = 100.0` — the initial maximum (1–10000). After `SetMax`, read the maximum with `GetMax`.
+- `energy_component.StartFull : logic = true` — when on, starts full. When off, starts at 0 (when a checkpoint or a restore fills it before use).
+- `energy_restore_ability_component.RestoreAmount : float = 100.0` — amount restored per use (0–10000).
+- `energy_restore_ability_component.CooldownSeconds : float = 0.0` — seconds after a restore before the next use (0–600). 0 means usable at once.
+- `energy_restore_ability_component.ConsumeItemOnUse : logic = true` — when on and placed on an item, consumes one item per restore (the last one disappears and the ability is revoked). Unused when not an item.
+- `energy_restore_ability_component.RestoreAction : input_action(logic) = Character.WeaponPrimary` — the input that restores when pressed (the attack button).
+- `energy_restore_ability_component.RestoreMapping : input_mapping = Character.RangedWeaponMapping` — the key mapping added while granted. Pick one that contains `RestoreAction`.
+- `energy_restore_ability_component.RemoveMappingOnRevoke : logic = false` — when on, removes `RestoreMapping` when revoked (for an item, when unequipped). Turn it on only for a mapping dedicated to this ability.
 
-## イベント
-- `energy_changed_event`（scene_event、SendUp）: `Energy : energy_component`（割合は `Energy.GetRatio()`）、`Amount : float`（変わったあとの量）、`Delta : float`（前に知らせた量からの差。増えたらプラス）。`energy_component` の entity から上へ（アイテムなら持ち主のプレイヤーまで）。前に知らせた量から変わったときだけ送る。`Consume` / `Restore` / `SetAmount` / `Fill` / `SetMax` ではすぐ、`Spend[]` では同じフレームの物理のあと（`TickEvents.PostPhysics`）に送る。消費しない。
-- `energy_restore_failed_event`（scene_event、SendUp）: `Ability : energy_restore_ability_component`、`Agent : agent`。使ったが回復するものが無かったときに、能力の entity から上へ送る（HUD で「回復するものが無い」と出すなど）。消費しない。
-- listenable（外から Signal はできない）
-  - `energy_component.ChangedEvent : listenable(float)` — 量が変わるたびに、変わったあとの量で届く（`energy_changed_event` と同じタイミング。`Spend[]` のときは物理のあと）。
-  - `energy_restore_ability_component.RestoredEvent : listenable(tuple(agent, energy_component))` — 回復したときに、（使った人, 回復した energy_component）で届く。
-  - `energy_restore_ability_component.FailedEvent : listenable(agent)` — 回復するものが無かったときに、使った人で届く。
+## Events
+- `energy_changed_event` (scene_event, SendUp): `Energy : energy_component` (ratio via `Energy.GetRatio()`), `Amount : float` (the amount after the change), `Delta : float` (difference from the last notified amount; positive when increased). From the `energy_component`'s entity upward (for an item, up to the owning player). Sent only when the amount differs from the last notified one. Sent at once for `Consume` / `Restore` / `SetAmount` / `Fill` / `SetMax`, and after physics in the same frame (`TickEvents.PostPhysics`) for `Spend[]`. Not consumed.
+- `energy_restore_failed_event` (scene_event, SendUp): `Ability : energy_restore_ability_component`, `Agent : agent`. Sent from the ability's entity upward when it was used but there was nothing to restore (e.g. to show "nothing to restore" on the HUD). Not consumed.
+- listenable (cannot be signaled from outside)
+  - `energy_component.ChangedEvent : listenable(float)` — fires with the new amount each time it changes (same timing as `energy_changed_event`; after physics for `Spend[]`).
+  - `energy_restore_ability_component.RestoredEvent : listenable(tuple(agent, energy_component))` — fires on a restore with (the user, the restored energy_component).
+  - `energy_restore_ability_component.FailedEvent : listenable(agent)` — fires with the user when there was nothing to restore.
 
-## 公開 API
+## Public API
 ```verse
 energy_changed_event<public> := class(scene_event):
     Energy<public>:energy_component
-    Amount<public>:float                                   # 変わったあとの量
-    Delta<public>:float                                    # 前に知らせた量からの差（増えたらプラス）
+    Amount<public>:float                                   # the amount after the change
+    Delta<public>:float                                    # difference from the last notified amount (positive when increased)
 
 energy_component<public> := class<final_super>(component):
     MaxEnergy<public>:float
-    StartFull<public>:logic                                # 既定 true。false なら 0 で始まる
-    var<private> CurrentAmount<public>:float               # 今の量（0〜最大）
+    StartFull<public>:logic                                # default true. false starts at 0
+    var<private> CurrentAmount<public>:float               # current amount (0 to max)
     ChangedEvent<public><final>:listenable(float)
-    GetMax<public>()<reads>:float                          # SetMax を呼ぶまでは MaxEnergy
+    GetMax<public>()<reads>:float                          # MaxEnergy until SetMax is called
     IsEmpty<public>()<decides><reads>:void
     IsFull<public>()<decides><reads>:void
-    HasEnough<public>(Amount:float)<decides><reads>:void   # Spend[] が成功するかを、量を変えずに確かめる
-    GetRatio<public>()<reads>:float                        # 0.0〜1.0。最大が 0 なら 0.0
-    Spend<public>(Amount:float)<decides><transacts>:void   # 足りれば減らす。足りない・マイナスなら失敗して何も変えない。if の条件に書ける。知らせは物理のあと
-    Consume<public>(Amount:float):void                     # 足りなくても失敗せず 0 で止まる
-    Restore<public>(Amount:float):void                     # 最大を超える分は捨てる
-    SetAmount<public>(Value:float):void                    # 0〜最大に丸めて量を決める
+    HasEnough<public>(Amount:float)<decides><reads>:void   # checks whether Spend[] would succeed, without changing the amount
+    GetRatio<public>()<reads>:float                        # 0.0 to 1.0. 0.0 when the max is 0
+    Spend<public>(Amount:float)<decides><transacts>:void   # subtracts if enough. Fails and changes nothing if not enough or negative. Usable in an if condition. Notifies after physics
+    Consume<public>(Amount:float):void                     # never fails; stops at 0 when not enough
+    Restore<public>(Amount:float):void                     # the part above the max is discarded
+    SetAmount<public>(Value:float):void                    # sets the amount, clamped to 0..max
     Fill<public>():void
-    SetMax<public>(NewMax:float):void                      # マイナスは 0。今の量が超えていれば丸める
+    SetMax<public>(NewMax:float):void                      # negative becomes 0. Clamps the current amount if above
 
-(InEntity:entity).FindEnergy<public>()<decides><transacts>:energy_component                # 自身か子孫。無ければ失敗
-(InEntity:entity).FindEnergyFor<public>(Agent:agent)<decides><transacts>:energy_component  # FindEnergy、無ければ Agent 自身
-(InEntity:entity).FindEnergyAbove<public>()<decides><transacts>:energy_component           # FindEnergy、無ければ祖先（近い順）
+(InEntity:entity).FindEnergy<public>()<decides><transacts>:energy_component                # self or descendants. Fails if none
+(InEntity:entity).FindEnergyFor<public>(Agent:agent)<decides><transacts>:energy_component  # FindEnergy, else the Agent itself
+(InEntity:entity).FindEnergyAbove<public>()<decides><transacts>:energy_component           # FindEnergy, else the ancestors (nearest first)
 
 # RestoreKit
 energy_restore_failed_event<public> := class(scene_event):
@@ -83,30 +83,30 @@ energy_restore_ability_component<public> := class<final_super>(ability_component
     RemoveMappingOnRevoke<public>:logic
     RestoredEvent<public><final>:listenable(tuple(agent, energy_component))
     FailedEvent<public><final>:listenable(agent)
-    TryRestoreFor<public>(Agent:agent):logic               # 押したときと同じ処理。回復できたら true
+    TryRestoreFor<public>(Agent:agent):logic               # same as pressing the button. true if it restored
     FindRestoreTarget<public>(Agent:agent)<decides><transacts>:energy_component
 ```
 
-## 前提・注意
-- 量は 0〜最大（`GetMax`）に丸めます。`SetMax` をシミュレーション開始前に呼んだときは知らせず、開始時に新しい最大で始まります（`StartFull` なら満タン）。
-- 最初の量（`StartFull` なら最大、そうでなければ 0）は、シミュレーション開始時か、それより前に量を変える関数（`Spend` / `Consume` / `Restore` / `SetAmount` / `Fill`）を最初に呼んだときに決まります。開始前に `SetAmount` で決めた量は、開始時に上書きしません。
-- 足りるときだけ減らすなら `if (Energy.Spend[10.0]):` と書きます（足りなければ失敗し、何も変えない）。量はすぐ変わりますが、知らせる処理（SendUp・Signal）は巻き戻せないので、`energy_changed_event` と `ChangedEvent` は同じフレームの物理のあと（`TickEvents.PostPhysics`）に 1 回だけ送ります。それより前に `Consume` などで量を変えたときは、そのときにまとめて送ります（`Delta` は前に知らせた量からの差）。
-- `FindEnergy` は、自身に無ければ子孫で最初に見つかったものを返します。子孫に複数あるとどれが返るか決まらないので、1 つだけ置きます。
-- `FindEnergyFor`（jetpack・hover が使う）は、能力の entity（とその子孫）の `energy_component` を先に探し、無ければプレイヤー（agent の entity）自身に付いたものを探します（持ち物の中は探さない）。能力の entity に置いたエネルギーは、付与された全員が分け合います。どちらも無ければ失敗し、能力はエネルギーを使わずに動きます。
-- `FindEnergyAbove`（CharacterSystem のダッシュなどが使う）は、自身か子孫に無ければ祖先を近い順に探します。ロードアウト・独自キャラクターの根に 1 つ置くと、その中の部品がみな同じエネルギーを使います。
-- `TryRestoreFor` は、知らせる処理（SendUp・Signal）やアイテムを減らす処理が巻き戻せないので `<decides>` にしていません。確かめるだけなら `FindRestoreTarget[]` を使います。
-- 回復する先（`FindRestoreTarget`）は、持ち物（この entity 以外のアイテム）の `energy_component` のうち満タンでなく割合が一番低いもの、無ければプレイヤー自身の `energy_component`（満タンでなければ）です。すべて満タン・どれも無いなら失敗します。
-- `RemoveMappingOnRevoke` を既定の `RangedWeaponMapping` のままオンにすると、武器の操作も効かなくなります。
-- `energy_restore_ability_component` は AbilitySystem・ItemSystem・InputSystem を使います。`RunFor` の頭で `AwaitPlayerInput` を使い、入力が取れるまで待ちます。プレイヤーでない agent に付与すると動かず、出力ログに `[energy_restore_ability_component] プレイヤーでない agent に付与されました…` と出ます。
+## Requirements, caveats and limits
+- The amount is clamped to 0..max (`GetMax`). Calling `SetMax` before the simulation starts does not notify; the simulation starts with the new maximum (full with `StartFull`).
+- The initial amount (the max with `StartFull`, otherwise 0) is fixed at the start of the simulation, or earlier on the first call of a function that changes the amount (`Spend` / `Consume` / `Restore` / `SetAmount` / `Fill`). An amount set with `SetAmount` before the start is not overwritten at the start.
+- To subtract only when there is enough, write `if (Energy.Spend[10.0]):` (fails and changes nothing when not enough). The amount changes at once, but the notification (SendUp, Signal) cannot be rolled back, so `energy_changed_event` and `ChangedEvent` are sent once after physics in the same frame (`TickEvents.PostPhysics`). If the amount is changed earlier with `Consume` etc., everything is sent together then (`Delta` is the difference from the last notified amount).
+- `FindEnergy` returns the one on the entity itself, or else the first found among the descendants. With several descendants it is unspecified which one is returned, so place only one.
+- `FindEnergyFor` (used by jetpack and hover) looks for an `energy_component` on the ability's entity (and its descendants) first, then on the player (the agent's entity) itself (not inside the inventory). Energy placed on the ability's entity is shared by everyone granted. When neither exists it fails and the ability runs without using energy.
+- `FindEnergyAbove` (used by CharacterSystem's dash etc.) searches the ancestors nearest first when there is none on the entity itself or its descendants. Place one at the root of a loadout or custom character and every part inside uses the same energy.
+- `TryRestoreFor` is not `<decides>` because the notification (SendUp, Signal) and consuming the item cannot be rolled back. To only check, use `FindRestoreTarget[]`.
+- The restore target (`FindRestoreTarget`) is the `energy_component` among the inventory items (items other than this entity) that is not full and has the lowest ratio, or else the player's own `energy_component` (if not full). Fails when all are full or none exists.
+- Turning on `RemoveMappingOnRevoke` with the default `RangedWeaponMapping` also disables the weapon controls.
+- `energy_restore_ability_component` uses AbilitySystem, ItemSystem and InputSystem. `RunFor` starts with `AwaitPlayerInput` and waits until input is available. When granted to a non-player agent it does nothing and the output log shows `[energy_restore_ability_component] granted to a non-player agent...`.
 
-## 確かめ方
-- テスト：`_Test/EnergySystemTest/` の `energy_system_test_component`。`player_manager_component` を付けた entity を 1 つと、`energy_system_test_component` だけを付けた entity を 1 つ置く（`energy_component` や能力はテストが実行時に子として作る）。`energy_component` の増減・丸め・`Spend[]`（失敗したら量が戻ること・知らせが物理のあとに 1 回だけ届くこと）・`SetAmount`・`StartFull`・`SetMax`・知らせ（`ChangedEvent` と `energy_changed_event` の `Amount` / `Delta`）、`FindEnergy` / `FindEnergyFor`、`energy_restore_ability_component` の `TryRestoreFor`・`FailedEvent` / `RestoredEvent`・コードからの `Grant` / `Revoke` を確かめます。プレイヤー（agent の entity）に `energy_component` を一時的に付けて確かめ、終わったら外します。最後にログに「press the fire button」と出たら 20 秒以内に射撃のボタンを押します（押さなければその項目だけ `[FAIL]`）。結果は出力ログの `[TEST] EnergySystem`。
-- 見本（`_Samples/`）は無い。
+## Verifying
+- Test: `energy_system_test_component` in `_Test/EnergySystemTest/`. Place one entity with `player_manager_component` and one with only `energy_system_test_component` (the `energy_component` and the ability are created by the test as children at run time). It checks `energy_component` changes and clamping, `Spend[]` (the amount is rolled back on failure; the notification arrives once after physics), `SetAmount`, `StartFull`, `SetMax`, the notifications (`ChangedEvent` and `energy_changed_event`'s `Amount` / `Delta`), `FindEnergy` / `FindEnergyFor`, and `energy_restore_ability_component`'s `TryRestoreFor`, `FailedEvent` / `RestoredEvent` and `Grant` / `Revoke` from code. It temporarily attaches an `energy_component` to the player (the agent's entity) and removes it afterwards. At the end, when the log says "press the fire button", press the fire button within 20 seconds (otherwise only that item is `[FAIL]`). Results go to the output log as `[TEST] EnergySystem`.
+- There is no sample (`_Samples/`).
 
-## 移行が要るもの（2026-11-08）
-| 旧 | 新 |
+## Migration notes (2026-11-08)
+| Old | New |
 |---|---|
-| `energy_component.TryConsume(Amount):logic` | `Spend[Amount]`（`<decides><transacts>`）。`if (Energy.Spend[X]):` と書く。logic が要るなら `logic{Energy.Spend[X]}`。知らせは同じフレームの物理のあと |
-| `energy_changed_event{Energy}` | `energy_changed_event{Energy; Amount; Delta}`（項目を足しただけ。読む側はそのまま動く。作る側は無い想定） |
-| （無し） | `energy_component.SetAmount(Value)`、`@editable StartFull`（既定 true = 今までどおり満タンで始まる） |
-| `energy_restore_failed_event.Sender` | `energy_restore_failed_event.Ability`（送り元の項目名を Library 全体でそろえた。能力から送るものは `Ability`） |
+| `energy_component.TryConsume(Amount):logic` | `Spend[Amount]` (`<decides><transacts>`). Write `if (Energy.Spend[X]):`. If you need a logic, `logic{Energy.Spend[X]}`. Notifies after physics in the same frame |
+| `energy_changed_event{Energy}` | `energy_changed_event{Energy; Amount; Delta}` (fields added only. Readers keep working. Nobody is expected to construct it) |
+| (none) | `energy_component.SetAmount(Value)`, `@editable StartFull` (default true = starts full as before) |
+| `energy_restore_failed_event.Sender` | `energy_restore_failed_event.Ability` (sender field names unified across the Library; events sent from an ability use `Ability`) |

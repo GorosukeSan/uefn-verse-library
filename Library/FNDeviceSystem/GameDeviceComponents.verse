@@ -4,19 +4,19 @@ using { /Fortnite.com/Devices }
 using { ActivationSystem }
 using { FNDeviceSystem.TooltipKit }
 
-# ゲームの進行で、デバイスでしかできないこと（ゲームの終了・職業とチーム・スコア）を、起動の合図から行う部品。
-# どの部品も、起動の合図を受けたら Recipients（合図を起こした人 / 持ち主 / 全員）に対してデバイスの操作をする。
+# Parts that do, from the activation signal, the game-progress things only devices can do (ending the game, class and team, score).
+# Each part, on the activation signal, operates its device on the Recipients (the agent who caused the signal / the owner / everyone).
 
-# 役割：起動の合図で、ゲーム終了デバイスを Recipients に対して Activate する（勝ち・負けで終える。勝ち負けの設定はデバイス側）
-# 置き方：エディターで entity に付ける（ゴールのボリューム・ゲームの流れの最後のノードなど、合図が届く場所）
+# Role: on the activation signal, Activates the end game device for the Recipients (ends with a win or a loss; the win / loss setting is on the device)
+# Placement: attach to an entity in the editor (wherever the signal arrives: the goal volume, the last node of the game flow, ...)
 device_end_game_component<public> := class<final_super>(component):
 
-    # 終わらせるゲーム終了デバイス
+    # The end game device that ends the game
     @editable:
         ToolTip := DeviceEndGameToolTip
         Categories := array{FNDeviceCategory}
     EndGame<public>:?end_game_device = false
-    # だれに対して終えるか。既定 Activator（合図を起こした人）
+    # Whom to end the game for. Default Activator (the agent who caused the signal)
     @editable:
         ToolTip := DeviceRecipientsToolTip
         Categories := array{FNDeviceCategory}
@@ -28,31 +28,31 @@ device_end_game_component<public> := class<final_super>(component):
                 Device.Activate(Agent)
         false
 
-# 職業・チームをどう変えるか
+# How class and team are changed
 device_class_change<public> := enum:
-    # 職業だけ
+    # Class only
     Class
-    # チームだけ
+    # Team only
     Team
-    # チームと職業
+    # Team and class
     TeamAndClass
 
-# 役割：起動の合図で、職業とチームの選択デバイスを Recipients に使う（職業・チームを変える。どの職業・チームにするかはデバイス側）
-#   ロードアウト（LoadoutSystem）の中に置くと、ロードアウトを付けたときに持ち主の職業も変わる（ロードアウトは付けた次のフレームに起動の合図を受ける。Recipients = Owner）
-# 置き方：エディターで entity に付ける
+# Role: on the activation signal, uses the class and team selector device on the Recipients (changes class / team; which class / team is set on the device)
+#   Placed inside a loadout (LoadoutSystem), the owner's class also changes when the loadout is attached (the loadout receives the activation signal the frame after it is attached. Recipients = Owner)
+# Placement: attach to an entity in the editor
 device_class_component<public> := class<final_super>(component):
 
-    # 使う職業とチームの選択デバイス
+    # The class and team selector device to use
     @editable:
         ToolTip := DeviceClassSelectorToolTip
         Categories := array{FNDeviceCategory}
     Selector<public>:?class_and_team_selector_device = false
-    # 何を変えるか。既定 Class
+    # What to change. Default Class
     @editable:
         ToolTip := DeviceClassChangeToolTip
         Categories := array{FNDeviceCategory}
     Change<public>:device_class_change = device_class_change.Class
-    # だれを変えるか。既定 Owner（持ち主。いなければ合図を起こした人）
+    # Whom to change. Default Owner (the owner; the agent who caused the signal when there is none)
     @editable:
         ToolTip := DeviceRecipientsToolTip
         Categories := array{FNDeviceCategory}
@@ -67,30 +67,30 @@ device_class_component<public> := class<final_super>(component):
                     device_class_change.TeamAndClass => Device.ChangeTeamAndClass(Agent)
         false
 
-# スコアをどう変えるか
+# How the score is changed
 device_score_change<public> := enum:
-    # スコア マネージャーの設定どおりに加点する（Activate）
+    # Award points as configured on the score manager (Activate)
     Award
-    # 1 段上げる（Increment）
+    # One step up (Increment)
     Increment
-    # 1 段下げる（Decrement）
+    # One step down (Decrement)
     Decrement
 
-# 役割：起動の合図で、スコア マネージャー デバイスを Recipients に使う（加点・増減。点数はデバイス側）
-# 置き方：エディターで entity に付ける（コイン・ゴール・倒した数の反応など）
+# Role: on the activation signal, uses the score manager device on the Recipients (award / increment / decrement; the points are set on the device)
+# Placement: attach to an entity in the editor (coins, goals, reactions to eliminations, ...)
 device_score_component<public> := class<final_super>(component):
 
-    # 使うスコア マネージャー デバイス
+    # The score manager device to use
     @editable:
         ToolTip := DeviceScoreManagerToolTip
         Categories := array{FNDeviceCategory}
     ScoreManager<public>:?score_manager_device = false
-    # どう変えるか。既定 Award
+    # How to change it. Default Award
     @editable:
         ToolTip := DeviceScoreChangeToolTip
         Categories := array{FNDeviceCategory}
     Change<public>:device_score_change = device_score_change.Award
-    # だれのスコアを変えるか。既定 Activator
+    # Whose score to change. Default Activator
     @editable:
         ToolTip := DeviceRecipientsToolTip
         Categories := array{FNDeviceCategory}

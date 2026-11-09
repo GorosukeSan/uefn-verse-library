@@ -3,60 +3,60 @@ using { /Verse.org/Simulation }
 using { /Fortnite.com/Characters }
 using { /Fortnite.com/Game }
 
-# キャラクターに起きた一瞬の動き（player_motion_trigger_component が知らせる）
+# A momentary motion of a character (notified by player_motion_trigger_component)
 player_motion<public> := enum:
-    # ジャンプした
+    # Jumped
     Jumped
-    # 地面に降りた（空中から地面へ）
+    # Landed on the ground (from the air to the ground)
     Landed
-    # 地面から離れた（ジャンプ・落下・打ち上げ）
+    # Left the ground (jump, fall, launch)
     LeftGround
-    # しゃがみ始めた
+    # Started crouching
     CrouchStarted
-    # しゃがむのをやめた
+    # Stopped crouching
     CrouchEnded
-    # 走り始めた（スプリント）
+    # Started running (sprint)
     SprintStarted
-    # 走るのをやめた
+    # Stopped running
     SprintEnded
-    # 倒された
+    # Was eliminated
     Eliminated
-    # ダメージを受けた
+    # Took damage
     Damaged
 
-# キャラクターの続いている状態（player_state_trigger_component / player_state_condition_component が見る）
+# A continuing state of a character (looked at by player_state_trigger_component / player_state_condition_component)
 player_motion_state<public> := enum:
-    # 地面にいる
+    # On the ground
     OnGround
-    # 空中にいる
+    # In the air
     InAir
-    # 落ちている
+    # Falling
     Falling
-    # しゃがんでいる
+    # Crouching
     Crouching
-    # 走っている（スプリント）
+    # Running (sprint)
     Sprinting
-    # グライダーで飛んでいる
+    # Gliding with the glider
     Gliding
-    # 水の中にいる
+    # In water
     InWater
-    # 飛んでいる（飛行の状態）
+    # Flying (flight state)
     Flying
-    # ダウンしている（倒れているが脱落していない）
+    # Down (downed but not out)
     Down
 
-# 動きのあった知らせ
-# 方向：player_motion_trigger_component の entity から根へ（SendUp）
-# 送り手：player_motion_trigger_component（Trigger）。受け手：祖先の component（キャラクターの中の部品、利用者の component）。消費しない
+# Notification that a motion happened
+# Direction: from the player_motion_trigger_component's entity to the root (SendUp)
+# Sender: player_motion_trigger_component (Trigger). Receivers: ancestor components (parts inside the character, your components). Not consumed
 player_motion_event<public> := class(scene_event):
-    # 送った部品
+    # The part that sent it
     Trigger<public>:player_motion_trigger_component
-    # 動いた人
+    # The player who moved
     Agent<public>:agent
-    # 起きた動き
+    # The motion that happened
     Motion<public>:player_motion
 
-# 役割：1 人のキャラクターを見張る実行時のクラス（MotionKit / ConditionKit の部品が使う）。毎フレーム Update を呼ぶと、キャラクターが変わったら（リスポーン）購読し直し、地面との出入りを調べ、動きを Notify に渡す
+# Role: runtime class that watches one character (used by the MotionKit / ConditionKit parts). Calling Update every frame resubscribes when the character changed (respawn), checks ground transitions and passes motions to Notify
 player_motion_watcher<internal> := class<internal>:
     Agent<internal>:agent
     Notify<internal>:type{_(:agent, :player_motion):void}
@@ -66,7 +66,7 @@ player_motion_watcher<internal> := class<internal>:
     var<private> Sprinting:logic = false
     var<private> WasOnGround:logic = true
 
-    # キャラクターの変化と、地面との出入りを調べる（TickEvents から毎フレーム呼ぶ）
+    # Check for a changed character and ground transitions (call every frame from TickEvents)
     Update<internal>():void =
         if (C := Agent.GetFortCharacter[]):
             if (not IsWatching[C]):
@@ -84,7 +84,7 @@ player_motion_watcher<internal> := class<internal>:
         Known := Character?
         Known = C
 
-    # Agent の今のキャラクターが State なら成功する。キャラクターがいなければ失敗する
+    # Succeeds if Agent's current character is in State. Fails if there is no character
     IsInState<internal>(State:player_motion_state)<decides><transacts>:void =
         C := Agent.GetFortCharacter[]
         case (State):

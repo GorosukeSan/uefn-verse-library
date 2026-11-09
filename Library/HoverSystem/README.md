@@ -1,47 +1,47 @@
 # HoverSystem
 
-ホバーの能力（AbilitySystem の `ability_component` の派生）です。付与された人が空中で `HoverAction`（既定はジャンプ）を押し続けると、落ちる速さを抑えて浮きます。エネルギー（EnergySystem）があれば使います。回復はこの能力では持たず、チェックポイントに乗ったら満たすなら CheckpointSystem の EnergyKit（`checkpoint_energy_refill_component`）、使って回復するなら EnergySystem の RestoreKit を一緒に置きます（HoverSystem は CheckpointSystem に依存しません）。
+The hover ability (a subclass of AbilitySystem's `ability_component`). While a granted person holds `HoverAction` (default Jump) in the air, their fall speed is capped so they float. If there is energy (EnergySystem) it is used. This ability does not restore energy: to refill when stepping on a checkpoint, place CheckpointSystem's EnergyKit (`checkpoint_energy_refill_component`) alongside; to restore by using something, place EnergySystem's RestoreKit alongside (HoverSystem does not depend on CheckpointSystem).
 
-## 置き方
+## Setup (placement)
 
-| component | 置く場所 | すること |
+| component | Where to place | What it does |
 |---|---|---|
-| `hover_ability_component` | 付与の component（AbilitySystem の GrantKit）と同じ entity。アイテムなら、アイテムの entity | 付与された人が空中で `HoverAction` を押し続けると、落ちる速さを `MaxFallSpeedCmPerSecond` までに抑える。ホバー中はその人に `hovering_tag` を付ける |
+| `hover_ability_component` | The same entity as the grant component (AbilitySystem's GrantKit). For an item, the item's entity | While a granted person holds `HoverAction` in the air, caps their fall speed at `MaxFallSpeedCmPerSecond`. Attaches `hovering_tag` to the person while hovering |
 
-付与の仕方は、同じ entity に置く component で選びます。
-- 全員に最初から／起動しているあいだ → `ability_grant_players_component`（エネルギーをこの entity に置くと全員で分け合う。1 人ずつにするならプレイヤーに付ける）
-- アイテムとして（装備しているあいだ） → `item_component`・`item_holder_component`・`ability_grant_item_component` と一緒に置く（エネルギーはアイテムの entity に）
-- 条件を満たしているあいだ → `ability_grant_condition_component`（子に条件）
-- コードから → `Grant` / `Revoke`
+How it is granted is chosen by the component placed on the same entity.
+- To everyone from the start / while activated -> `ability_grant_players_component` (energy placed on this entity is shared by everyone; attach it to the player to have one per person)
+- As an item (while equipped) -> place together with `item_component`, `item_holder_component` and `ability_grant_item_component` (energy on the item's entity)
+- While a condition holds -> `ability_grant_condition_component` (conditions as children)
+- From code -> `Grant` / `Revoke`
 
-例：「全員がホバーでき、チェックポイントで回復する」
+Example: "everyone can hover, and energy refills at checkpoints"
 ```
-区画（または世界）
-├ プレイヤー管理（player_manager_component）
-├ 足場（checkpoint_component + メッシュ）…
-└ ホバー（hover_ability_component + ability_grant_players_component + energy_component + checkpoint_energy_refill_component）
+Area (or world)
+├ Player management (player_manager_component)
+├ Platform (checkpoint_component + mesh) ...
+└ Hover (hover_ability_component + ability_grant_players_component + energy_component + checkpoint_energy_refill_component)
 ```
-`checkpoint_energy_refill_component`（CheckpointSystem/EnergyKit）は、その entity か子の `energy_component` を、能力を付与された人がチェックポイントに乗るたびに満たします。エネルギーをアイテムやプレイヤーに持たせるときは、区画の中の別の entity に `checkpoint_energy_refill_component` だけを置きます（乗った人とその持ち物のエネルギーを満たす）。
+`checkpoint_energy_refill_component` (CheckpointSystem/EnergyKit) refills the `energy_component` on its entity or a child each time a granted person steps on a checkpoint. When the energy lives on an item or a player, place only `checkpoint_energy_refill_component` on a separate entity inside the area (it refills the energy of the person who stepped on and of their items).
 
-## 設定（@editable）
-- `hover_ability_component.MaxFallSpeedCmPerSecond : float = 100.0` — ホバー中の落ちる速さの上限（センチメートル毎秒。0〜3000）。0 ならその高さで止まる。
-- `hover_ability_component.EnergyPerSecond : float = 20.0` — ホバー中、1 秒に使うエネルギー（0〜1000）。エネルギーが無ければ減らさずにホバーできる。
-- `hover_ability_component.HoverAction : input_action(logic) = Character.Jump` — 空中で押し続けるとホバーする操作。
-- `hover_ability_component.HoverMapping : input_mapping = Character.TraversalMapping` — 付与しているあいだ有効にするキー割り当て。`HoverAction` を含むものを選ぶ。
-- `hover_ability_component.RemoveMappingOnRevoke : logic = false` — 剥奪したときに `HoverMapping` を外す。この能力専用の割り当てのときだけオンにする（`TraversalMapping` のままオンにすると、移動の操作も効かなくなる）。
+## Settings (@editable)
+- `hover_ability_component.MaxFallSpeedCmPerSecond : float = 100.0` — fall speed cap while hovering (centimeters per second, 0–3000). 0 holds the current height.
+- `hover_ability_component.EnergyPerSecond : float = 20.0` — energy used per second while hovering (0–1000). Without energy, hovering consumes nothing.
+- `hover_ability_component.HoverAction : input_action(logic) = Character.Jump` — input held in the air to hover.
+- `hover_ability_component.HoverMapping : input_mapping = Character.TraversalMapping` — key mapping enabled while granted. Choose one that contains `HoverAction`.
+- `hover_ability_component.RemoveMappingOnRevoke : logic = false` — removes `HoverMapping` on revoke. Turn it on only for a mapping dedicated to this ability (turning it on with `TraversalMapping` also disables the movement inputs).
 
-## イベント
-- `hover_changed_event`（scene_event、SendUp）: `Ability : hover_ability_component`、`Agent : agent`、`Active : logic`（true = 始めた、false = やめた）。`hover_ability_component` がホバーを始めた・やめたときに、能力の entity から祖先へ送る（アイテムなら持ち主のプレイヤーまで）。消費しない。
-- `hover_ability_component.HoverChangedEvent : listenable(tuple(agent, logic))` — だれかがホバーを始めた・やめたとき、（その人, true = 始めた / false = やめた）で届く。
-- 付与・剥奪の `GrantedEvent` / `RevokedEvent` は `ability_component` のものです。
-- 受けるもの：scene_event は受けません。
+## Events
+- `hover_changed_event` (scene_event, SendUp): `Ability : hover_ability_component`, `Agent : agent`, `Active : logic` (true = started, false = stopped). Sent from the ability's entity to its ancestors when `hover_ability_component` starts or stops hovering (for an item, up to the owning player). Not consumed.
+- `hover_ability_component.HoverChangedEvent : listenable(tuple(agent, logic))` — delivered as (the person, true = started / false = stopped) when someone starts or stops hovering.
+- The `GrantedEvent` / `RevokedEvent` for grant and revoke belong to `ability_component`.
+- Received: it receives no scene_event.
 
-## タグ
-- `hovering_tag`（`player_state_tag` の派生）：ホバーしているあいだ（空中で、落ちる速さを抑えているあいだ）、その人（agent）に付けます。押すのをやめた・着地した・エネルギーが 0 になった・剥奪されたときに外します。付け外しは `player_tag_holder` を通すので、ほかの部品が付けた `hovering_tag` は消しません。
-- ほかの System は `Agent.HasPlayerTag[hovering_tag]` で確かめます。
-- `controlled_movement_tag`（`swinging_tag`・`jetpack_boosting_tag` などの基底）が付いている人はホバーしません。
+## Tags
+- `hovering_tag` (subclass of `player_state_tag`): attached to the person (agent) while hovering (in the air with the fall speed capped). Removed when the input is released, on landing, when energy reaches 0, or on revoke. Attaching and removing go through `player_tag_holder`, so a `hovering_tag` attached by another part is not removed.
+- Other Systems check with `Agent.HasPlayerTag[hovering_tag]`.
+- A person with `controlled_movement_tag` (the base of `swinging_tag`, `jetpack_boosting_tag`, etc.) does not hover.
 
-## 公開 API
+## Public API
 ```verse
 hovering_tag<public> := class(player_state_tag):
 
@@ -56,26 +56,26 @@ hover_ability_component<public> := class<final_super>(ability_component):
     HoverAction<public>:input_action(logic)
     HoverMapping<public>:input_mapping
     RemoveMappingOnRevoke<public>:logic
-    HoverChangedEvent<public><final>:listenable(tuple(agent, logic))   # （その人, true = 始めた / false = やめた）
-    IsHovering<public>(Agent:agent)<decides><transacts>:void          # 今落ちる速さを抑えているなら成功
-    # Grant / Revoke / RevokeAll / IsGranted / GetGrantedAgents / GrantedEvent / RevokedEvent は ability_component から
+    HoverChangedEvent<public><final>:listenable(tuple(agent, logic))   # (the person, true = started / false = stopped)
+    IsHovering<public>(Agent:agent)<decides><transacts>:void          # succeeds if the fall speed is being capped now
+    # Grant / Revoke / RevokeAll / IsGranted / GetGrantedAgents / GrantedEvent / RevokedEvent come from ability_component
 ```
 
-## 前提・注意
-- 区画（または世界）に `player_manager_component` が要ります（付与の component が使う）。
-- `RunFor` の頭で `AwaitPlayerInput` を使い、入力が取れるまで待ちます。プレイヤーでない agent に付与すると動かず、出力ログに `[hover_ability_component] プレイヤーでない agent に付与されました…` と出ます。
-- エネルギーは `FindEnergyFor`（EnergySystem。この entity か子孫の `energy_component`、無ければプレイヤー（agent）に付いたもの）で探します。0 になるとホバーできませんが、アイテムは無くなりません。
-- エネルギーの回復は持ちません。チェックポイントで満たすなら CheckpointSystem の EnergyKit（`checkpoint_energy_refill_component`）、使って回復するなら EnergySystem の RestoreKit（`energy_restore_ability_component`）を使います。
-- タグを agent に付けることは、PlayerSystem の `PlayerTags.verse` で「⚠ 未検証：agent に付けたタグの付け外し・ContainsTag が実機で動くか」とされています（`_Test/PlayerSystemTest` で確かめる）。
-- 付与の component をプレイヤーの slot の下（ロードアウトの中など）に置くと、持ち主にだけ付与されます（GrantKit の決まり）。この能力そのものの動きは変わりません。
-- 実験的な API は使っていません。
+## Requirements, caveats and limits
+- The area (or world) needs a `player_manager_component` (used by the grant component).
+- `RunFor` starts with `AwaitPlayerInput` and waits until input can be read. Granting to an agent that is not a player does nothing and prints `[hover_ability_component] Granted to an agent that is not a player...` in the output log.
+- Energy is looked up with `FindEnergyFor` (EnergySystem: an `energy_component` on this entity or a descendant, otherwise one attached to the player (agent)). Hovering is impossible at 0, but the item is not lost.
+- It does not restore energy. To refill at checkpoints use CheckpointSystem's EnergyKit (`checkpoint_energy_refill_component`); to restore by using something use EnergySystem's RestoreKit (`energy_restore_ability_component`).
+- Attaching tags to an agent is marked in PlayerSystem's `PlayerTags.verse` as "⚠ Unverified: whether attaching / removing tags on an agent and ContainsTag work in UEFN" (check with `_Test/PlayerSystemTest`).
+- Placing the grant component under a player's slot (inside a loadout, etc.) grants only to the owner (a GrantKit rule). The behavior of this ability itself does not change.
+- No experimental APIs are used.
 
-## 確かめ方
-- テスト：`_Test/HoverSystemTest/` の `hover_system_test_component`。`player_manager_component` を付けた entity を 1 つ置き、テスト用の entity に `hover_system_test_component` だけを付けます（能力とエネルギーはテストが実行時に子として作る）。コードからの `Grant` / `Revoke`、ホバーの知らせ・`IsHovering`・エネルギーの減りを確かめます（チェックポイントでの回復は `_Test/CheckpointSystemTest` で確かめる）。「jump and hold jump in the air」と出たら、30 秒以内にジャンプし、空中でジャンプを 1 秒ほど押し続けて離します。結果は出力ログの `[TEST] HoverSystem`。
-- 見本：`_Samples/AbilitySample/` の `ability_sample_component`。`hover_ability_component` を付けた entity に一緒に付けると、`ToggleAction`（既定 E / RB）で自分への付与を切り替えられます。
+## Verifying
+- Test: `hover_system_test_component` in `_Test/HoverSystemTest/`. Place one entity with `player_manager_component` and attach only `hover_system_test_component` to a test entity (the test creates the ability and energy as children at runtime). It checks `Grant` / `Revoke` from code, the hover notifications, `IsHovering` and the energy drain (refill at checkpoints is checked in `_Test/CheckpointSystemTest`). When "jump and hold jump in the air" appears, jump within 30 seconds, hold jump in the air for about 1 second, then release. Results are in the output log under `[TEST] HoverSystem`.
+- Sample: `ability_sample_component` in `_Samples/AbilitySample/`. Attach it to the entity with `hover_ability_component`, and `ToggleAction` (default E / RB) toggles the grant to yourself.
 
-## 移行が要るもの（2026-11-08）
-| 旧 | 新 |
+## Migration notes (2026-11-08)
+| Old | New |
 |---|---|
-| `hover_ability_component.RefillOnCheckpoint : logic = true`（区画の `checkpoint_presence_component` を購読してエネルギーを満たす） | 削除。ホバーの entity に `checkpoint_energy_refill_component`（CheckpointSystem/EnergyKit）を足す。その entity か子の `energy_component` を、付与された人が乗ったときに満たす（今までと同じ）。エネルギーがアイテム・プレイヤーにあるときは、区画の中の別の entity に置く。エディターで `RefillOnCheckpoint` を変えていたレベルは、その値が消える |
-| `hover_changed_event.Sender` | `hover_changed_event.Ability`（送り元の項目名を Library 全体でそろえた。能力から送るものは `Ability`） |
+| `hover_ability_component.RefillOnCheckpoint : logic = true` (subscribed to the area's `checkpoint_presence_component` and refilled the energy) | Removed. Add `checkpoint_energy_refill_component` (CheckpointSystem/EnergyKit) to the hover entity. It refills the `energy_component` on that entity or a child when a granted person steps on (same as before). When the energy lives on an item or a player, place it on a separate entity inside the area. Levels that changed `RefillOnCheckpoint` in the editor lose that value |
+| `hover_changed_event.Sender` | `hover_changed_event.Ability` (the sender field name was unified across the Library: events sent from an ability use `Ability`) |

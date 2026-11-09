@@ -1,31 +1,31 @@
 # GridSystem
 
-世界をマス（1 辺 `CellSizeCm` センチメートルの立方体）に分け、直方体の範囲の「借用」を管理する System です。出すもの（キューブ・線・チェックポイントなど）は、置く前にここで範囲を借り、借りた範囲の中だけを使うので、互いに重なりません。SpawnSystem の `spawner_component`（出す範囲を借りる）と `players_origin_component`（マスの大きさを読む）が使います。CheckpointSystem の `checkpoint_factory_component` は spawner と同じ entity に置き、借りた範囲の大きさをチェックポイントの大きさにします。
+A System that divides the world into cells (cubes with sides of `CellSizeCm` centimeters) and manages "reservations" of box-shaped regions. Things that get spawned (cubes, lines, checkpoints, etc.) reserve a region here before being placed and use only the inside of the reserved region, so they never overlap each other. Used by SpawnSystem's `spawner_component` (reserves the spawn region) and `players_origin_component` (reads the cell size). CheckpointSystem's `checkpoint_factory_component` is placed on the same entity as the spawner and uses the size of the reserved region as the checkpoint size.
 
-## 置き方
+## Placement
 
-| component | 置く場所 | すること |
+| component | Where to place | What it does |
 |---|---|---|
-| `grid_component` | 区画（`game_scope_component`）に 1 つ（区画が無ければ世界に 1 つ）。マスの 0 番はこの entity の位置 | 位置とマスの変換、直方体の範囲の借用と返却を管理する |
+| `grid_component` | one per scope (`game_scope_component`) (one in the world without a scope). Cell 0 is at this entity's position | converts between positions and cells, and manages reserving and releasing box-shaped regions |
 
-例：
+Example:
 ```
-区画（game_scope_component）
-├ グリッド（grid_component、CellSizeCm = 250）
-└ 出すもの（spawner_component + …）
+Scope (game_scope_component)
+├ Grid (grid_component, CellSizeCm = 250)
+└ Spawned things (spawner_component + ...)
 ```
-使う側は `FindGrid`（区画の中を探す）で見つけて覚えておきます。
+Users find it with `FindGrid` (searches the scope) and remember it.
 
-## 設定（@editable）
-- `grid_component.CellSizeCm : float = 250.0` — 1 マスの 1 辺の長さ（センチメートル。10〜5000）。
+## Settings (@editable)
+- `grid_component.CellSizeCm : float = 250.0` — side length of one cell (centimeters, 10–5000).
 
-## イベント
-この System は scene_event を送りません。
-- `grid_component.ReleasedEvent : listenable(grid_reservation)` — 借用が返されたとき（`Release`・`ReleaseAll` のどちらでも）、返された借用で届く。
+## Events
+This System sends no scene_event.
+- `grid_component.ReleasedEvent : listenable(grid_reservation)` — fires with the released reservation when one is released (by either `Release` or `ReleaseAll`).
 
-## 公開 API
+## Public API
 ```verse
-# マスと範囲（座標はマスの番号）
+# Cells and boxes (coordinates are cell indices)
 grid_cell<public> := struct<computes>:
     X<public>:int       # Forward
     Y<public>:int       # Left
@@ -34,41 +34,41 @@ grid_cell<public> := struct<computes>:
 
 grid_box<public> := struct<computes>:
     Start<public>:grid_cell
-    Size<public>:grid_cell                                         # 各軸 1 以上
-(Box:grid_box).GetEnd<public>()<computes>:grid_cell                  # Start + Size（このマスは範囲に入らない）
-(Box:grid_box).Overlaps<public>(Other:grid_box)<decides><computes>:void   # 面で接しているだけなら失敗
-(Box:grid_box).Expand<public>(Margin:int)<computes>:grid_box        # 各軸の両側に Margin マス広げる
-(Box:grid_box).IsValid<public>()<decides><computes>:void            # Size がどれも 1 以上なら成功
+    Size<public>:grid_cell                                         # at least 1 on each axis
+(Box:grid_box).GetEnd<public>()<computes>:grid_cell                  # Start + Size (this cell is not inside the box)
+(Box:grid_box).Overlaps<public>(Other:grid_box)<decides><computes>:void   # fails if they only touch at a face
+(Box:grid_box).Expand<public>(Margin:int)<computes>:grid_box        # grows by Margin cells on both sides of each axis
+(Box:grid_box).IsValid<public>()<decides><computes>:void            # succeeds if every Size is at least 1
 (Box:grid_box).GetDistanceSquared<public>(Cell:grid_cell)<computes>:int
-MakeGridBox<public>(Start:grid_cell, Size:grid_cell)<computes>:grid_box   # Size の各軸を 1 以上に丸める
+MakeGridBox<public>(Start:grid_cell, Size:grid_cell)<computes>:grid_box   # clamps each axis of Size to at least 1
 
-# グリッドと借用
+# Grid and reservations
 grid_component<public> := class<final_super>(component):
     CellSizeCm<public>:float
     ReleasedEvent<public><final>:listenable(grid_reservation)
-    GetOrigin<public>()<transacts>:vector3                         # マスの 0 番の角（この entity の位置）
+    GetOrigin<public>()<transacts>:vector3                         # corner of cell 0 (this entity's position)
     ToCell<public>(Position:vector3)<transacts>:grid_cell
-    CellToPosition<public>(Cell:grid_cell)<transacts>:vector3      # マスの始まりの角（真ん中ではない）
+    CellToPosition<public>(Cell:grid_cell)<transacts>:vector3      # the cell's starting corner (not the center)
     IsFree<public>(Box:grid_box)<decides><transacts>:void
-    TryReserve<public>(Box:grid_box)<transacts>:?grid_reservation  # 重なる・大きさ 0 以下なら false
+    TryReserve<public>(Box:grid_box)<transacts>:?grid_reservation  # false if overlapping or a size is 0 or less
     GetReservationCount<public>()<reads>:int
-    GetReservations<public>()<reads>:[]grid_reservation            # 借りた順
+    GetReservations<public>()<reads>:[]grid_reservation            # in reservation order
     ReleaseAll<public>():void
 
-grid_reservation<public> := class<unique><internal>:              # TryReserve が作る
+grid_reservation<public> := class<unique><internal>:              # created by TryReserve
     Grid<public>:grid_component
     Box<public>:grid_box
     var<private> Released<public>:logic
-    Release<public>():void                                         # 2 回目以降は何もしない
+    Release<public>():void                                         # does nothing from the second call on
     IsHeld<public>()<decides><reads>:void
     GetMinPosition<public>()<transacts>:vector3
     GetMaxPosition<public>()<transacts>:vector3
     GetCenter<public>()<transacts>:vector3
-    GetSize<public>()<transacts>:vector3                           # センチメートル
+    GetSize<public>()<transacts>:vector3                           # centimeters
 
-(InEntity:entity).FindGrid<public>()<decides><transacts>:grid_component   # 区画（無ければ世界）の grid_component
+(InEntity:entity).FindGrid<public>()<decides><transacts>:grid_component   # the grid_component of the scope (or the world)
 
-# GridPath（範囲の中に軸に沿った道を作る小道具）
+# GridPath (a helper that builds an axis-aligned path inside a box)
 grid_segment<public> := struct<computes>:
     From<public>:grid_cell
     To<public>:grid_cell
@@ -83,15 +83,15 @@ MakeGridPath<public>(Box:grid_box, Style:grid_path_style)<transacts>:[]grid_segm
 GetPathCorners<public>(Segments:[]grid_segment)<transacts>:[]grid_cell
 ```
 
-## 前提・注意
-- マスの 0 番はこの entity の位置です。向きは使いません。原点より負の側のマスも切り捨て（Floor）で数えます。
-- `grid_component` は区画に 1 つだけ置く前提です。複数あると `FindGrid` でどれが返るかは決まりません。`FindGrid` は区画の中を探すので、毎フレーム・毎回は呼ばず、結果を覚えておきます。InEntity がまだ世界に入っていないと失敗します。
-- `TryReserve` は借りる副作用があるので、呼んだ側の失敗で巻き戻らないよう `<decides>` ではなく option を返します。
-- `Expand` に負の `Margin` を渡すと `Size` が 0 以下になることがあります（丸めません）。`IsValid` で確かめます。`grid_component` はそういう範囲を借りません。
-- `ReleaseAll` は借りた側（spawner が出したものなど）を消しません。そのまま残すと、返した範囲にほかのものが重なって置かれることがあります。
-- GridPath はライブラリの中では使っていません（線を並べた足場や、`mover_path_route_component` に渡す地点の列を作るときに使います）。座標はすべてマスの番号なので、世界の位置にするには `grid_component.CellToPosition`（SpawnSystem の `spawn_area` なら `GetMinPosition()` ＋ マス × `CellSizeCm`）を使います。
-- この System のコードには `⚠ 未検証` の印はなく、`@experimental` の API も使っていません。
+## Requirements, caveats and limits
+- Cell 0 is at this entity's position. Rotation is not used. Cells on the negative side of the origin are also counted with truncation (Floor).
+- Only one `grid_component` per scope is assumed. With several, it is unspecified which one `FindGrid` returns. `FindGrid` searches the scope, so do not call it every frame or every time; remember the result. It fails while InEntity is not yet in the world.
+- `TryReserve` has the side effect of reserving, so it returns an option instead of being `<decides>`, so that a failure in the caller does not roll it back.
+- Passing a negative `Margin` to `Expand` can make `Size` 0 or less (it is not clamped). Check with `IsValid`. `grid_component` never reserves such a box.
+- `ReleaseAll` does not remove the holders (things spawned by a spawner, etc.). If they stay, other things may be placed overlapping the released region.
+- GridPath is not used inside the library (use it to build a platform of lines or the list of points passed to `mover_path_route_component`). All coordinates are cell indices; to get world positions use `grid_component.CellToPosition` (for SpawnSystem's `spawn_area`, `GetMinPosition()` + cells x `CellSizeCm`).
+- The code of this System has no `⚠ Unverified` marks and uses no `@experimental` API.
 
-## 確かめ方
-- テスト：`_Test/GridSystemTest/` の `grid_system_test_component`。このテストの component を、どこかの entity に付けるだけ（グリッドはテストが自分の子に 1 マス 100 センチメートルで作る。レベルのグリッドは使わない）。`grid_box` の計算（重なり・広げる・大きさの丸め・距離）、位置とマスの変換、借りる・返す・全部返す・返した知らせ、GridPath の道が範囲の中で軸に沿っていることを確かめます。すぐ終わります（1 秒ほど）。結果は出力ログの `[TEST] GridSystem`。
-- `_Samples/` に GridSystem の見本はありません。
+## Verifying
+- Test: `grid_system_test_component` in `_Test/GridSystemTest/`. Just attach this test component to any entity (the test creates its own grid as a child with 100-centimeter cells; the level's grid is not used). It checks the `grid_box` math (overlap, expand, size clamping, distance), position/cell conversion, reserve / release / release all / the release notification, and that GridPath paths are axis-aligned and inside the box. It finishes right away (about 1 second). Results go to the output log as `[TEST] GridSystem`.
+- There is no GridSystem sample in `_Samples/`.

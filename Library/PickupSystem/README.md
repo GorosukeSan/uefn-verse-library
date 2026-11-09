@@ -1,93 +1,96 @@
 # PickupSystem
 
-拾える物（オーブ）と、拾った人に付く「効果」の System です。オーブ（`pickup_component`）は触れた人に**効果のプレハブ**を作って与えるだけで、効果の中身は知りません。効果のプレハブは、根の「効果の土台」（`pickup_effect_component`：持ち主・寿命・重ねがけ）に、**起動の合図で動く部品を重ねるだけ**で作ります。コードを書かずに新しい効果を作れます（バフ・能力の付与・ステージへの影響・ほかの System の部品の組み合わせ）。拾ったことと続いている効果は、HudKit の `pickup_effect_hud_component` が持ち主の画面に出します（名前・説明・色は効果のプレハブの根の `card_info_component`）。
+A System for pickups (orbs) and the "effects" they attach to the player who picks them up. An orb (`pickup_component`) only creates an **effect prefab** for the agent who touches it and gives it to them; it knows nothing about the effect's contents. An effect prefab is built from the "effect base" on its root (`pickup_effect_component`: owner, lifetime, stacking) **plus parts driven by the activate signal, stacked on top**. New effects can be made without writing code (buffs, ability grants, stage effects, combinations of other Systems' parts). The pickup and the ongoing effects are shown on the owner's screen by the HudKit's `pickup_effect_hud_component` (on pickup "Got {name}!" and the description; while ongoing, slots at the bottom center of the screen. Name, description, color and image come from the `card_info_component` on the root of the effect prefab).
 
-## 置き方
+## Setup (placement)
 
-| component | 置く場所 | すること |
+| component | Where | What it does |
 |---|---|---|
-| `pickup_component` | 拾える物の entity（見た目のメッシュ・触れたことを決める部品と同じ entity） | 触れた人に `Effect` のプレハブを作って与える（その人の slot の下）。見た目を消し、`RespawnSeconds` 秒で戻す |
-| `pickup_filter_component` の派生 | `pickup_component` と同じ entity（1 つまで） | 拾える人をコードの条件で絞る（中身は `CanPick` だけ） |
-| `pickup_effect_component` | 効果のプレハブの根 | 作られた次のフレームに、持ち主が起こした起動の合図を自分と子孫へ送り、`DurationSeconds` 秒で停止の合図を送って自分（プレハブ）を消す。同じ効果の重ねがけ（`StackMode`）。持ち主に `pickup_effect_tag` |
-| 効果の中身（起動の合図で動く部品） | 効果のプレハブの根か子 | 起動の合図で効き、停止の合図か `OnEndSimulation` で元に戻す。持ち主は `FindOwningPlayer` か合図の Agent |
-| `pickup_stage_signal_component`（StageKit） | 効果のプレハブの根か子 | 範囲（拾った物の最上位の entity・区画・世界）の、`Group` が同じ相手へ起動・停止の合図を送り、効果の終わりで元に戻す |
-| `card_info_component`（WidgetSystem の CardKit） | 効果のプレハブの根 | 効果の見せ方（`Title`・`Description`・`Badge`・`Thumbnail`・`AccentColor`）。HudKit の HUD が読む（無ければ名前 = `EffectId`）。見せ方の持ち主はここだけ |
-| `pickup_effect_hud_component`（HudKit） | 持ち主の slot の下（ロードアウトのプレハブ・独自キャラクターの体）。slot の祖先に置くと全員にそれぞれの効果を出す | 拾ったとき：画面の上の方に名前・説明・色の帯の板をポップして出し、消す（続けて拾えば順に、同じ効果なら弾ませる）。続いているあいだ：左に 1 行ずつ、色の四角・名前・重なった数・残り秒・残り時間の棒（毎フレーム縮む）。Instant と短い効果は板だけ |
-| `pickup_stage_target_component`（StageKit） | 合図で動かしたい entity（隠れた足場・ハザード・仕掛け） | `Group` が同じ合図を受けたら、自分の entity と子孫へ起動・停止の合図を送る（重なった合図は数えて、全部終わってから戻す）。`pickup_stage_target_tag` を付ける |
+| `pickup_component` | Pickup entity (same entity as the look mesh and the parts that detect touching) | Creates the `Effect` prefab for the agent who touches it and gives it to them (under that agent's slot). Hides the look and brings it back after `RespawnSeconds` |
+| `pickup_filter_component` subclass | Same entity as `pickup_component` (at most one) | Restricts who can pick up with a condition in code (the only member is `CanPick`) |
+| `pickup_effect_component` | Root of the effect prefab | On the frame after creation, sends an activate signal raised by the owner to itself and its descendants, and after `DurationSeconds` sends the deactivate signal and removes itself (the prefab). Stacking of the same effect (`StackMode`). `pickup_effect_tag` on the owner |
+| Effect contents (parts driven by the activate signal) | Root or children of the effect prefab | Take effect on the activate signal and revert on the deactivate signal or `OnEndSimulation`. The owner is `FindOwningPlayer` or the signal's Agent |
+| `pickup_stage_signal_component` (StageKit) | Root or children of the effect prefab | Sends activate / deactivate signals to targets with the same `Group` within a scope (the picked-up object's top-level entity, its scope, or the world) and reverts when the effect ends |
+| `card_info_component` (WidgetSystem's CardKit) | Root of the effect prefab | The effect's look (`Title`, `Description`, `Badge`, `Thumbnail`, `AccentColor`). Read by the HudKit HUD (without it, name = `EffectId`). This is the only owner of the look |
+| `pickup_effect_hud_component` (HudKit) | Under the owner's slot (loadout prefab, custom character body). Placed on an ancestor of the slots it shows everyone their own effects | On pickup: pops two lines above the slots ("Got {name}!" (the name in AccentColor) and the description) and fades them out (consecutive pickups in order; the same effect pulses). While ongoing: a row of square slots at the bottom center of the screen (border in AccentColor, a translucent black background that shrinks downward with the remaining time, image from Thumbnail (or a colored square with the first letter of the name), "x2" when stacked, blinking when little time is left). Instant and short effects get the toast only |
+| `pickup_stage_target_component` (StageKit) | Entity to drive by signal (hidden platform, hazard, mechanism) | On a signal with the same `Group`, sends the activate / deactivate signal to its own entity and descendants (overlapping signals are counted; reverts once all have ended). Adds `pickup_stage_target_tag` |
 
-効果の中身に使える Library の部品（どれも起動の合図で動き、持ち主のいる場所では持ち主だけに効く）:
-- CharacterSystem / BuffKit：`character_buff_component`（速さ・ジャンプ・重力の倍率）、`character_move_grant_component`（空中ジャンプの回数・ダッシュの許可）。独自キャラクターの体に効く
-- WidgetSystem：`text_hud_component` などの widget（効果のあいだだけ、持ち主の画面に出す。効果の名前を出すだけなら、根に `card_info_component` を置いて HudKit の HUD に任せる）
-- AbilitySystem：能力（`ability_component` の派生）＋ `ability_grant_players_component`（`GrantOnBegin = false`。効果のあいだだけ持ち主に付与）
-- ActivationSystem：`enable_on_activation_component`、SpawnSystem：`spawn_prefab_component`（拾った場所に物を出す。効果の entity の位置は拾った物の位置）など
+Library parts usable as effect contents (all driven by the activate signal; where there is an owner they affect only the owner):
+- CharacterSystem / BuffKit: `character_buff_component` (speed, jump and gravity multipliers), `character_move_grant_component` (air jump count, dash permission). Affect the custom character body
+- WidgetSystem: widgets such as `text_hud_component` (shown on the owner's screen only while the effect lasts. To show only the effect name, put a `card_info_component` on the root and leave it to the HudKit HUD)
+- AbilitySystem: an ability (`ability_component` subclass) + `ability_grant_players_component` (`GrantOnBegin = false`; granted to the owner only while the effect lasts)
+- ActivationSystem: `enable_on_activation_component`; SpawnSystem: `spawn_prefab_component` (spawns something at the pickup location; the effect entity is positioned at the picked-up object), etc.
 
-例：「速さ 1.5 倍を 8 秒、画面に名前を出す」効果と、それを配るオーブ
+Example: a "speed x1.5 for 8 seconds, show the name on screen" effect and the orb that hands it out
 ```
-効果のプレハブ PF_Effect_SpeedUp
-└ 根   pickup_effect_component（DurationSeconds = 8、EffectId = "SpeedUp"、StackMode = Extend）
-       character_buff_component（CharacterSystem/BuffKit、SpeedMultiplier = 1.5）
-       card_info_component（WidgetSystem/CardKit、Title = "スピードアップ"、Description = "8 秒間、走る速さが 1.5 倍"、AccentColor = 橙）
+Effect prefab PF_Effect_SpeedUp
+└ root pickup_effect_component (DurationSeconds = 8, EffectId = "SpeedUp", StackMode = Extend)
+       character_buff_component (CharacterSystem/BuffKit, SpeedMultiplier = 1.5)
+       card_info_component (WidgetSystem/CardKit, Title = "Speed Up", Description = "Run 1.5x faster for 8 seconds", AccentColor = orange)
 
-ロードアウトのプレハブ（持ち主の slot の下）
-└ 体など pickup_effect_hud_component（HudKit。拾ったときの板と、続いている効果の一覧を持ち主に出す。効果ごとには置かない）
+Loadout prefab (under the owner's slot)
+└ body etc.  pickup_effect_hud_component (HudKit. Shows the pickup toast and the slots of ongoing effects to the owner. Not placed per effect)
 
-オーブ（レベル）
-└ Orb  メッシュ（当たり判定なし）, character_surface_component（独自キャラクターが触れる）
-       （Fortnite のキャラクターなら player_volume_component（VolumeSystem））,
-       pickup_component（Effect = PF_Effect_SpeedUp、RespawnSeconds = 10）
+Orb (level)
+└ Orb  mesh (no collision), character_surface_component (touched by the custom character)
+       (for the Fortnite character, player_volume_component (VolumeSystem)),
+       pickup_component (Effect = PF_Effect_SpeedUp, RespawnSeconds = 10)
 ```
-「そのマップの隠れた足場を 10 秒出す」なら、効果の根に `pickup_stage_signal_component`（`Group = "reveal"`、`Signal = Activate`）を置き、足場に `pickup_stage_target_component`（`Group = "reveal"`）と、起動の合図で出る部品（`enable_on_activation_component` やゲームの部品）を置きます。
+For "reveal that map's hidden platforms for 10 seconds", put a `pickup_stage_signal_component` (`Group = "reveal"`, `Signal = Activate`) on the effect root, and on the platforms a `pickup_stage_target_component` (`Group = "reveal"`) plus a part that appears on the activate signal (`enable_on_activation_component` or a game part).
 
-## 新しい効果を作る手順（コードなし）
-1. コンテンツブラウザでプレハブを作り、根の entity に `pickup_effect_component` を付ける（`DurationSeconds`、同じ効果どうしの扱い `EffectId` / `StackMode`、1 回きりなら `Instant`）。
-2. 根か子に、効果の中身の部品を重ねる（上の一覧。起動の合図で動く部品ならどれでもよい）。同じ型の部品を 2 つ使うなら子の entity に分ける。
-3. 画面に名前を出すなら、根に `card_info_component`（`Title`・`Description`・`AccentColor`。`Thumbnail` と `Badge` は任意）を置き、持ち主の slot の下（ロードアウトなど）に `pickup_effect_hud_component`（HudKit）を 1 つ置く（効果ごとには置かない）。
-4. オーブの `pickup_component.Effect` にプレハブを選ぶ。
+## Making a new effect (no code)
+1. Create a prefab in the content browser and attach `pickup_effect_component` to the root entity (`DurationSeconds`, how same effects are handled with `EffectId` / `StackMode`, `Instant` for one-shot effects).
+2. Stack the effect's parts on the root or children (see the list above; any part driven by the activate signal works). To use two parts of the same type, split them onto child entities.
+3. To show the name on screen, put a `card_info_component` (`Title`, `Description`, `AccentColor`; `Thumbnail` and `Badge` are optional) on the root, and one `pickup_effect_hud_component` (HudKit) under the owner's slot (a loadout etc.) (not per effect).
+4. Select the prefab in the orb's `pickup_component.Effect`.
 
-## 設定（@editable）
+## Settings (@editable)
 `pickup_component`
-- `Effect : concrete_subtype(entity) = entity` — 与える効果のプレハブ（根に `pickup_effect_component`）。根に無ければ出力ログに出して既定（10 秒）の土台を足す。
-- `RespawnSeconds : float = 10.0` — 拾われてから戻るまで（0〜3600）。0 なら戻さない（`Restore`・起動の合図・ゲームのやり直しで戻す）。
-- `Visual : concrete_subtype(entity) = entity` — 見た目のプレハブ。開始時にこの entity の子に作り、拾われたら一緒に消す。既定のままなら何も足さない（この entity のメッシュを差し替えてもよい）。
-- `RequireGroupMember : logic = false` — オンなら祖先の一番近い `player_group_component`（PlayerSystem）の組の人だけ。
-- `ActiveOnBegin : logic = true` — オフなら起動の合図まで隠す（合図で出るオーブ）。
-- `DisplayName : string = ""` — 表示名（ログ・利用者の HUD 用）。
+- `Effect : concrete_subtype(entity) = entity` — the effect prefab to give (`pickup_effect_component` on the root). If the root has none, logs to the output log and adds a default base (10 s).
+- `RespawnSeconds : float = 10.0` — time until it returns after being picked up (0-3600). 0 means it does not return (`Restore`, the activate signal or a game reset brings it back).
+- `Visual : concrete_subtype(entity) = entity` — look prefab. Created as a child of this entity at start and removed together on pickup. Leaving the default adds nothing (you may also replace this entity's mesh).
+- `RequireGroupMember : logic = false` — when on, only members of the nearest ancestor `player_group_component` (PlayerSystem) group.
+- `ActiveOnBegin : logic = true` — when off, hidden until the activate signal (an orb revealed by a signal).
+- `DisplayName : string = ""` — display name (for the log and your HUD).
 
 `pickup_effect_component`
-- `DurationSeconds : float = 10.0` — 続く秒数（0〜3600）。0 ならずっと（`End`・`EndPickupEffectsFor`・退出まで）。
-- `Instant : logic = false` — オンなら起動の合図を送った次のフレームで終える（1 回きりの効果）。
-- `EffectId : string = ""` — 同じ効果の見分け。空なら毎回別の効果（いつも重ねる）。
-- `StackMode : pickup_effect_stack_mode = Extend` — 同じ `EffectId` の効果を持っている人がまた拾ったとき。`Extend`（残りに足す）/ `Refresh`（残りを戻す）/ `Stack`（もう 1 つ重ねる）/ `Replace`（前のを終えて新しく）/ `Ignore`（何もしない）。
-- `MaxStacks : int = 0` — `Stack` の上限（0 なら無し）。届いていたら一番早く終わるものを延ばす。
+- `DurationSeconds : float = 10.0` — seconds it lasts (0-3600). 0 means forever (until `End`, `EndPickupEffectsFor` or the player leaves).
+- `Instant : logic = false` — when on, ends on the frame after the activate signal is sent (one-shot effects).
+- `EffectId : string = ""` — identifies the same effect. Empty treats every pickup as a separate effect (always stacks).
+- `StackMode : pickup_effect_stack_mode = Extend` — when a player who already has an effect with the same `EffectId` picks it up again. `Extend` (add to the remaining time) / `Refresh` (reset the remaining time) / `Stack` (add another copy) / `Replace` (end the old one and start anew) / `Ignore` (do nothing).
+- `MaxStacks : int = 0` — limit for `Stack` (0 means none). When reached, the copy ending soonest is extended.
 
 HudKit
-- `pickup_effect_hud_component.ShowToasts : logic = true` — 拾ったとき（拾い直したときも）画面の上の方に名前と説明の板を出す。
-- `pickup_effect_hud_component.ShowEffectList : logic = true` — 続いている効果を 1 行ずつ並べ、残り時間の棒と秒を出す（同じ `EffectId` は 1 行にまとめて重なった数を出す）。
-- `pickup_effect_hud_component` は既定を `ActiveOnBegin = true`、`ZOrder = 100` にしている（`Audience`・`Mode` などは WidgetSystem の `player_widget_component` と同じ）。
-- 見た目は `var Style : pickup_effect_hud_style`（コードで入れる。エディターには出ない。出し始めたときに写す）。主な項目：知らせの板 `ToastXRatio / ToastYRatio`（0.5 / 0.24）・`ToastWidthPx / ToastHeightPx`（560 / 110）・`ToastIconWidthPx`・`ToastLinePx`・`ToastBackColor / ToastBackOpacity`・`ToastTitleSize`（色は AccentColor）・`ToastDescriptionColor / Size`・`ToastBadgeColor / Size`・`ToastInSeconds`（0.2。大きくなりながら濃く）・`ToastHoldSeconds`（1.6）・`ToastOutSeconds`（0.3。上へずれながら薄く）・`ToastStartScale`（0.6）・`ToastOvershoot`（1.7）・`ToastOutSlidePx`・`ToastPulseScale / Seconds`（拾い直しで弾ませる）・`ToastQueuedHoldSeconds`（0.5。次が待っているとき）・`MaxQueuedToasts`（3）。一覧 `ListXRatio / ListYRatio`（0.015 / 0.2。左上）・`RowWidthPx / RowHeightPx / RowGapPx / RowPaddingPx`・`RowBackColor / Opacity`・`RowNameColor / Size`・`RowTimeColor / Size`・`StackPrefix`（"x"）・`RowBarHeightPx / RowBarBackColor / RowBarBackOpacity`・`RowInSeconds / RowOutSeconds / RowSlidePx`（横から出て横へ消える）・`RowMoveSpeed`（下の行が詰める速さ）・`RowWarnSeconds / RowWarnBlinkPerSecond`（残りが少ないと棒が点滅）・`RowFlashSeconds`（延びたら白く光る）・`MinRowSeconds`（2.0。これより短い効果は並べない）・`ShowEndlessRows`（true。ずっと続く効果は棒が満タンのまま）・`FallbackAccentColor`（`card_info_component` が無いときの色）。
+- `pickup_effect_hud_component.ShowToasts : logic = true` — on pickup (including again) shows two lines above the slots: "Got {name}!" and the description.
+- `pickup_effect_hud_component.ShowEffectList : logic = true` — lists ongoing effects as square slots at the bottom center of the screen with the remaining time as the background height (the same `EffectId` is merged into one marked "x2").
+- `pickup_effect_hud_component` defaults to `ActiveOnBegin = true`, `ZOrder = 100` (`Audience`, `Mode` etc. are the same as WidgetSystem's `player_widget_component`).
+- The look is `var Style : pickup_effect_hud_style` (set from code; not shown in the editor; copied when it starts showing). Main fields:
+  - Toast: `ToastXRatio / ToastYRatio` (0.5 / 0.72), `ToastFormat` ("Got {0}!"; `{0}` is the name (AccentColor). In a Verse string write `"Got \{0\}!"`), `ToastTitleSize / ToastTitleColor` (44 / white; the color of the text other than the name), `ToastDescriptionColor / Size / WrapPx` (white / 26 / 900), `ToastLineGapPx` (4), `ToastBackColor / ToastBackOpacity / ToastPaddingPx` (panel; default 0 = hidden), `ToastInSeconds / ToastHoldSeconds / ToastOutSeconds` (0.2 / 1.1 / 0.3; about 1.6 s in total), `ToastStartScale / ToastOvershoot` (0.6 / 1.7), `ToastOutSlidePx` (24; slides up while disappearing), `ToastPulseScale / Seconds` (pulse on re-pickup), `ToastQueuedHoldSeconds` (0.5; when the next is waiting), `MaxQueuedToasts` (3).
+  - Text shadow (every text in toasts and slots): `TextShadowColor / TextShadowOpacity / TextShadowOffsetPx` (black / 0.75 / 2; opacity 0 hides it).
+  - Slots: `SlotXRatio / SlotYRatio` (0.5 / 0.88; the row center), `SlotSizePx / SlotGapPx` (84 / 12), `SlotBorderPx / SlotBorderOpacity` (3 / 1; the border is AccentColor), `SlotFlashColor / SlotFlashSeconds` (white / 0.35; the border flashes on re-pickup), `SlotBackColor / SlotBackOpacity` (black / 0.55; the height shrinks from the bottom with the remaining ratio), `SlotIconScale` (0.72), `SlotIconTintAccent` (false = white (the image's own colors) / true = tinted with AccentColor), `SlotLetterColor / Size` (the first letter when there is no image), `StackPrefix / SlotStackColor / SlotStackSize` ("×"; "×2" at the bottom right for 2 or more), `SlotInSeconds / SlotStartScale / SlotOvershoot` (bounces in), `SlotOutSeconds / SlotEndScale` (shrinks and fades out), `SlotPulseScale` (pulse on re-pickup), `SlotMoveSpeed` (speed of the shift toward the center when slots are added or removed), `SlotWarnSeconds / SlotWarnBlinkPerSecond` (2 / 4; blinks when little time is left), `MinSlotSeconds` (2.0; shorter effects are not listed), `ShowEndlessSlots` (true; endless effects keep a full background), `FallbackAccentColor` (color when there is no `card_info_component`).
 
 StageKit
-- `pickup_stage_target_component.Group : string = ""` — 合図のグループ。空なら受けない。
-- `pickup_stage_signal_component.Group : string = ""`、`Signal : pickup_stage_signal = Activate`（`Activate` / `Deactivate`）、`Scope : pickup_stage_scope = SourceRoot`（`SourceRoot` = 拾った物の最上位の entity の中 / `SourceScope` = 拾った物の区画（無ければ世界）/ `World`）、`RevertOnEnd : logic = true`（効果の終わりに戻す）。
+- `pickup_stage_target_component.Group : string = ""` — signal group. Empty receives nothing.
+- `pickup_stage_signal_component.Group : string = ""`, `Signal : pickup_stage_signal = Activate` (`Activate` / `Deactivate`), `Scope : pickup_stage_scope = SourceRoot` (`SourceRoot` = inside the picked-up object's top-level entity / `SourceScope` = the picked-up object's scope (the world if none) / `World`), `RevertOnEnd : logic = true` (revert when the effect ends).
 
-## イベント
-- `pickup_picked_event`（scene_event、SendUp）: `Pickup : pickup_component`、`Agent : agent`、`Effect : ?entity`。拾われた物の entity から根へ。消費しない。
-- `pickup_effect_changed_event`（scene_event、SendUp）: `Effect : pickup_effect_component`、`Agent : agent`、`Started : logic`。効果の entity（slot の下）から根へ。消費しない。
-- `pickup_effect_owner_event`（scene_event、SendDown）: `Effect : pickup_effect_component`（続いている効果）、`Picked : pickup_effect_component`（拾った効果。見せ方はこちらから読む）、`Agent : agent`、`Notice : pickup_effect_notice`（`Started` / `Renewed` / `Ended`）。持ち主の slot の entity から下へ（ロードアウト・キャラクター・widget の view・効果のプレハブ）。消費しない。`Renewed` は、同じ効果を拾い直して新しい効果を始めなかったとき（`Extend` / `Refresh` / `Ignore`、`Stack` の上限）で、`Effect` は残り時間が延びた方。持ち主の退出で消えたときは `Ended` も届かない。HudKit の HUD はこれを受ける。
-- `pickup_component.PickedEvent : listenable(agent)`、`RestoredEvent : listenable(tuple())`。
-- `pickup_effect_component.StartedEvent / EndedEvent : listenable(agent)`。
-- 送る合図：効果の土台は始まりに `activated_by_agent_event{Agent = 持ち主}`、終わりに `deactivated_event` を自分の entity と子孫へ（SendDown）。`pickup_stage_target_component` は自分の entity と子孫へ。
-- 受ける合図：`pickup_effect_hud_component`（HudKit）は `pickup_effect_owner_event`（slot の下に置いたとき）と `pickup_effect_changed_event`（slot の祖先に置いたときだけ）、起動・停止の合図（WidgetSystem の基底）。`pickup_component` は `activated_event`（戻す）/ `deactivated_event`（隠す）、触れた知らせ `character_surface_contact_event`（SurfaceKit。自分の entity の面の `Touched`）、`player_volume_entered_event`（VolumeSystem。自分の entity のボリューム）。`pickup_stage_signal_component` は `activated_event` / `deactivated_event`。
+## Events and tags
+- `pickup_picked_event` (scene_event, SendUp): `Pickup : pickup_component`, `Agent : agent`, `Effect : ?entity`. From the picked-up object's entity to the root. Not consumed.
+- `pickup_effect_changed_event` (scene_event, SendUp): `Effect : pickup_effect_component`, `Agent : agent`, `Started : logic`. From the effect entity (under the slot) to the root. Not consumed.
+- `pickup_effect_owner_event` (scene_event, SendDown): `Effect : pickup_effect_component` (the ongoing effect), `Picked : pickup_effect_component` (the picked-up effect; read the look from this one), `Agent : agent`, `Notice : pickup_effect_notice` (`Started` / `Renewed` / `Ended`). From the owner's slot entity downward (loadout, character, widget views, effect prefabs). Not consumed. `Renewed` is sent when the same effect was picked up again without starting a new one (`Extend` / `Refresh` / `Ignore`, or the `Stack` limit); `Effect` is then the one whose remaining time was extended. `Ended` is not delivered when the effect disappeared because the owner left. The HudKit HUD receives this.
+- `pickup_component.PickedEvent : listenable(agent)`, `RestoredEvent : listenable(tuple())`.
+- `pickup_effect_component.StartedEvent / EndedEvent : listenable(agent)`.
+- Signals sent: the effect base sends `activated_by_agent_event{Agent = owner}` at the start and `deactivated_event` at the end to its own entity and descendants (SendDown). `pickup_stage_target_component` sends to its own entity and descendants.
+- Signals received: `pickup_effect_hud_component` (HudKit) receives `pickup_effect_owner_event` (when placed under a slot), `pickup_effect_changed_event` (only when placed on an ancestor of the slots) and the activate / deactivate signals (WidgetSystem base). `pickup_component` receives `activated_event` (restore) / `deactivated_event` (hide), the touch notification `character_surface_contact_event` (SurfaceKit; `Touched` on its own entity's surface) and `player_volume_entered_event` (VolumeSystem; its own entity's volume). `pickup_stage_signal_component` receives `activated_event` / `deactivated_event`.
 
-## タグ
-- `pickup_effect_tag`（`player_state_tag` の派生）— 効果のあいだ持ち主に付く（効果 1 つに 1 つ）。どの効果かは `GetActivePickupEffects(Agent)` の `EffectId`、何が変わっているかは中身の部品のタグ（BuffKit の `character_speed_modified_tag` など）。
-- `pickup_stage_target_tag`（entity の役割）— `pickup_stage_target_component` が付ける。合図を送る側がこのタグで探す。
+## Tags
+- `pickup_effect_tag` (a `player_state_tag` subclass) — on the owner while an effect lasts (one per effect). Which effect it is: the `EffectId` from `GetActivePickupEffects(Agent)`; what is modified: the tags of the parts inside (e.g. BuffKit's `character_speed_modified_tag`).
+- `pickup_stage_target_tag` (entity role) — added by `pickup_stage_target_component`. The sender finds targets by this tag.
 
-## 持ち主
-- 効果のプレハブは拾った人の slot の下に作られるので、中の部品は `FindOwningPlayer` で持ち主（拾った人）を知り、持ち主だけに効く（Library の決まり）。起動の合図の Agent も持ち主。
-- 効果の土台は持ち主のいない場所では始まらない（出力ログに出して消える）。持ち主のいる場所（ロードアウトの中など）にエディターで置いた効果は、開始の次のフレームから始まる。
+## Owner
+- Effect prefabs are created under the picker's slot, so the parts inside learn the owner (the picker) with `FindOwningPlayer` and affect only the owner (a library rule). The Agent of the activate signal is the owner too.
+- The effect base does not start where there is no owner (logs to the output log and disappears). An effect placed in the editor somewhere that has an owner (inside a loadout etc.) starts on the frame after the start.
 
-## 公開 API
+## Public API
 ```verse
 pickup_effect_stack_mode<public> := enum:
     Extend
@@ -110,12 +113,12 @@ pickup_effect_changed_event<public> := class(scene_event):
 
 pickup_effect_notice<public> := enum:
     Started
-    Renewed                                  # 拾い直したが始めなかった（続いている効果が延びた・そのまま）
+    Renewed                                  # picked up again without starting (the ongoing effect was extended or left as is)
     Ended
 
-pickup_effect_owner_event<public> := class(scene_event):    # 持ち主の slot から SendDown
-    Effect<public>:pickup_effect_component   # 続いている効果（Renewed なら延びた方）
-    Picked<public>:pickup_effect_component   # 拾った効果
+pickup_effect_owner_event<public> := class(scene_event):    # SendDown from the owner's slot
+    Effect<public>:pickup_effect_component   # the ongoing effect (for Renewed, the extended one)
+    Picked<public>:pickup_effect_component   # the picked-up effect
     Agent<public>:agent
     Notice<public>:pickup_effect_notice
 
@@ -131,7 +134,7 @@ pickup_component<public> := class<final_super>(component):
     DisplayName<public>:string
     PickedEvent<public><final>:listenable(agent)
     RestoredEvent<public><final>:listenable(tuple())
-    TryPickup<public>(Agent:agent):logic                 # 拾わせた（効果を与えた）なら true
+    TryPickup<public>(Agent:agent):logic                 # true if picked up (the effect was given)
     Restore<public>():void
     Hide<public>():void
     IsAvailable<public>()<decides><transacts>:void
@@ -148,17 +151,17 @@ pickup_effect_component<public> := class<final_super>(component):
     End<public>():void
     AddSeconds<public>(Seconds:float):void
     SetRemainingSeconds<public>(Seconds:float):void
-    GetRemainingSeconds<public>()<transacts>:float     # ずっと続く効果は -1
+    GetRemainingSeconds<public>()<transacts>:float     # -1 for endless effects
     IsActive<public>()<decides><transacts>:void
     FindOwner<public>()<decides><transacts>:agent
-    FindSource<public>()<decides><transacts>:entity     # 拾った物（オーブ）の entity
+    FindSource<public>()<decides><transacts>:entity     # entity of the picked-up object (orb)
     GetOriginTransform<public>()<transacts>:transform
 
 (InEntity:entity).GrantPickupEffect<public>(Agent:agent, Prefab:concrete_subtype(entity), Origin:transform, Source:?entity):?entity
 (InEntity:entity).GrantPickupEffectEntity<public>(Agent:agent, Effect:entity, Origin:transform, Source:?entity):?entity
-(InEntity:entity).FindPickupEffect<public>()<decides><transacts>:pickup_effect_component        # InEntity か祖先
+(InEntity:entity).FindPickupEffect<public>()<decides><transacts>:pickup_effect_component        # InEntity or an ancestor
 (InEntity:entity).GetActivePickupEffects<public>(Agent:agent)<transacts>:[]pickup_effect_component
-(InEntity:entity).EndPickupEffectsFor<public>(Agent:agent):int                                   # 終えた数
+(InEntity:entity).EndPickupEffectsFor<public>(Agent:agent):int                                   # number ended
 
 # StageKit
 pickup_stage_signal<public> := enum:
@@ -188,33 +191,41 @@ pickup_stage_signal_component<public> := class<final_super>(component):
     Revert<public>():void
     GetTargetCount<public>()<transacts>:int
 
-(InEntity:entity).FindTopEntity<public>()<transacts>:entity   # simulation entity のすぐ下の祖先（最上位の entity）
+(InEntity:entity).FindTopEntity<public>()<transacts>:entity   # the ancestor directly under the simulation entity (top-level entity)
 
-# HudKit（WidgetSystem と WidgetSystem.CardKit を使う。WidgetSystem は PickupSystem を知らない）
-pickup_effect_hud_style<public> := struct:                    # 見た目と動き（上の「設定」の HudKit）
+# HudKit (uses WidgetSystem and WidgetSystem.CardKit. WidgetSystem knows nothing about PickupSystem)
+pickup_effect_hud_style<public> := struct:                    # look and motion (HudKit under "Settings" above)
 pickup_effect_hud_component<public> := class<final_super>(player_widget_component):
     ShowToasts<public>:logic
     ShowEffectList<public>:logic
     var Style<public>:pickup_effect_hud_style
-    ShowToastFor<public>(Agent:agent, Card:widget_card):void                         # コードから板を出す
-    TrackEffectFor<public>(Agent:agent, Effect:pickup_effect_component):void        # 知らせの届かない効果を一覧に並べる
-(Effect:pickup_effect_component).GetPickupEffectCard<public>(?FallbackColor:color = NamedColors.SkyBlue)<transacts>:widget_card   # 根の card_info_component（無ければ名前 = EffectId）
+    ShowToastFor<public>(Agent:agent, Card:widget_card):void                         # show a toast from code
+    TrackEffectFor<public>(Agent:agent, Effect:pickup_effect_component):void        # list an effect whose notification does not arrive
+(Effect:pickup_effect_component).GetPickupEffectCard<public>(?FallbackColor:color = NamedColors.SkyBlue)<transacts>:widget_card   # the root's card_info_component (without it, name = EffectId)
 ```
 
-## 前提・注意
-- 区画か世界に `player_manager_component` が 1 つ要ります（効果をその人の slot の下に作るため）。
-- 効果の中身の部品は、停止の合図と `OnEndSimulation` の両方で元に戻すこと（効果は持ち主の退出・`EndPickupEffectsFor` で、停止の合図なしに消えることもある）。BuffKit・StageKit の部品はそうなっています。
-- ゲームの流れでやり直すとき（マップを始める・クリア・ロビーへ戻る）は、`EndPickupEffectsFor(Agent)` でその人の効果を全部終え、オーブは `Restore` で戻します（作者のゲームでは、ゲームの状態を切り替える component がこれを呼び、オーブ側は戻せる interface を実装しています）。
-- ステージへの合図は共有のステージに効きます（同じマップのほかの人にも隠れた足場が見える）。相手は合図を送るときに 1 回だけ探します。
-- 同じ型の部品は 1 つの entity に 1 つまで（エディターの決まり）。同じ効果に同じ部品を 2 つ使うなら子の entity に分けます。
-- ⚠ 未検証（UEFN の実機）：
-  - プレハブを `Prefab{}` で作って slot の下に足したとき、次のフレームに根の `pickup_effect_component` が印（`pickup_effect_grant_component`）を読めるか（PickupEffectComponent.verse）。
-  - 効果の entity の中の `text_hud_component` が、持ち主だけに出るか（WidgetSystem の「持ち主のいる場所では Everyone = 持ち主」）。
-  - HudKit：毎フレームの `SetDesiredSize` / `SetTextSize` / 不透明度と canvas_slot の置き直しで、板のポップ・行の出入りがちらつかずに動くか。`canvas_slot` の `Offsets`（点のアンカーで `Left` / `Top` を位置のずれとして使う）が想定どおりか。`texture_block` は薄くできないので、半分より薄いあいだは隠している。
-  - HudKit：`pickup_effect_owner_event` が、slot の下のロードアウトの中の HUD に届くか（slot の entity からの SendDown）。
-  - オーブの見た目を `mesh_component.Disable` で消したときに、全員から見えなくなるか。
+## Migration notes (2026-11-09: tiers, endless effects, single-use)
+- Added: `pickup_effect_stack_mode.Tier` (picking the same effect up again raises the tier by 1 and resets the time, up to `MaxTier`), and `MaxTier` / `GetTier` / `RaiseTier` / `TierChangedEvent` / `IsEndless` / `IsPersistent` on `pickup_effect_component`. The parts inside read the tier with `Entity.FindPickupEffect[].GetTier()` (no part changes its strength by tier yet; only the mechanism exists).
+- Added: `Entity.GrantPersistentPickupEffect(Agent, Prefab, Origin, Source)` (lasts until `End` / `EndPickupEffectsFor` regardless of the effect's `DurationSeconds`; e.g. an effect held from the start of a stage). `pickup_effect_grant_component.Persistent`.
+- Added: when a part inside sends `activation_finished_event` (ActivationSystem) upward, the effect ends on the next frame (sent by the single-use grants of CharacterSystem's CellKit).
+- Behavior change: a value was added to `pickup_effect_stack_mode`, so your code that enumerates every value in a `case` must add `Tier`.
+- Adding a named optional parameter to an extension method made calls that pass it by name a type error (V3509), so the parameters of `GrantPickupEffect` were left unchanged and a separate function was added.
 
-## 確かめ方
-- テスト：`_Test/PickupSystemTest/` の `pickup_system_test_component`。`player_manager_component` を付けた entity と、この component を付けた entity を 1 つずつ（どちらも最上位）置き、プレイヤー 1 人で始めます。効果の寿命（次のフレームの起動の合図・持ち主・タグ・時間で停止の合図と消える・Instant）、重ねがけ（Extend・Stack と MaxStacks・Replace・`EndPickupEffectsFor`）、オーブ（`TryPickup`・戻る・戻らない・`Restore`・合図・`RequireGroupMember`）、StageKit（Group の相手だけ・2 つの効果が重なったら両方終わってから戻す）を確かめます。約 4 秒。結果は出力ログの `[TEST] PickupSystem`。
-- HudKit の HUD は自動テストしていません（画面の見た目）。MCPSystem の PickupKit（`pickup.pick` / `pickup.grant` / `pickup.effects` / `pickup.end_effects`）で拾わせて、画面を見て確かめます。
-- 独自キャラクターのバフは `_Test/CharacterSystemTest/CharacterBuffTest.verse`（`character_buff_test_component`）。
+## Requirements, caveats and limits
+- One `player_manager_component` is required in the scope or the world (to create effects under the agent's slot).
+- Effect parts must revert both on the deactivate signal and in `OnEndSimulation` (an effect can disappear without a deactivate signal when the owner leaves or through `EndPickupEffectsFor`). The BuffKit and StageKit parts do.
+- When the game flow resets (starting a map, clearing it, returning to the lobby), end all of the agent's effects with `EndPickupEffectsFor(Agent)` and bring orbs back with `Restore` (in the author's game, the component that switches the game state calls these, and the orb side implements a restorable interface).
+- Stage signals act on the shared stage (other players on the same map see the hidden platforms too). Targets are searched once when the signal is sent.
+- At most one part of each type per entity (an editor rule). To use the same part twice in one effect, split them onto child entities.
+- ⚠ Unverified (in UEFN):
+  - Whether the root's `pickup_effect_component` can read the marker (`pickup_effect_grant_component`) on the next frame when the prefab is created with `Prefab{}` and added under the slot (PickupEffectComponent.verse).
+  - Whether a `text_hud_component` inside the effect entity shows only to the owner (WidgetSystem's "where there is an owner, Everyone = the owner").
+  - HudKit: whether the toast pop, the slot in / out and the sideways shift animate without flicker using per-frame `SetDesiredSize` / `SetTextSize` / opacity and re-placing the canvas_slot. Whether `canvas_slot`'s `Offsets` (using `Left` / `Top` as a position offset with a point anchor) behave as expected. Whether the slot background (a `color_block` with `VerticalAlignment = Bottom` in an `overlay_slot`, height changed every frame) shrinks from the bottom. `texture_block` cannot be faded, so it is hidden while thinner than half (blinking also toggles the image).
+  - HudKit: whether the `text_block` shadow (`DefaultShadowOffset` / `SetShadowOpacity`) shows. The slot's first letter is the first UTF-8 character (continuation bytes 0x80-0xBF are joined); whether katakana shows without garbling.
+  - HudKit: whether `pickup_effect_owner_event` reaches a HUD inside a loadout under the slot (SendDown from the slot entity).
+  - Whether hiding the orb's look with `mesh_component.Disable` hides it from everyone.
+
+## Verifying
+- Test: `pickup_system_test_component` in `_Test/PickupSystemTest/`. Place one entity with `player_manager_component` and one with this component (both top-level) and start with one player. It checks the effect lifetime (activate signal on the next frame, owner, tag, deactivate signal and removal by time, Instant), stacking (Extend, Stack with MaxStacks, Replace, `EndPickupEffectsFor`), the orb (`TryPickup`, returning, not returning, `Restore`, signals, `RequireGroupMember`) and the StageKit (only targets of the Group; with two overlapping effects, revert after both end). About 4 seconds. Results appear in the output log as `[TEST] PickupSystem`.
+- The HudKit HUD has no automated test (screen look). Use MCPSystem's PickupKit (`pickup.pick` / `pickup.grant` / `pickup.effects` / `pickup.end_effects`) to pick up and check the screen.
+- Custom character buffs: `_Test/CharacterSystemTest/CharacterBuffTest.verse` (`character_buff_test_component`).

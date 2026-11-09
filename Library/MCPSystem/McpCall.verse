@@ -4,26 +4,26 @@ using { /Verse.org/SpatialMath }
 using { /UnrealEngine.com/JSON }
 using { /Fortnite.com/Playspaces }
 
-# 1 つの命令の呼び出し。受け箱が作って mcp_controllable.McpHandle に渡す（利用者は作らない）
-#   引数は名前つき（"args":{"entity":3}）でも、並び（"args":[3]。ツールの説明の引数の順）でも読める
-#   Find*[] は読めない・範囲外なら失敗する（if の中で使う）。Get*Or は読めなければ既定の値
+# One command invocation. The inbox builds it and hands it to mcp_controllable.McpHandle (your code never creates one)
+#   Arguments can be read either named ("args":{"entity":3}) or positional ("args":[3], in the order of the tool's argument list)
+#   Find*[] fails when the value is unreadable or out of range (use inside if). Get*Or returns the default when unreadable
 mcp_call<public> := class<internal>:
-    # 命令の連番
+    # Sequence number of the command
     Seq<public>:int
-    # 宛先のツールセットとインスタンス（"widget@main" なら "widget" と "main"。インスタンスが無ければ空）
+    # Destination toolset and instance ("widget@main" gives "widget" and "main"; empty when there is no instance)
     Toolset<public>:string
     Id<public>:string
-    # ツールの名前
+    # Tool name
     Tool<public>:string
-    # 命令を受けた受け箱（番号・名前の表、知らせ、ログの詳しさ）
+    # The inbox that received the command (id / name tables, notifications, log verbosity)
     Inbox<public>:mcp_inbox_component
-    # 名前つきの引数（"args" がオブジェクトのとき）
+    # Named arguments (when "args" is an object)
     Named<internal>:[string]value = map{}
-    # 並びの引数（"args" が配列のとき）と、ツールの説明の引数の名前（並びを名前に直すため）
+    # Positional arguments (when "args" is an array) and the argument names from the tool description (to map positions to names)
     Positional<internal>:[]value = array{}
     ArgNames<internal>:[]string = array{}
 
-    # 引数 Name の JSON の値。無い・null なら失敗する
+    # JSON value of argument Name. Fails when missing or null
     FindArg<public>(Name:string)<transacts><decides>:value =
         var Found:?value = false
         if (ByName := Named[Name]):
@@ -35,48 +35,48 @@ mcp_call<public> := class<internal>:
         not Result.AsNull[]
         Result
 
-    # 引数 Name があれば成功する
+    # Succeeds when argument Name is present
     HasArg<public>(Name:string)<transacts><decides>:void =
         FindArg[Name]
 
-    # 文字列（数なら数の文字）
+    # String (a number becomes its text)
     FindString<public>(Name:string)<transacts><decides>:string =
         McpValueToString[FindArg[Name]]
 
-    # 整数（JSON の数・数の文字列。±9.0e15 まで。小数なら 0 の側へ切る）
+    # Integer (JSON number or numeric string; up to +-9.0e15; fractions truncate toward 0)
     FindInt<public>(Name:string)<transacts><decides>:int =
         McpValueToInt[FindArg[Name]]
 
-    # 小数（有限・±1.0e15 まで）
+    # Float (finite, up to +-1.0e15)
     FindFloat<public>(Name:string)<transacts><decides>:float =
         McpValueToFloat[FindArg[Name]]
 
-    # true / false（"true" "false" "1" "0" "yes" "no" "on" "off" と数。v43 の Verse は JSON の true / false を読めないので、送り手は文字か数で送る）
+    # true / false ("true" "false" "1" "0" "yes" "no" "on" "off" and numbers. Verse in v43 cannot read JSON true / false, so the sender sends a string or a number)
     FindLogic<public>(Name:string)<transacts><decides>:logic =
         McpValueToLogic[FindArg[Name]]
 
-    # ベクトル（{"left","up","forward"}・{"x","y","z"}（UE の軸。x = forward、y = right = -left、z = up）・[left, up, forward]）。各成分は有限・±1.0e15 まで
+    # Vector ({"left","up","forward"}, {"x","y","z"} (UE axes: x = forward, y = right = -left, z = up) or [left, up, forward]). Each component finite, up to +-1.0e15
     FindVector<public>(Name:string)<transacts><decides>:vector3 =
         McpValueToVector[FindArg[Name]]
 
-    # オブジェクト
+    # Object
     FindObject<public>(Name:string)<transacts><decides>:[string]value =
         FindArg[Name].AsObject[]
 
-    # 配列
+    # Array
     FindArray<public>(Name:string)<transacts><decides>:[]value =
         FindArg[Name].AsArray[]
 
-    # entity（番号（entity.find などの "id"）か、mcp_name_component の名前か、{"id":..} / {"name":..}）。見つからなければ失敗する
+    # entity (an id (the "id" from entity.find etc.), an mcp_name_component name, or {"id":..} / {"name":..}). Fails when not found
     FindEntity<public>(Name:string)<transacts><decides>:entity =
         Inbox.ResolveEntity[FindArg[Name]]
 
-    # プレイヤー（core.players の番号。0 から）。いなければ失敗する
+    # Player (index from core.players, from 0). Fails when absent
     FindPlayer<public>(Name:string)<transacts><decides>:player =
         Index := FindInt[Name]
         Inbox.Entity.McpGetPlayers()[Index]
 
-    # プレイヤー（agent として）
+    # Player (as an agent)
     FindAgent<public>(Name:string)<transacts><decides>:agent =
         FindPlayer[Name]
 
@@ -92,13 +92,13 @@ mcp_call<public> := class<internal>:
     GetLogicOr<public>(Name:string, Default:logic)<transacts>:logic =
         if (V := FindLogic[Name]) then V else Default
 
-    # 長くかかるツールが終わったときの知らせ（[MCPC] {"event":EventName,"seq":<この命令の seq>,"data":Data}）。Data は JSON（空なら付けない）
+    # Notification when a long-running tool finishes ([MCPC] {"event":EventName,"seq":<this command's seq>,"data":Data}). Data is JSON (omitted when empty)
     Notify<public>(EventName:string, Data:string)<transacts>:void =
         Inbox.Notify(EventName, Seq, Data)
 
-# ---- JSON の値の読み方（失敗しうる変換はすべて <decides>。範囲外の値で実行時エラーにしない） ----
+# ---- Reading JSON values (every conversion that can fail is <decides>; out-of-range values never raise a runtime error) ----
 
-# 文字列か、数なら数の文字
+# String, or the text of a number
 McpValueToString<public>(V:value)<transacts><decides>:string =
     if (S := V.AsString[]):
         S
@@ -108,17 +108,17 @@ McpValueToString<public>(V:value)<transacts><decides>:string =
         F := McpValueToFloat[V]
         "{F}"
 
-# 整数。JSON の数（±9.0e15 まで。小数は 0 の側へ切る）か、整数の文字列
+# Integer. A JSON number (up to +-9.0e15; fractions truncate toward 0) or an integer string
 McpValueToInt<public>(V:value)<transacts><decides>:int =
     if (F := V.AsFloat[]):
         McpFloatToInt[F]
     else if (S := V.AsString[]):
         McpParseInt[S]
     else:
-        # AsFloat で読めない数（あれば）。範囲は確かめられないので、文字列にできない int だけ受ける
+        # A number AsFloat cannot read (if any). The range cannot be checked, so only accept an int that has no string form
         V.AsInt[]
 
-# 小数。JSON の数か小数の文字列（有限・±1.0e15 まで）
+# Float. A JSON number or a decimal string (finite, up to +-1.0e15)
 McpValueToFloat<public>(V:value)<transacts><decides>:float =
     F := if (X := V.AsFloat[]) then X else if (S := V.AsString[]) then McpParseFloat[S] else (V.AsInt[] * 1.0)
     F.IsFinite[]
@@ -140,7 +140,7 @@ McpValueToLogic<public>(V:value)<transacts><decides>:logic =
         F := McpValueToFloat[V]
         if (F <> 0.0) then true else false
 
-# ベクトル（{"left","up","forward"}・{"x","y","z"}・[left, up, forward]）
+# Vector ({"left","up","forward"}, {"x","y","z"} or [left, up, forward])
 McpValueToVector<public>(V:value)<transacts><decides>:vector3 =
     if (Items := V.AsArray[]):
         Items.Length = 3
@@ -158,13 +158,13 @@ McpValueToVector<public>(V:value)<transacts><decides>:vector3 =
             Z := if (Item := O["z"]) then McpValueToFloat[Item] else 0.0
             vector3{Left := -Y, Up := Z, Forward := X}
 
-# ---- プレイヤーの番号 ----
+# ---- Player indices ----
 
-# 今のプレイヤー（playspace の GetPlayers の順。番号は 0 から。人の出入りで変わるので、core.players の返事の番号をそのまま使う）
+# Current players (in the order of the playspace's GetPlayers; indices from 0. They change as players join and leave, so use the indices from the core.players reply as they are)
 (InEntity:entity).McpGetPlayers<public>()<transacts>:[]player =
     if (Playspace := InEntity.GetPlayspaceForEntity[]) then Playspace.GetPlayers() else array{}
 
-# Agent の番号。いなければ -1
+# Index of Agent; -1 when absent
 (InEntity:entity).McpGetPlayerIndex<public>(Agent:agent)<transacts>:int =
     var Found:int = -1
     for (Index -> Player : InEntity.McpGetPlayers(), Found < 0, Player = Agent):

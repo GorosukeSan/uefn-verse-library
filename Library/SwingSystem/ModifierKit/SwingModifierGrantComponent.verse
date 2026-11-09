@@ -5,13 +5,13 @@ using { SwingSystem }
 using { SwingSystem.TooltipKit }
 using { SceneGraphSystem }
 
-# 役割：この entity に swing_modifier_request_event{Agent} が届くと、同じ entity の swing_modifier_component の倍率を、その人に DurationSeconds のあいだ掛ける（強化のアイテムや、触れると弱くなる物など）。同じ人がまた受けると、そこから数え直す。DurationSeconds が 0 なら停止するまで。停止の合図（deactivated_event）で全員から外す
-# 置き方：エディターで、swing_modifier_component と同じ entity に付ける
-# 親：停止の合図を使うなら、それが届く場所（ゲームの流れなら、ノードの entity かその子孫）
-# 前提：掛けたいときに、この entity へ swing_modifier_request_event を送るもの（SendDown / SendUp）。コードから直接掛けるなら Request を呼ぶ
+# Role: when a swing_modifier_request_event{Agent} reaches this entity, applies the modifier of the swing_modifier_component on the same entity to that agent for DurationSeconds (power-up items, objects that weaken you on touch, etc.). If the same agent receives it again, the timer restarts. DurationSeconds 0 means until deactivated. The deactivate signal (deactivated_event) removes it from everyone
+# Placement: attach in the editor to the same entity as swing_modifier_component
+# Parent: if you use the deactivate signal, somewhere it is delivered (for a game sequence, the node entity or a descendant)
+# Requirements: something that sends swing_modifier_request_event to this entity (SendDown / SendUp) when the modifier should apply. To apply directly from code, call Request
 swing_modifier_grant_component<public> := class<final_super>(component):
 
-    # 依頼を受けてから倍率を掛け続ける時間（秒。既定 10）。0 なら停止するまで
+    # How long the modifier stays applied after a request (seconds; default 10). 0 means until deactivated
     @editable_number(float):
         ToolTip := SwingModifierDurationToolTip
         Categories := array{SwingCategory, SwingModifierCategory}
@@ -19,17 +19,17 @@ swing_modifier_grant_component<public> := class<final_super>(component):
         MaxValue := option{600.0}
     DurationSeconds<public>:float = 10.0
 
-    # 掛けている人と、外す時刻（GetSimulationElapsedTime の値。期限なしは Inf）
+    # Agents the modifier is applied to and when to remove it (a GetSimulationElapsedTime value; Inf means no expiry)
     var<private> Expiries:[agent]float = map{}
 
-    # 期限が変わった（依頼を受けた）ことを、期限を待つループ（OnSimulate）に知らせる
+    # Tells the expiry loop (OnSimulate) that an expiry changed (a request was received)
     ExpiriesChangedEvent<private>:event() = event(){}
 
-    # 今この component が Agent に掛けているなら成功する
+    # Succeeds if this component is currently applying to Agent
     IsApplyingTo<public>(Agent:agent)<decides><transacts>:void =
         Expiries[Agent]
 
-    # swing_modifier_request_event を受けたのと同じ（Agent に DurationSeconds のあいだ掛ける。掛けていれば数え直す）
+    # Same as receiving swing_modifier_request_event (applies to Agent for DurationSeconds; restarts the timer if already applied)
     Request<public>(Agent:agent):void =
         if (Modifier := Entity.GetComponent[swing_modifier_component]):
             Expiry := if (DurationSeconds > 0.0) then GetSimulationElapsedTime() + DurationSeconds else Inf
@@ -50,7 +50,7 @@ swing_modifier_grant_component<public> := class<final_super>(component):
         RemoveAll()
         (super:)OnEndSimulation()
 
-    # 期限で外す。1 本のループで、一番早い期限まで眠る（そのあいだに依頼が来たら起きて計算し直す）。止まると（OnEndSimulation の前に）このループも止まるので、眠ったままのタスクは残らない
+    # Removes on expiry. A single loop sleeps until the earliest expiry (a request arriving meanwhile wakes it to recompute). When stopped (before OnEndSimulation) this loop stops too, so no sleeping task is left behind
     OnSimulate<override>()<suspends>:void =
         loop:
             Now := GetSimulationElapsedTime()

@@ -4,15 +4,15 @@ using { PlayerSystem }
 using { WidgetSystem }
 using { WidgetSystem.TooltipKit }
 
-# 役割：同じ entity の player_widget_component（すべて）を、プレイヤーの組（player_group_component）に入っている人にだけ出す。組に入ったら出し、出たら消す
-#   「メニューで選んだ人にだけ、そのジャンルの HUD を出す」など。widget がまだ起動していなければ出さない（起動したときに組の人にだけ出る）
-#   ほかの widget_show_*_component（ボリュームなど）と一緒に置くと、両方を満たす人にだけ出る（組に入った人がボリュームに入ったら出る）
-# 置き方：エディターで、widget と同じ entity に付ける
-# 同じ entity：player_widget_component の派生。Audience が Everyone なら組の全員に、Chosen ならほかの部品が ShowFor した人のうち組の人に出る
-# 前提・注意：Group が空なら、この entity かその祖先の player_group_component を使う。どちらも無ければ、だれにも出さない
+# Role: shows every player_widget_component on the same entity only to people in a player group (player_group_component). Shows on joining the group and hides on leaving
+#   E.g. "show that genre's HUD only to people who chose it in a menu". Nothing is shown while the widget is not activated yet (when it activates, only the group's people see it)
+#   Placed together with another widget_show_*_component (a volume, etc.), only people who satisfy both see it (a group member entering the volume)
+# Placement: in the editor, attach to the same entity as the widget
+# Same entity: a player_widget_component subclass. With Audience = Everyone, everyone in the group sees it; with Chosen, the group members among the people another part called ShowFor on
+# Requirements: if Group is empty, the player_group_component of this entity or an ancestor is used. With neither, nobody sees it
 widget_show_in_group_component<public> := class<final_super>(widget_audience_filter_component):
 
-    # 組（player_group_component を付けた entity）。空なら、この entity かその祖先の組
+    # The group (an entity with player_group_component). Empty means the group of this entity or an ancestor
     @editable:
         ToolTip := ShowInGroupToolTip
         Categories := array{PlayerWidgetCategory}
@@ -29,7 +29,7 @@ widget_show_in_group_component<public> := class<final_super>(widget_audience_fil
                 GroupComponent.JoinedEvent.Subscribe(OnJoined)
                 GroupComponent.LeftEvent.Subscribe(OnLeft)
         else:
-            Print("[widget_show_in_group_component] 組（player_group_component）が見つかりません。だれにも出しません")
+            Print("[widget_show_in_group_component] No group (player_group_component) found. Nothing will be shown to anyone")
 
     OnEndSimulation<override>():void =
         for (Subscription : Subscriptions):

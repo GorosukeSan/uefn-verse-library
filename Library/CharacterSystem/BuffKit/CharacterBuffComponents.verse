@@ -7,65 +7,67 @@ using { SceneGraphSystem }
 using { CharacterSystem }
 using { CharacterSystem.TooltipKit }
 
-# 体に変更（バフ・能力の付与）が重なっているあいだ、持ち主（agent）に付くタグの基底。派生で何が変わっているかが分かる
-#   付けるのは BuffKit の部品（character_buff_component / character_move_grant_component）。同じ型のタグが 2 つ以上付くこともある（重ねがけ）
+# Base of the tags attached to the owner (agent) while modifiers (buffs / ability grants) are stacked on the body. The subclass tells what is changed
+#   Attached by the BuffKit components (character_buff_component / character_move_grant_component). Two or more tags of the same type may be attached (stacking)
 character_modified_tag<public> := class<abstract>(player_state_tag):
-# 速さの倍率が 1 でない変更が重なっている
+# A modifier with a speed multiplier other than 1 is stacked
 character_speed_modified_tag<public> := class(character_modified_tag):
-# ジャンプの倍率が 1 でない変更が重なっている
+# A modifier with a jump multiplier other than 1 is stacked
 character_jump_modified_tag<public> := class(character_modified_tag):
-# 重力の倍率が 1 でない変更が重なっている
+# A modifier with a gravity multiplier other than 1 is stacked
 character_gravity_modified_tag<public> := class(character_modified_tag):
-# 空中ジャンプの回数が増えている
+# The air jump count is increased
 character_air_jumps_added_tag<public> := class(character_modified_tag):
-# ダッシュが許されている（dash の RequiresGrant がオンでも出せる）
+# Dash is granted (allowed even when dash's RequiresGrant is on)
 character_dash_granted_tag<public> := class(character_modified_tag):
-# 左右の入力のしかた（walk の SideStyle）が変更で決められている
+# The side-input style (walk's SideStyle) is set by a modifier
 character_side_style_modified_tag<public> := class(character_modified_tag):
+# Clinging to walls / ceilings is granted (allowed even when ClingKit's character_cling_component has RequiresGrant on)
+character_cling_granted_tag<public> := class(character_modified_tag):
 
-# 役割：起動の合図（activated_event）から停止の合図（deactivated_event）まで、独自キャラクターの体に倍率（速さ・ジャンプ・重力）を重ねる。止まると必ず外す
-#   OverrideSideStyle なら、そのあいだ walk の左右の入力のしかたを SideStyle にする（回転・カニ歩き・その場で回る を拾って切り替える）
-#   重ねがけ：いくつ置いても（効果を何回拾っても）倍率は掛け合わせ。外すと、その分だけ元に戻る（ほかの部品の分は残る）。左右の入力のしかたは最後に重ねたものが勝ち、全部外れると walk の基本に戻る
-#   どの体に効かせるか：(1) この entity か祖先の体（ロードアウトの体の中に置いたとき）、(2) 持ち主（プレイヤーの slot の下。PickupSystem の効果のプレハブ・ロードアウト）の体、(3) だれが起こしたかの分かる起動の合図（activated_by_agent_event）の人の体
-# 置き方：エディターで entity に付ける。PickupSystem の効果のプレハブの根（pickup_effect_component と同じ entity）か子、ロードアウトの中、起動の合図が届く場所
-# いつ：起動の合図から停止の合図まで。ActiveOnBegin なら開始から
-# タグ：重ねているあいだ、体の持ち主に character_speed_modified_tag / character_jump_modified_tag / character_gravity_modified_tag（倍率が 1 でないものだけ）/ character_side_style_modified_tag（OverrideSideStyle のとき）
-# 外から：Apply / Remove / IsApplied
-# 前提・注意：独自キャラクター（character_motor_component）の体だけ。速さは walk の MaxSpeedCmPerSecond（走るときも）、ジャンプは jump の JumpSpeedCmPerSecond に掛かる。見つからなければ出力ログに出す
+# Role: from the activation signal (activated_event) to the deactivation signal (deactivated_event), stacks multipliers (speed, jump, gravity) onto the custom character's body. Always removes them when stopped
+#   With OverrideSideStyle, sets walk's side-input style to SideStyle for that time (pick up to switch between turning, strafing and turning in place)
+#   Stacking: however many are placed (however many times the effect is picked up), multipliers multiply. Removing one restores only its share (other components' shares remain). The side-input style is the last one stacked; when all are removed, walk's base value returns
+#   Which body it affects: (1) the body on this entity or an ancestor (when placed inside a loadout body), (2) the owner's body (under the player's slot: a PickupSystem effect prefab or a loadout), (3) the body of the agent in an activation signal that says who triggered it (activated_by_agent_event)
+# Placement: in the editor, attach to an entity. The root of a PickupSystem effect prefab (same entity as pickup_effect_component) or a child, inside a loadout, or wherever the activation signal arrives
+# When: from the activation signal to the deactivation signal. From start with ActiveOnBegin
+# Tags: while stacked, on the body's owner: character_speed_modified_tag / character_jump_modified_tag / character_gravity_modified_tag (only those whose multiplier is not 1) / character_side_style_modified_tag (with OverrideSideStyle)
+# From outside: Apply / Remove / IsApplied
+# Requirements / notes: only custom character bodies (character_motor_component). Speed applies to walk's MaxSpeedCmPerSecond (also when running), jump to jump's JumpSpeedCmPerSecond. Logs to the output log if no body is found
 character_buff_component<public> := class<final_super>(component):
 
-    # 歩く・走る速さの上限に掛ける倍率。既定 1（変えない）
+    # Multiplier on the walk / run speed cap. Default 1 (unchanged)
     @editable_number(float):
         ToolTip := BuffSpeedToolTip
         Categories := array{CharacterBuffCategory}
         MinValue := option{0.0}
         MaxValue := option{10.0}
     SpeedMultiplier<public>:float = 1.0
-    # 跳ぶ瞬間の上向きの速さに掛ける倍率（高さはおよそ 2 乗で変わる）。既定 1
+    # Multiplier on the upward speed at the moment of jumping (height changes roughly with the square). Default 1
     @editable_number(float):
         ToolTip := BuffJumpToolTip
         Categories := array{CharacterBuffCategory}
         MinValue := option{0.0}
         MaxValue := option{10.0}
     JumpMultiplier<public>:float = 1.0
-    # 重力に掛ける倍率（0.5 でふんわり落ちる、0 で落ちない）。既定 1
+    # Multiplier on gravity (0.5 for a floaty fall, 0 for no falling). Default 1
     @editable_number(float):
         ToolTip := BuffGravityToolTip
         Categories := array{CharacterBuffCategory}
         MinValue := option{0.0}
         MaxValue := option{10.0}
     GravityMultiplier<public>:float = 1.0
-    # オンなら、重ねているあいだ walk の左右の入力のしかたを SideStyle にする。既定オフ（変えない）
+    # When on, sets walk's side-input style to SideStyle while stacked. Default off (unchanged)
     @editable:
         ToolTip := BuffOverrideSideStyleToolTip
         Categories := array{CharacterBuffCategory}
     OverrideSideStyle<public>:logic = false
-    # OverrideSideStyle のとき、重ねているあいだの左右の入力のしかた（Turn / Strafe / TankTurn）。既定 Strafe
+    # With OverrideSideStyle, the side-input style while stacked (Turn / Strafe / TankTurn). Default Strafe
     @editable:
         ToolTip := BuffSideStyleToolTip
         Categories := array{CharacterBuffCategory}
     SideStyle<public>:character_side_style = character_side_style.Strafe
-    # オンなら、起動の合図を待たずに開始から重ねる。既定オフ
+    # When on, stacks from start without waiting for the activation signal. Default off
     @editable:
         ToolTip := BuffActiveOnBeginToolTip
         Categories := array{CharacterBuffCategory}
@@ -75,7 +77,7 @@ character_buff_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =
         if (ActiveOnBegin?):
-            # 体（同じプレハブの部品）がそろってから
+            # Wait until the body (components of the same prefab) is complete
             Sleep(0.0)
             Apply(false)
 
@@ -90,7 +92,7 @@ character_buff_component<public> := class<final_super>(component):
         Remove()
         (super:)OnEndSimulation()
 
-    # 体に倍率を重ねる（もう重ねていれば何もしない）。Activator は体を探す手がかり（だれが起こしたか。無ければ false）
+    # Stacks the multipliers onto the body (does nothing if already stacked). Activator is a hint for finding the body (who triggered it. false if unknown)
     Apply<public>(Activator:?agent):void =
         var AddedTags:[]tag = array{}
         if (SpeedMultiplier <> 1.0):
@@ -104,37 +106,43 @@ character_buff_component<public> := class<final_super>(component):
         Side:?character_side_style = if (OverrideSideStyle?) then option{SideStyle} else false
         Applier.Apply(Entity, Activator, character_modifier{SpeedMultiplier := SpeedMultiplier, JumpMultiplier := JumpMultiplier, GravityMultiplier := GravityMultiplier, SideStyle := Side}, AddedTags)
 
-    # 重ねた倍率を外す（重ねていなければ何もしない）
+    # Removes the stacked multipliers (does nothing if not stacked)
     Remove<public>():void =
         Applier.Remove()
 
-    # 今重ねていれば成功する
+    # Succeeds if currently stacked
     IsApplied<public>()<decides><transacts>:void =
         Applier.IsApplied[]
 
-# 役割：起動の合図から停止の合図まで、独自キャラクターの体に能力を足す（空中ジャンプの回数を増やす・ダッシュを許す）。止まると必ず外す
-#   空中ジャンプ：jump の AirJumps に ExtraAirJumps を足す（空中で拾ったら、増えた分をすぐ使える）。重ねると足し合わせ
-#   ダッシュ：GrantDash なら、dash の RequiresGrant がオンの体でもダッシュできる（dash の部品と、その DashAction の入力は体に置いておく）
-#   どの体に効かせるかは character_buff_component と同じ
-# 置き方：エディターで entity に付ける。PickupSystem の効果のプレハブ、ロードアウトの中、起動の合図が届く場所
-# いつ：起動の合図から停止の合図まで。ActiveOnBegin なら開始から
-# タグ：足しているあいだ、体の持ち主に character_air_jumps_added_tag（ExtraAirJumps が 0 でないとき）/ character_dash_granted_tag（GrantDash のとき）
-# 外から：Apply / Remove / IsApplied
+# Role: from the activation signal to the deactivation signal, adds abilities to the custom character's body (more air jumps, dash permission, clinging to walls and ceilings). Always removes them when stopped
+#   Air jumps: adds ExtraAirJumps to jump's AirJumps (picked up in the air, the extra jumps are usable right away). Stacking adds up
+#   Dash: with GrantDash, a body whose dash has RequiresGrant on can dash (keep the dash component and its DashAction input on the body)
+#   Cling: with GrantCling, a body carrying ClingKit's character_cling_component (RequiresGrant on) can cling to walls and ceilings (the slime ability. When removed, a clinging body lets go and falls)
+#   Which body it affects: same as character_buff_component
+# Placement: in the editor, attach to an entity. A PickupSystem effect prefab, inside a loadout, or wherever the activation signal arrives
+# When: from the activation signal to the deactivation signal. From start with ActiveOnBegin
+# Tags: while added, on the body's owner: character_air_jumps_added_tag (when ExtraAirJumps is not 0) / character_dash_granted_tag (with GrantDash) / character_cling_granted_tag (with GrantCling)
+# From outside: Apply / Remove / IsApplied
 character_move_grant_component<public> := class<final_super>(component):
 
-    # 空中ジャンプの回数に足す数（2 段ジャンプにするなら 1）。既定 1
+    # Number added to the air jump count (1 for a double jump). Default 1
     @editable_number(int):
         ToolTip := MoveGrantAirJumpsToolTip
         Categories := array{CharacterBuffCategory}
         MinValue := option{0}
         MaxValue := option{10}
     ExtraAirJumps<public>:int = 1
-    # オンなら、dash の RequiresGrant がオンの体でもダッシュできるようにする。既定オフ
+    # When on, a body whose dash has RequiresGrant on can dash. Default off
     @editable:
         ToolTip := MoveGrantDashToolTip
         Categories := array{CharacterBuffCategory}
     GrantDash<public>:logic = false
-    # オンなら、起動の合図を待たずに開始から足す。既定オフ
+    # When on, a body carrying ClingKit's character_cling_component (RequiresGrant on) can cling to walls and ceilings (the slime ability). Default off
+    @editable:
+        ToolTip := MoveGrantClingToolTip
+        Categories := array{CharacterBuffCategory}
+    GrantCling<public>:logic = false
+    # When on, adds from start without waiting for the activation signal. Default off
     @editable:
         ToolTip := BuffActiveOnBeginToolTip
         Categories := array{CharacterBuffCategory}
@@ -158,32 +166,34 @@ character_move_grant_component<public> := class<final_super>(component):
         Remove()
         (super:)OnEndSimulation()
 
-    # 体に能力を足す（もう足していれば何もしない）。Activator は体を探す手がかり
+    # Adds the abilities to the body (does nothing if already added). Activator is a hint for finding the body
     Apply<public>(Activator:?agent):void =
         var AddedTags:[]tag = array{}
         if (ExtraAirJumps <> 0):
             set AddedTags += array{character_air_jumps_added_tag{}}
         if (GrantDash?):
             set AddedTags += array{character_dash_granted_tag{}}
-        Applier.Apply(Entity, Activator, character_modifier{ExtraAirJumps := ExtraAirJumps, GrantsDash := GrantDash}, AddedTags)
+        if (GrantCling?):
+            set AddedTags += array{character_cling_granted_tag{}}
+        Applier.Apply(Entity, Activator, character_modifier{ExtraAirJumps := ExtraAirJumps, GrantsDash := GrantDash, GrantsCling := GrantCling}, AddedTags)
 
-    # 足した能力を外す（足していなければ何もしない）
+    # Removes the added abilities (does nothing if not added)
     Remove<public>():void =
         Applier.Remove()
 
-    # 今足していれば成功する
+    # Succeeds if currently added
     IsApplied<public>()<decides><transacts>:void =
         Applier.IsApplied[]
 
-# 役割：BuffKit の部品が共通で使う、体を探して変更を重ね・外す手伝い（実行時だけ）。重ねた変更と、持ち主に付けたタグを覚えておき、Remove で自分の分だけ外す
+# Role: helper shared by the BuffKit components for finding the body and stacking / removing a modifier (runtime only). Remembers the stacked modifier and the tags attached to the owner, and removes only its own share on Remove
 character_modifier_applier<internal> := class<internal>:
-    # 出力ログに出す部品の名前
+    # Component name shown in the output log
     Label<internal>:string
 
     var<private> Handle:?cancelable = false
     var<private> Holders:[]player_tag_holder = array{}
 
-    # Context から体を探し（祖先の体 → 持ち主の体 → Activator の体）、Modifier を重ね、体の持ち主に OwnerTags を付ける。もう重ねていれば何もしない
+    # Finds the body from Context (ancestor body -> owner's body -> Activator's body), stacks Modifier and attaches OwnerTags to the body's owner. Does nothing if already stacked
     Apply<internal>(Context:entity, Activator:?agent, Modifier:character_modifier, OwnerTags:[]tag):void =
         if (Handle?):
             return
@@ -195,9 +205,9 @@ character_modifier_applier<internal> := class<internal>:
                     Holder.Add(Owner, Tag)
                     Holder
         else:
-            Print("[{Label}] 効かせる独自キャラクターの体（character_motor_component）が見つかりません（体の中・持ち主のいる場所に置くか、だれが起こしたかの分かる起動の合図で動かしてください）")
+            Print("[{Label}] no custom character body (character_motor_component) to affect (place it inside the body or where there is an owner, or drive it with an activation signal that says who triggered it)")
 
-    # 重ねた変更と付けたタグを外す
+    # Removes the stacked modifier and the attached tags
     Remove<internal>():void =
         Handle.CancelIfSet()
         set Handle = false

@@ -2,13 +2,13 @@ using { /Verse.org/SceneGraph }
 using { /Verse.org/Simulation }
 using { /Verse.org/Assets }
 
-# 入力アクションが押された知らせ
-# 方向：区画全体（SendScoped。区画が無ければ世界全体）
-# 送り手：player_input_component。受け手：押されたことを見る component。消費しない（同じ component の押下だけを見るなら、TriggeredEvent を Subscribe するか Input で絞る）
+# Notification that an input action was pressed
+# Direction: the whole zone (SendScoped; the whole world when there is no zone)
+# Sender: player_input_component. Receivers: components that watch for presses. Not consumed (to watch only the presses of one component, Subscribe to TriggeredEvent or filter by Input)
 player_input_triggered_event<public> := class(scene_event):
-    # 送った player_input_component
+    # The player_input_component that sent it
     Input<public>:player_input_component
-    # 押した人
+    # The agent who pressed
     Agent<public>:agent
-    # 押された操作（送った component の InputAction）
+    # The action pressed (the InputAction of the sending component)
     Action<public>:input_action(logic)

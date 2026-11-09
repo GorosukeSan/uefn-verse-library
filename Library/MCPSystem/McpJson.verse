@@ -1,11 +1,11 @@
 using { /Verse.org/SpatialMath }
 
-# MCPSystem の JSON の小道具。v43.00 の Verse には JSON を書き出す関数が無い（/UnrealEngine.com/JSON は Parse と value.As* だけ）ので、返事は文字列で組み立てる
-# 読む側（Python）は json.loads(..., strict=False) で読む（制御文字は " \ 改行 タブ 復帰 だけを逃がす）
+# JSON helpers for MCPSystem. Verse in v43.00 has no function that writes JSON (/UnrealEngine.com/JSON only has Parse and value.As*), so replies are built as strings
+# The reader (Python) uses json.loads(..., strict=False) (only " \ newline, tab and carriage return are escaped)
 
-# JSON の文字列の中身にする（" と \ と改行・タブ・復帰を逃がす。囲みの " は付けない）
-#   長い文字列を 1 文字ずつ += でつなぐと O(n^2)（10 万文字で数秒）、Concatenate は中で再帰していて 10 万文字で実行時エラー（ErrRuntime_InfiniteLoop。v43.00 実機）になる
-#   → 256 文字ずつの塊に分け、逃がす文字の無い塊はそのまま、ある塊だけ 1 文字ずつ逃がし、McpJoinTree（2 つずつ足す。O(n log n)）でつなぐ
+# Makes the body of a JSON string (escapes " \ newline, tab and carriage return; the surrounding " are not added)
+#   Appending a long string one character at a time with += is O(n^2) (seconds for 100k characters), and Concatenate recurses internally and hits a runtime error at 100k characters (ErrRuntime_InfiniteLoop; confirmed in UEFN v43.00)
+#   -> split into 256-character blocks, keep blocks without escapable characters as they are, escape only the others character by character, and join with McpJoinTree (pairwise, O(n log n))
 McpEscape<public>(S:string)<transacts>:string =
     if (not McpHasEscapeChar[S]):
         return S
@@ -16,7 +16,7 @@ McpEscape<public>(S:string)<transacts>:string =
         if (McpHasEscapeChar[Block]) then McpEscapeSmall(Block) else Block
     McpJoinTree(Parts)
 
-# 逃がす文字（" \ 改行 復帰 タブ）があれば成功する
+# Succeeds when an escapable character (" \ newline, carriage return, tab) is present
 McpHasEscapeChar<internal>(S:string)<transacts><decides>:void =
     var Found:logic = false
     for (C : S, not Found?):
@@ -24,7 +24,7 @@ McpHasEscapeChar<internal>(S:string)<transacts><decides>:void =
             set Found = true
     Found?
 
-# 短い文字列を 1 文字ずつ逃がす
+# Escapes a short string character by character
 McpEscapeSmall<internal>(S:string)<transacts>:string =
     var Out:string = ""
     for (C : S):
@@ -42,7 +42,7 @@ McpEscapeSmall<internal>(S:string)<transacts>:string =
             set Out += array{C}
     Out
 
-# Parts をつなぐ（隣どうしを 2 つずつ足すのを 1 つになるまで繰り返す。全体で O(n log n)。Concatenate より速く、深い再帰にならない）
+# Joins Parts (adds neighbours pairwise until one remains; O(n log n) overall. Faster than Concatenate and never recurses deeply)
 McpJoinTree<public>(Parts:[]string)<transacts>:string =
     var Level:[]string = Parts
     loop:
@@ -56,52 +56,52 @@ McpJoinTree<public>(Parts:[]string)<transacts>:string =
             First + Second
     if (Only := Level[0]) then Only else ""
 
-# JSON の文字列（" で囲んで逃がす）
+# JSON string (escaped and wrapped in ")
 McpQuote<public>(S:string)<transacts>:string =
     "\"{McpEscape(S)}\""
 
-# JSON の数（有限でなければ null。NaN・∞ は JSON に書けない）
+# JSON number (null when not finite; NaN and infinity cannot be written in JSON)
 McpNumber<public>(F:float)<transacts>:string =
     if (F.IsFinite[]) then "{F}" else "null"
 
-# JSON の整数
+# JSON integer
 McpInteger<public>(I:int)<transacts>:string =
     "{I}"
 
-# JSON の true / false
+# JSON true / false
 McpLogic<public>(L:logic)<transacts>:string =
     if (L?) then "true" else "false"
 
-# 位置・向きのベクトル（Verse の軸。{"left":..,"up":..,"forward":..}。単位は呼ぶ側で決める。位置なら cm）
+# Position / direction vector (Verse axes: {"left":..,"up":..,"forward":..}. The caller decides the unit; cm for positions)
 McpVector<public>(V:vector3)<transacts>:string =
     "\{\"left\":{McpNumber(V.Left)},\"up\":{McpNumber(V.Up)},\"forward\":{McpNumber(V.Forward)}\}"
 
-# 回転（{"yaw":..,"pitch":..,"roll":..}。度）
+# Rotation ({"yaw":..,"pitch":..,"roll":..}, degrees)
 McpRotation<public>(R:rotation)<transacts>:string =
     Angles := R.GetYawPitchRollDegrees()
     "\{\"yaw\":{McpNumber(Angles(0))},\"pitch\":{McpNumber(Angles(1))},\"roll\":{McpNumber(Angles(2))}\}"
 
-# "key":値 の 1 項目（Json は JSON の値として書いたもの。McpQuote / McpNumber などで作る）
+# One "key":value field (Json is already written as a JSON value; build it with McpQuote / McpNumber etc.)
 McpField<public>(Key:string, Json:string)<transacts>:string =
     "{McpQuote(Key)}:{Json}"
 
-# 項目（McpField で作ったもの）を並べたオブジェクト
+# Object made of fields (built with McpField)
 McpObject<public>(Fields:[]string)<transacts>:string =
     "\{{McpJoin(Fields, ",")}\}"
 
-# 値（JSON）を並べた配列
+# Array of values (JSON)
 McpArray<public>(Items:[]string)<transacts>:string =
     "[{McpJoin(Items, ",")}]"
 
-# 文字列の配列を JSON の文字列の配列にする
+# Turns a string array into a JSON array of strings
 McpStringArray<public>(Items:[]string)<transacts>:string =
     McpArray(for (Item : Items) { McpQuote(Item) })
 
-# Items を Separator でつなぐ
+# Joins Items with Separator
 McpJoin<public>(Items:[]string, Separator:string)<transacts>:string =
     McpJoinTree(for (Index -> Item : Items) { if (Index > 0) then Separator + Item else Item })
 
-# 10 進の文字列を int にする（符号つき、18 桁まで）。数字でない文字・空・桁が多すぎるなら失敗する（範囲を超える値で実行時エラーにしない）
+# Parses a decimal string into an int (signed, up to 18 digits). Fails on non-digit characters, empty input or too many digits (never a runtime error on out-of-range values)
 McpParseInt<public>(S:string)<transacts><decides>:int =
     S.Length > 0
     S.Length <= 19
@@ -123,7 +123,7 @@ McpParseInt<public>(S:string)<transacts><decides>:int =
     Bad = 0
     if (Neg?) then -N else N
 
-# 10 進の小数の文字列（"12"・"-3.25"・"0.5"。指数の表記は読まない）を float にする。読めなければ失敗する
+# Parses a decimal string ("12", "-3.25", "0.5"; exponent notation is not read) into a float. Fails when unreadable
 McpParseFloat<public>(S:string)<transacts><decides>:float =
     S.Length > 0
     S.Length <= 40
@@ -157,7 +157,7 @@ McpParseFloat<public>(S:string)<transacts><decides>:float =
     Value := Whole + Frac
     if (Neg?) then -Value else Value
 
-# '0'〜'9' を 0〜9 にする。数字でなければ失敗する
+# Maps '0'-'9' to 0-9. Fails for a non-digit
 McpDigit<public>(C:char)<transacts><decides>:int =
     var R:int = -1
     for (Index -> D : "0123456789"):
@@ -166,14 +166,14 @@ McpDigit<public>(C:char)<transacts><decides>:int =
     R >= 0
     R
 
-# float を int にする（小数は 0 の側へ切る）。有限でない・±9.0e15 を超えるなら失敗する（Floor[] / Int[] は範囲外の値で失敗ではなく実行時エラーになるため、先に範囲を見る）
+# Converts a float to an int (fractions truncate toward 0). Fails when not finite or beyond +-9.0e15 (Floor[] / Int[] raise a runtime error instead of failing on out-of-range values, so the range is checked first)
 McpFloatToInt<public>(F:float)<transacts><decides>:int =
     F.IsFinite[]
     F > -9.0e15
     F < 9.0e15
     if (F >= 0.0) then Floor[F] else Ceil[F]
 
-# 文字列 S の中で最初に C がある位置。無ければ失敗する
+# Position of the first C in string S. Fails when absent
 McpFindChar<public>(S:string, C:char)<transacts><decides>:int =
     var Found:int = -1
     for (Index -> X : S, Found < 0, X = C):
@@ -181,7 +181,7 @@ McpFindChar<public>(S:string, C:char)<transacts><decides>:int =
     Found >= 0
     Found
 
-# S の Start から Count 文字（範囲外は切り詰める）
+# Count characters of S from Start (clamped to the string)
 McpSlice<public>(S:string, Start:int, Count:int)<transacts>:string =
     Begin := Clamp(Start, 0, S.Length)
     End := Clamp(Start + Count, Begin, S.Length)

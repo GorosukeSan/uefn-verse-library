@@ -2,22 +2,22 @@ using { /Verse.org/SceneGraph }
 using { /Verse.org/Simulation }
 using { /UnrealEngine.com/Itemization }
 
-# 役割：InEntity から親を 1 つずつたどり、最初に見つかった agent（ふつうはアイテムを持っているプレイヤー）を返す。InEntity 自身が agent ならそれを返す
-# 前提・注意：inventory に入っているアイテムの entity は持ち主の子孫になる前提。地面に落ちている・まだ配られていないアイテムでは失敗する
+# Role: walks up the parents of InEntity one by one and returns the first agent found (usually the player holding the item). Returns InEntity itself when it is an agent
+# Requirements: assumes the entity of an item inside an inventory is a descendant of its owner. Fails for items lying on the ground or not yet granted
 (InEntity:entity).FindOwnerAgent<public>()<decides><reads>:agent =
     if (Agent := agent[InEntity]):
         Agent
     else:
         InEntity.GetParent[].FindOwnerAgent[]
 
-# 役割：Item が装備されているとき、その持ち主（FindOwnerAgent）を返す。装備されていない・持ち主がいないと失敗する
+# Role: returns the owner (FindOwnerAgent) of Item while it is equipped. Fails when it is not equipped or has no owner
 (Item:item_component).FindEquippedOwner<public>()<decides><reads>:agent =
     Item.IsEquipped[]
     Item.Entity.FindOwnerAgent[]
 
-# 役割：Item の装備（ChangeEquippedEvent）か inventory（ChangeInventoryEvent）のどちらかが変わるまで待つ
-# 前提・注意：変わったことだけを知らせ、何が変わったかは返さない。戻ったあとに FindEquippedOwner / FindOwnerAgent で調べ直す。
-#   item_holder_component は、これが戻ったあと 1 フレーム（TickEvents.PrePhysics）待ってから調べ直す（同じフレームに続けて来た変化の取りこぼし対策）
+# Role: waits until either the equip state (ChangeEquippedEvent) or the inventory (ChangeInventoryEvent) of Item changes
+# Requirements: only notifies that something changed, not what. After it returns, check again with FindEquippedOwner / FindOwnerAgent.
+#   item_holder_component waits one frame (TickEvents.PrePhysics) after this returns before checking again (so changes arriving back to back in the same frame are not missed)
 (Item:item_component).AwaitHolderChange<public>()<suspends>:void =
     race:
         AwaitEquipChange(Item)
@@ -29,9 +29,9 @@ AwaitEquipChange<internal>(Item:item_component)<suspends>:void =
 AwaitInventoryChange<internal>(Item:item_component)<suspends>:void =
     Item.ChangeInventoryEvent.Await()
 
-# 役割：Agent の inventory（FindRootInventory）で、何かが装備される・外されるまで待つ
-# 前提・注意：呼んだ時点で inventory が見つからないと、ずっと戻らない（Sleep(Inf)）。race の中で使い、ほかの枝で止める。
-#   見る inventory は FindRootInventory が返す 1 つだけ（その中の inventory の変化は上へ伝わるので届く）。根が複数あると、別の根での装備の変化は届かない
+# Role: waits until something is equipped or unequipped in Agent's inventory (FindRootInventory)
+# Requirements: never returns (Sleep(Inf)) when no inventory is found at the time of the call. Use it inside a race and stop it from another branch.
+#   Only the single inventory returned by FindRootInventory is watched (changes in inventories inside it propagate upward, so they arrive). With several roots, equip changes in another root do not arrive
 (Agent:agent).AwaitAnyEquipChange<public>()<suspends>:void =
     if (Inventory := Agent.FindRootInventory[]):
         race:
@@ -46,9 +46,9 @@ AwaitEquipItem<internal>(Inventory:inventory_component)<suspends>:void =
 AwaitUnequipItem<internal>(Inventory:inventory_component)<suspends>:void =
     Inventory.UnequipItemEvent.Await()
 
-# 役割：アイテムの entity を inventory から外して消す
-# 前提・注意：item_component が無い・どの inventory にも入っていないときは、そのまま RemoveFromParent する。
-#   inventory が外すのを断った（RemoveItem がエラーを返した）ときは何もしない（消さない）。成功したかは返さない
+# Role: removes the item's entity from its inventory and destroys it
+# Requirements: when there is no item_component or the item is not in any inventory, it is simply RemoveFromParent'ed.
+#   When the inventory refuses the removal (RemoveItem returned an error) nothing happens (it is not destroyed). Success is not reported
 (Item:entity).RemoveFromInventory<public>():void =
     if:
         ItemComponent := Item.GetComponent[item_component]
@@ -59,7 +59,7 @@ AwaitUnequipItem<internal>(Inventory:inventory_component)<suspends>:void =
             return
     Item.RemoveFromParent()
 
-# 役割：重ねて持っているアイテム（stackable_component）なら数を 1 減らし、最後の 1 つ（または重ねられないアイテム）なら RemoveFromInventory で外して消す
+# Role: for a stacked item (stackable_component) decrements the count by 1; for the last one (or a non-stackable item) removes and destroys it with RemoveFromInventory
 (Item:entity).ConsumeOne<public>():void =
     if (Stack := Item.GetComponent[stackable_component], Stack.StackSize > 1):
         Stack.SetStackSize(Stack.StackSize - 1)

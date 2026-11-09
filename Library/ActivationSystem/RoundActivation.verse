@@ -3,37 +3,37 @@ using { /Verse.org/Simulation }
 using { /Fortnite.com/Game }
 using { ActivationSystem.TooltipKit }
 
-# ラウンドが始まった合図（activated_event の派生なので、起動を待つ部品はこれで動き出す）
-# 方向：activate_on_round_component の Targets（空ならその entity）から下へ（SendDown）
-# 送り手：activate_on_round_component。受け手：起動を待つ部品（ラウンド番号が要るものはこの型で受ける）。消費しない
+# Signal that a round started (a subclass of activated_event, so parts waiting for activation start on it)
+# Direction: from the Targets of activate_on_round_component (its entity when empty) downward (SendDown)
+# Sender: activate_on_round_component. Receivers: parts waiting for activation (those that need the round number take this type). Not consumed
 round_started_event<public> := class(activated_event):
-    # 始まったラウンドの番号（1 から）
+    # Number of the round that started (from 1)
     RoundNumber<public>:int
 
-# ラウンドが終わった合図（deactivated_event の派生なので、起動を待つ部品はこれで止まって片付ける）
-# 方向・送り手・受け手は round_started_event と同じ
+# Signal that a round ended (a subclass of deactivated_event, so parts waiting for activation stop and clean up on it)
+# Direction, sender and receivers are the same as round_started_event
 round_ended_event<public> := class(deactivated_event):
-    # 終わったラウンドの番号（1 から）
+    # Number of the round that ended (from 1)
     RoundNumber<public>:int
 
-# 役割：Fortnite のラウンド（fort_round_manager）の開始・終了を受け取る補助（実行時のクラス）。component がフィールドに 1 つ持ち、OnBeginSimulation で Start、OnEndSimulation で Stop を呼ぶ（継承しない）
-#   OnStarted はラウンドが始まるたびに動き、ラウンドが終わると止められる（ラウンドのあいだだけ続く処理をそのまま書ける）。もうラウンドの途中なら、Start の中ですぐ動く
-#   OnEnded はラウンドが終わるたびに呼ばれる
-# 前提・注意：fort_round_manager が無い（シミュレーションの entity から取れない）と Start は false を返し、何も呼ばない
+# Role: a helper (run-time class) that receives the start and end of Fortnite rounds (fort_round_manager). A component holds one in a field and calls Start in OnBeginSimulation and Stop in OnEndSimulation (no inheritance)
+#   OnStarted runs each time a round starts and is canceled when the round ends (you can write work that lasts only for the round as is). If a round is already in progress, it runs right away inside Start
+#   OnEnded is called each time a round ends
+# Requirements / notes: without a fort_round_manager (not available from the simulation entity), Start returns false and calls nothing
 round_watcher<public> := class<unique>:
 
     var<private> Manager:?fort_round_manager = false
     var<private> Subscriptions:[]cancelable = array{}
     var<private> InRound:logic = false
-    # 最後に終わったラウンドの番号（このラウンドが終わったかを、購読の順番に頼らずに判断するため）
+    # Number of the last round that ended (to decide whether this round has ended without relying on subscription order)
     var<private> EndedRound:int = 0
 
-    # Owner のシミュレーションの round manager を購読する。取れなければ false
+    # Subscribes to the round manager of Owner's simulation. false if not available
     Start<public>(Owner:entity, OnStarted:type{_()<suspends>:void}, OnEnded:type{_():void}):logic =
         Stop()
         if (Found := Owner.GetFortRoundManager[]):
             set Manager = option{Found}
-            # 引数の関数を Subscribe にそのまま渡すと UEFN では V3502 になるので、メソッドで包んで渡す
+            # Passing a function argument straight to Subscribe gives V3502 in UEFN, so wrap it in a method
             Relay := round_callback_relay{Watcher := Self, Started := OnStarted, Ended := OnEnded}
             set Subscriptions = array:
                 Found.SubscribeRoundStarted(Relay.InvokeStarted)
@@ -42,7 +42,7 @@ round_watcher<public> := class<unique>:
         else:
             false
 
-    # 購読をやめる
+    # Stops subscribing
     Stop<public>():void =
         for (Subscription : Subscriptions):
             Subscription.Cancel()
@@ -51,8 +51,8 @@ round_watcher<public> := class<unique>:
         set InRound = false
         set EndedRound = 0
 
-    # ラウンドの途中（始まってから終わるまで）なら成功する。
-    #   同じラウンドの始まりを購読しているほかの部品のコールバックが先に呼ばれても成功するよう、round manager の RoundNumber（始まりのコールバックより前に増える）でも判断する
+    # Succeeds during a round (from its start to its end).
+    #   Also decides from the round manager's RoundNumber (which increases before the start callback), so that it succeeds even when another part's callback for the same round start is called first
     IsInRound<public>()<decides><transacts>:void =
         if (InRound?):
         else:
@@ -60,7 +60,7 @@ round_watcher<public> := class<unique>:
             Found.RoundNumber > 0
             Found.RoundNumber > EndedRound
 
-    # 今の（最後に始まった）ラウンドの番号。始まる前は 0、ゲームが終わると 0 に戻る。round manager が無ければ 0
+    # Number of the current (last started) round. 0 before the first round and back to 0 when the game ends. 0 without a round manager
     GetRoundNumber<public>()<transacts>:int =
         if (Found := Manager?) then Found.RoundNumber else 0
 
@@ -69,7 +69,7 @@ round_watcher<public> := class<unique>:
         if (not Value?, Found := Manager?):
             set EndedRound = Found.RoundNumber
 
-# round_watcher が使う、渡された関数を listenable に渡すための包み
+# Wrapper used by round_watcher to pass the given functions to a listenable
 round_callback_relay<internal> := class<internal>:
     Watcher<internal>:round_watcher
     Started<internal>:type{_()<suspends>:void}
@@ -83,27 +83,27 @@ round_callback_relay<internal> := class<internal>:
         Watcher.SetInRound(false)
         Ended()
 
-# 役割：Fortnite のラウンドが始まったら Targets へ起動の合図（round_started_event）、終わったら停止の合図（round_ended_event）を送る。合図で動く部品（カウントダウン・スポナー・画面・メニュー・ボリューム・ロードアウトなど）を、ラウンドのあいだだけ動かし、ラウンドごとにやり直させる
-#   FirstRound / LastRound で、送るラウンドを絞れる（0 なら絞らない）。シミュレーションの開始ではなく「ゲーム（ラウンド）の開始」で動かしたいときに使う（その部品の ActiveOnBegin / StartOnBegin はオフにする）
-# 置き方：エディターで entity に付ける。Targets が空なら、この entity とその子孫へ送る
-# 知らせ：round_started_event / round_ended_event（RoundNumber 付き）、RoundStartedEvent / RoundEndedEvent（ラウンドの番号）
-# 外から：IsInRound / GetRoundNumber
-# 前提・注意：fort_round_manager が無いと何もしない（出力ログに出る）
+# Role: when a Fortnite round starts, sends the activation signal (round_started_event) to Targets, and the deactivation signal (round_ended_event) when it ends. Runs signal-driven parts (countdowns, spawners, screens, menus, volumes, loadouts, etc.) only during the round and restarts them every round
+#   FirstRound / LastRound limit which rounds send (0 means no limit). Use it to start on "the start of the game (round)" instead of the start of the simulation (turn off the parts' ActiveOnBegin / StartOnBegin)
+# Placement: attach to an entity in the editor. When Targets is empty, sends to this entity and its descendants
+# Notifies: round_started_event / round_ended_event (with RoundNumber), RoundStartedEvent / RoundEndedEvent (the round number)
+# From outside: IsInRound / GetRoundNumber
+# Requirements / notes: does nothing without a fort_round_manager (reported in the output log)
 activate_on_round_component<public> := class<final_super>(component):
 
-    # 合図を送る entity（その entity と子孫に届く）。空なら、この entity とその子孫へ送る
+    # Entities to signal (the entity and its descendants receive it). When empty, sends to this entity and its descendants
     @editable:
         ToolTip := RoundTargetsToolTip
         Categories := array{ActivationCategory}
     Targets<public>:[]entity = array{}
-    # このラウンド番号から送る（1 から。0 なら最初から）。既定 0
+    # Send from this round number (from 1; 0 means from the first). Default 0
     @editable_number(int):
         ToolTip := RoundFirstToolTip
         Categories := array{ActivationCategory}
         MinValue := option{0}
         MaxValue := option{100}
     FirstRound<public>:int = 0
-    # このラウンド番号まで送る（0 なら最後まで）。既定 0
+    # Send up to this round number (0 means to the last). Default 0
     @editable_number(int):
         ToolTip := RoundLastToolTip
         Categories := array{ActivationCategory}
@@ -114,10 +114,10 @@ activate_on_round_component<public> := class<final_super>(component):
     RoundStartedEventInternal<private><final>:event(int) = event(int){}
     RoundEndedEventInternal<private><final>:event(int) = event(int){}
 
-    # 送るラウンドが始まるたびに、ラウンドの番号で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires with the round number each time a signaled round starts (Await / Subscribe; cannot be signaled from outside)
     RoundStartedEvent<public><final>:listenable(int) = MakeProxyListenable(RoundStartedEventInternal)
 
-    # 送るラウンドが終わるたびに、ラウンドの番号で届く
+    # Fires with the round number each time a signaled round ends
     RoundEndedEvent<public><final>:listenable(int) = MakeProxyListenable(RoundEndedEventInternal)
 
     Watcher<private>:round_watcher = round_watcher{}
@@ -127,17 +127,17 @@ activate_on_round_component<public> := class<final_super>(component):
         (super:)OnBeginSimulation()
         Started := Watcher.Start(Entity, OnRoundStarted, OnRoundEnded)
         if (not Started?):
-            Print("[activate_on_round_component] fort_round_manager が見つかりません（ラウンドの合図を送れません）")
+            Print("[activate_on_round_component] fort_round_manager not found (cannot send round signals)")
 
     OnEndSimulation<override>():void =
         Watcher.Stop()
         (super:)OnEndSimulation()
 
-    # ラウンドの途中なら成功する
+    # Succeeds during a round
     IsInRound<public>()<decides><transacts>:void =
         Watcher.IsInRound[]
 
-    # 今の（最後に始まった）ラウンドの番号（始まる前は 0）
+    # Number of the current (last started) round (0 before the first)
     GetRoundNumber<public>()<transacts>:int =
         Watcher.GetRoundNumber()
 
@@ -150,7 +150,7 @@ activate_on_round_component<public> := class<final_super>(component):
             RoundStartedEventInternal.Signal(Number)
 
     OnRoundEnded<private>():void =
-        # 送ったラウンドが終わったときだけ止める（送っていないラウンドの終わりでは何もしない）
+        # Stop only when a signaled round ends (nothing at the end of a round that was not signaled)
         if (SentRound > 0):
             Number := SentRound
             set SentRound = 0

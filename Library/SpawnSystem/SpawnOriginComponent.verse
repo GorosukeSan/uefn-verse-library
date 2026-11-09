@@ -1,19 +1,19 @@
 using { /Verse.org/SceneGraph }
 using { /Verse.org/SpatialMath }
 
-# spawn_origin_component が 1 回の補充ごとに返す基準の点（どれも世界での位置、センチメートル）
+# Reference points a spawn_origin_component returns on each refill (all world positions, centimeters)
 spawn_origins<public> := struct:
-    # 帯を作って出す基準の点。空なら spawner はその回は何もしない
+    # Reference points around which bands are built to spawn. If empty, the spawner does nothing that round
     SpawnPoints<public>:[]vector3 = array{}
-    # 消すかどうかを決める帯の基準の点。空なら SpawnPoints を使う
+    # Reference points of the bands that decide whether to despawn. If empty, SpawnPoints is used
     DespawnPoints<public>:[]vector3 = array{}
-    # ここから近い（spawner の KeepNearCells 以内の）ものは消さない点
+    # Points near which (within the spawner's KeepNearCells) nothing is despawned
     KeepPoints<public>:[]vector3 = array{}
 
-# 役割：spawner が「だれ（どこ）のまわりに」出すかを決める基底。派生は UpdateOrigins だけを書く。spawner は点ごとに帯（上限と下限）を作り、近いものをまとめる
-# 置き方：直接は置かない（OriginKit の players_origin_component などの派生を置く）。派生は 1 entity に 1 つまで。置かなければ、spawner は自分の entity の位置を基準にする（決まった 1 点）
-# 同じ entity：spawner_component
+# Role: base class that decides "around whom (where)" the spawner spawns. Subclasses write only UpdateOrigins. The spawner builds a band (upper and lower limit) per point and merges nearby ones
+# Placement: never placed directly (place a subclass such as OriginKit's players_origin_component). At most one subclass per entity. Without one, the spawner uses its own entity's position as the reference (one fixed point)
+# Same entity: spawner_component
 spawn_origin_component<public> := class<abstract><final_super>(component):
 
-    # 派生が実装する。今の基準の点を返す。spawner が補充のたびに 1 回呼ぶ（派生はここで自分の状態を更新してよい）
+    # Implemented by the subclass. Returns the current reference points. Called once by the spawner on every refill (the subclass may update its own state here)
     UpdateOrigins<public>()<transacts>:spawn_origins

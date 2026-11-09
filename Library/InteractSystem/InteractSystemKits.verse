@@ -1,7 +1,7 @@
-# InteractSystem の Kit をライブラリの外（利用者のコード）から使えるように public にする。
-# フォルダから作られるモジュールは既定で internal なので、宣言しないと外から using できない。
+# Makes the InteractSystem Kits public so they can be used from outside the library (your code).
+# Modules created from folders are internal by default, so without this declaration they cannot be used with using from outside.
 ConditionKit<public> := module {}
-# 押せる・押せないを切り替える部品（interact_gate_component）
+# Part that toggles whether it can be pressed (interact_gate_component)
 GateKit<public> := module {}
-# エディターに出す説明（message）
+# Descriptions shown in the editor (message)
 TooltipKit<public> := module {}

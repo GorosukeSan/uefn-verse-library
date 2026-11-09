@@ -3,9 +3,9 @@ using { /Verse.org/Assets }
 using { /Verse.org/Input }
 using { /Fortnite.com/Input }
 
-# 役割：入力を待つための小さな部品（能力の RunFor や、1 人分の view から呼ぶ）。基底クラスを継承しなくてよい
-# 使い方の例（押しているあいだだけ何かする）：
-#   MaybeInput := Agent.AwaitPlayerInput()   # <suspends> は if の条件で呼べない（V3512）ので先に受ける
+# Role: small helpers for awaiting input (called from an ability's RunFor or from a per-player view). No base class to inherit from
+# Usage example (do something only while the key is held):
+#   MaybeInput := Agent.AwaitPlayerInput()   # <suspends> cannot be called in an if condition (V3512), so take the result first
 #   if (PlayerInput := MaybeInput?):
 #       race:
 #           PlayerInput.HoldInputMapping(Mapping, RemoveMappingOnRevoke)
@@ -15,12 +15,12 @@ using { /Fortnite.com/Input }
 #                   PlayerInput.AwaitReleased(Action)
 #                   DoWhileHeld()
 
-# Agent がプレイヤーなら、その人の入力（player_input）を返す。プレイヤーでない・入力が取れないと失敗する
+# Returns the input (player_input) of Agent when it is a player. Fails when it is not a player or the input is unavailable
 (Agent:agent).FindPlayerInput<public>()<decides><transacts>:player_input =
     GetPlayerInput[player[Agent]]
 
-# Agent の入力（player_input）が取れるまで、1 フレームずつ待って取り直す（シミュレーション開始直後や参加した直後は、まだ取れないことがある）。
-# 取れたらそれを返す。プレイヤーでない・取れる前に退出したら false。能力の RunFor の頭で使う（FindPlayerInput で 1 回だけ試すと、取れなかった人には能力が動かないまま「付与中」になる）
+# Retries every frame until Agent's input (player_input) is available (right after the simulation starts or right after joining it may not be yet).
+# Returns it once available. false when Agent is not a player or left before it became available. Use at the top of an ability's RunFor (trying only once with FindPlayerInput leaves the ability "granted" but not running for players whose input was unavailable)
 (Agent:agent).AwaitPlayerInput<public>()<suspends>:?player_input =
     loop:
         if (Player := player[Agent]):
@@ -32,18 +32,19 @@ using { /Fortnite.com/Input }
             return false
         Sleep(0.0)
 
-# Action が押される（検出が始まる = BeginDetectEvent）まで待つ。Action を含む input_mapping がその人に足されていないと届かない
+# Waits until Action is pressed (detection begins = BeginDetectEvent). Does not arrive unless an input_mapping containing Action has been added to the player
 (PlayerInput:player_input).AwaitPressed<public>(Action:input_action(logic))<suspends>:void =
     PlayerInput.GetInputEvents(Action).BeginDetectEvent.Await()
 
-# Action が離される（検出が終わる = EndDetectEvent）まで待つ。押していないときに呼ぶと、次に押して離すまで戻らない
+# Waits until Action is released (detection ends = EndDetectEvent). Called while not pressed, it does not return until the next press and release
 (PlayerInput:player_input).AwaitReleased<public>(Action:input_action(logic))<suspends>:void =
     PlayerInput.GetInputEvents(Action).EndDetectEvent.Await()
 
-# Mapping をその人に足し、止められる（race で負ける・キャンセルされる）まで戻らない。RemoveOnEnd が true なら、止められたときに Mapping を外す
-# race の 1 本の枝として使い、能力が止まると同時に後片付けされるようにする
-# 前提・注意：RemoveOnEnd は、その能力専用の割り当てを選んだときだけ true にする。RangedWeaponMapping / TraversalMapping など、武器や移動も使う割り当てを外すと、撃てない・動けなくなる。
-#   外すときは数えずに外すので、同じ割り当てをほかの機能（別の能力・player_input_component など）が使っているときも true にしない
+# Adds Mapping to the player and does not return until stopped (loses a race / is canceled). When RemoveOnEnd is true, removes Mapping when stopped
+# Use as one branch of a race so the cleanup happens as soon as the ability stops
+# ⚠ There is a case where the defer inside a branch stopped by losing a race did not run (v43.00 in UEFN; see the note in InputMappingLease). For mappings where a leftover is a problem, add outside the race and remove after it
+# Requirements: set RemoveOnEnd to true only for a mapping dedicated to that ability. Removing a mapping that weapons or movement also use (RangedWeaponMapping / TraversalMapping, ...) makes the player unable to shoot or move.
+#   Removal is not counted, so do not set it to true either when another feature (another ability, player_input_component, ...) uses the same mapping
 (PlayerInput:player_input).HoldInputMapping<public>(Mapping:input_mapping, RemoveOnEnd:logic)<suspends>:void =
     PlayerInput.AddInputMapping(Mapping)
     defer:

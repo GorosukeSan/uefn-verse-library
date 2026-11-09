@@ -2,28 +2,28 @@ using { /Verse.org/SceneGraph }
 using { /Verse.org/Simulation }
 using { PlayerSystem }
 
-# スイングの状態。Idle = ロープをかけていない、Anchored = 地面でロープだけかけて待っている、Swinging = 振り子で振っている
+# Swing state. Idle = no rope attached, Anchored = waiting on the ground with only a rope attached, Swinging = swinging as a pendulum
 swing_state<public> := enum:
     Idle
     Anchored
     Swinging
 
-# スイング中（ロープをかけている：地面で待つ・振っている）の人（agent）に付くタグ。スイングの状態を確かめる入口はこのタグ（と、それを読む下の IsSwinging / GetSwingState）だけ
-# 実際に付くのは派生の swing_anchored_tag（地面で待つ）か swing_pendulum_tag（振っている）。どちらも swinging_tag の型で見つかる。swing_ability_component が付け外しする（直接は付けない）
-# controlled_movement_tag の派生なので、引力（GravitySystem）やホバー（HoverSystem）はこの人の速度を書き換えない
+# Tag on an agent who is swinging (rope attached: waiting on the ground or swinging). This tag (and IsSwinging / GetSwingState below, which read it) is the only entry point for checking the swing state
+# What is actually attached is a subclass: swing_anchored_tag (waiting on the ground) or swing_pendulum_tag (swinging). Both are found as swinging_tag. swing_ability_component adds and removes them (never attach directly)
+# A controlled_movement_tag subclass, so gravity (GravitySystem) and hover (HoverSystem) do not overwrite this agent's velocity
 swinging_tag<public> := class(controlled_movement_tag):
 
-# 地面でロープだけかけて待っている人（swing_state.Anchored）に付くタグ。swinging_tag の派生
+# Tag on an agent waiting on the ground with only a rope attached (swing_state.Anchored). swinging_tag subclass
 swing_anchored_tag<public> := class(swinging_tag):
 
-# 振り子で振っている人（swing_state.Swinging）に付くタグ。swinging_tag の派生
+# Tag on an agent swinging as a pendulum (swing_state.Swinging). swinging_tag subclass
 swing_pendulum_tag<public> := class(swinging_tag):
 
-# Agent がスイング中（ロープをかけている：地面で待つ・振っている）なら成功する。swinging_tag を見る（能力・区画の台帳を探さない）
+# Succeeds if Agent is swinging (rope attached: waiting on the ground or swinging). Looks at swinging_tag (does not search the ability or the scope registry)
 (Agent:agent).IsSwinging<public>()<decides><reads>:void =
     Agent.HasPlayerTag[swinging_tag]
 
-# Agent のスイングの状態。タグから読む（swing_pendulum_tag なら Swinging、ほかの swinging_tag なら Anchored、無ければ Idle）
+# Agent's swing state. Read from the tags (swing_pendulum_tag = Swinging, any other swinging_tag = Anchored, none = Idle)
 (Agent:agent).GetSwingState<public>()<reads>:swing_state =
     if (Agent.HasPlayerTag[swing_pendulum_tag]):
         swing_state.Swinging
@@ -32,97 +32,97 @@ swing_pendulum_tag<public> := class(swinging_tag):
     else:
         swing_state.Idle
 
-# State のときに付けるタグを作る（Idle なら false）
+# Makes the tag to attach for State (false for Idle)
 MakeSwingStateTag<internal>(State:swing_state)<transacts>:?swinging_tag =
     case (State):
         swing_state.Anchored => option{swing_anchored_tag{}}
         swing_state.Swinging => option{swing_pendulum_tag{}}
         _ => false
 
-# 待機中、レティクルの先をつかめるかが変わった（HUD の照準の色など）
-# 向き：swing_ability_component が、その人の slot の下へ player_event に包んで SendDown し、能力の entity から SendUp する。受け手：HUD などの view。消費しない
+# While idle, whether the object beyond the reticle can be grabbed changed (HUD reticle color etc.)
+# Direction: swing_ability_component wraps it in a player_event and SendDowns it under the agent's slot, and SendUps it from the ability entity. Receivers: views such as the HUD. Not consumed
 swing_target_changed_event<public> := class(scene_event):
-    # 送り元の能力
+    # Ability that sent it
     Ability<public>:swing_ability_component
-    # 照準を見ている人
+    # Agent looking through the reticle
     Agent<public>:agent
-    # true ならつかめる
+    # true if grabbable
     CanGrab<public>:logic
 
-# スイングの状態（swing_state）が変わった。swing_ability_component.StateChangedEvent にも同じ中身が届く（今の状態を問い合わせるなら Agent.GetSwingState()）
-# 向き：swing_target_changed_event と同じ（slot の下へ player_event で SendDown ＋ 能力の entity から SendUp）。消費しない
+# The swing state (swing_state) changed. The same content also reaches swing_ability_component.StateChangedEvent (to query the current state use Agent.GetSwingState())
+# Direction: same as swing_target_changed_event (SendDown under the slot as player_event + SendUp from the ability entity). Not consumed
 swing_state_changed_event<public> := class(scene_event):
-    # 送り元の能力
+    # Ability that sent it
     Ability<public>:swing_ability_component
-    # 状態が変わった人
+    # Agent whose state changed
     Agent<public>:agent
-    # 新しい状態
+    # New state
     State<public>:swing_state
 
-# ロープを 1 本かけた（つかんだ）。Anchor はつかんだ点の entity（swing_anchor_component 付き）。swing_ability_component.GrabbedEvent にも届く
-# 向き：swing_target_changed_event と同じ。消費しない
+# One rope attached (grabbed). Anchor is the entity of the grabbed point (with swing_anchor_component). Also reaches swing_ability_component.GrabbedEvent
+# Direction: same as swing_target_changed_event. Not consumed
 swing_grabbed_event<public> := class(scene_event):
-    # 送り元の能力
+    # Ability that sent it
     Ability<public>:swing_ability_component
-    # ロープをかけた人
+    # Agent who attached the rope
     Agent<public>:agent
-    # つかんだ点の entity（swing_anchor_component 付き）
+    # Entity of the grabbed point (with swing_anchor_component)
     Anchor<public>:entity
 
-# ロープをすべて外して離した（自分で離した・点が壊れた・Release で離させた）。swing_ability_component.ReleasedEvent にも届く
-# 向き：swing_target_changed_event と同じ。消費しない
+# All ropes removed and released (released by the player, the point broke, or Release forced it). Also reaches swing_ability_component.ReleasedEvent
+# Direction: same as swing_target_changed_event. Not consumed
 swing_released_event<public> := class(scene_event):
-    # 送り元の能力
+    # Ability that sent it
     Ability<public>:swing_ability_component
-    # 離した人
+    # Agent who released
     Agent<public>:agent
 
-# 地面にいて、自分にロープをかけている人（Holder）をレティクルで見ている／見なくなった（Holder := false）。「ロープを引く」の案内用
-# 向き：swing_target_changed_event と同じ。消費しない
+# While on the ground, the reticle started / stopped (Holder := false) pointing at a player (Holder) whose rope is attached to you. For the "pull the rope" hint
+# Direction: same as swing_target_changed_event. Not consumed
 swing_reel_hint_event<public> := class(scene_event):
-    # 送り元の能力
+    # Ability that sent it
     Ability<public>:swing_ability_component
-    # 案内を出す人
+    # Agent who sees the hint
     Agent<public>:agent
-    # 引ける相手。見なくなったら false
+    # Player who can be pulled. false when no longer in view
     Holder<public>:?agent
 
-# 複数かけたロープのうち 1 本だけが外れた（点が壊れた・離れすぎた・つかんだ物が消えた）。swing_ability_component.RopeDetachedEvent にも届く
-# 向き：swing_target_changed_event と同じ。消費しない
+# Only one of several attached ropes detached (the point broke, got too far away, or the grabbed object disappeared). Also reaches swing_ability_component.RopeDetachedEvent
+# Direction: same as swing_target_changed_event. Not consumed
 swing_rope_detached_event<public> := class(scene_event):
-    # 送り元の能力
+    # Ability that sent it
     Ability<public>:swing_ability_component
-    # ロープをかけた人
+    # Agent who attached the rope
     Agent<public>:agent
-    # つかんだ点の entity（swing_anchor_component 付き）
+    # Entity of the grabbed point (with swing_anchor_component)
     Anchor<public>:entity
 
-# つかまれた物（レティクルの球が当たった entity）に、ロープをかけられたことを知らせる
-# 向き：swing_runner が、当たった entity へ SendDown する。受け手：その entity の swing_target_component（と、その子孫の見た目など）。消費しない
+# Tells the grabbed object (the entity hit by the reticle sphere) that a rope was attached to it
+# Direction: swing_runner SendDowns it to the hit entity. Receivers: that entity's swing_target_component (and looks on its descendants etc.). Not consumed
 swing_attached_event<public> := class(scene_event):
-    # 送り元の能力
+    # Ability that sent it
     Ability<public>:swing_ability_component
-    # ロープをかけた人
+    # Agent who attached the rope
     Agent<public>:agent
-    # つかんだ点の entity（swing_anchor_component 付き）
+    # Entity of the grabbed point (with swing_anchor_component)
     Anchor<public>:entity
 
-# つかまれた物に、その点を起点に振り出した（振り子が始まった）ことを知らせる。振り出すたびに届く
-# 向き：swing_attached_event と同じ。消費しない
+# Tells the grabbed object that a swing was launched from that point (the pendulum started). Arrives on every launch
+# Direction: same as swing_attached_event. Not consumed
 swing_pulled_event<public> := class(scene_event):
-    # 送り元の能力
+    # Ability that sent it
     Ability<public>:swing_ability_component
-    # ロープをかけた人
+    # Agent who attached the rope
     Agent<public>:agent
-    # つかんだ点の entity（swing_anchor_component 付き）
+    # Entity of the grabbed point (with swing_anchor_component)
     Anchor<public>:entity
 
-# つかまれた物に、その点のロープが外れたことを知らせる
-# 向き：swing_attached_event と同じ。消費しない
+# Tells the grabbed object that the rope at that point detached
+# Direction: same as swing_attached_event. Not consumed
 swing_detached_event<public> := class(scene_event):
-    # 送り元の能力
+    # Ability that sent it
     Ability<public>:swing_ability_component
-    # ロープをかけた人
+    # Agent who attached the rope
     Agent<public>:agent
-    # つかんだ点の entity（swing_anchor_component 付き）
+    # Entity of the grabbed point (with swing_anchor_component)
     Anchor<public>:entity

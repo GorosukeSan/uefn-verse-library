@@ -7,14 +7,14 @@ using { PlayerSystem }
 using { MCPSystem }
 using { MCPSystem.TooltipKit }
 
-# 役割：Player ツールセット（宛先 "player"）。プレイヤーの一覧・位置・テレポート（Fortnite のキャラクター）、agent のタグ（ある？・付ける・外す）、組（player_group_component）への出入り
-#   プレイヤーは番号（core.players と同じ。playspace の GetPlayers の順）で指す。組は entity の番号か mcp_name_component の名前で指す
-# 置き方：受け箱と同じ entity に付けるとよい
-# タグ：自分の entity に mcp_controllable_tag。タグの名前 player_state_tag（探すだけ）を知らせる。MCP から agent に付けたタグは止まるときに外す
-# 前提・注意：独自キャラクター（CharacterSystem）の体を動かすのは CharacterKit の character ツールセット。こちらは Fortnite のキャラクター
+# Role: Player toolset (destination "player"). Player list, position, teleport (the Fortnite character), agent tags (has / add / remove), joining and leaving groups (player_group_component)
+#   Players are addressed by index (same as core.players; the order of the playspace's GetPlayers). Groups by entity id or mcp_name_component name
+# Placement: best attached to the same entity as the inbox
+# Tags: mcp_controllable_tag on its own entity. Reports the tag name player_state_tag (find only). Tags added to agents from MCP are removed when it stops
+# Requirements, caveats: the body of a custom character (CharacterSystem) is driven by CharacterKit's character toolset. This one is for the Fortnite character
 mcp_player_toolset_component<public> := class<final_super>(component, mcp_controllable, mcp_tag_provider):
 
-    # 同じツールセットを複数置くときの名前（空なら "player" だけで届く）
+    # Name used when the same toolset is placed more than once (when empty, "player" alone reaches it)
     @editable:
         ToolTip := McpToolsetIdToolTip
         Categories := array{McpCategory}
@@ -41,16 +41,16 @@ mcp_player_toolset_component<public> := class<final_super>(component, mcp_contro
 
     McpTools<override>()<transacts>:[]mcp_tool =
         array:
-            McpTool("list", "プレイヤーの一覧。data に [\{index,has_character,pos,tags,groups\}]（tags は名前つきタグのうち付いているもの、groups は入っている組の id）", array{})
-            McpTool("get_position", "Fortnite のキャラクターの位置（cm）・向き・速度（cm/s）", array{McpArg("player", "player", "番号")})
-            McpTool("teleport", "Fortnite のキャラクターを移す（体の entity の transform を書く）", array{McpArg("player", "player", "番号"), McpArg("pos", "vector3", "位置（cm）"), McpOptArg("yaw", "float", "向き（度）")})
-            McpTool("has_tag", "agent にタグが付いているか（reply が true / false）", array{McpArg("player", "player", "番号"), McpArg("tag", "string", "タグの名前（core.tags）")})
-            McpTool("add_tag", "agent にタグを付ける（<concrete> のタグだけ。このツールセットが止まると外れる）", array{McpArg("player", "player", "番号"), McpArg("tag", "string", "タグの名前")})
-            McpTool("remove_tag", "MCP から付けたタグを外す（all = true ならその型を全部）", array{McpArg("player", "player", "番号"), McpArg("tag", "string", "タグの名前"), McpOptArg("all", "bool", "ほかの部品が付けたものも外す（既定 false）")})
-            McpTool("groups", "組（player_group_component）の一覧。data に [\{id,name,members\}]", array{})
-            McpTool("join_group", "組に入れる（player_group_component.Join。兄弟の組から出す設定ならそれも）", array{McpArg("player", "player", "番号"), McpArg("group", "entity", "組の entity")})
-            McpTool("leave_group", "組から出す", array{McpArg("player", "player", "番号"), McpArg("group", "entity", "組の entity")})
-            McpTool("state", "プレイヤーの数・MCP から付けたタグの数", array{})
+            McpTool("list", "List of players. data: [\{index,has_character,pos,tags,groups\}] (tags = the named tags present, groups = ids of the groups joined)", array{})
+            McpTool("get_position", "Position (cm), facing and velocity (cm/s) of the Fortnite character", array{McpArg("player", "player", "player index")})
+            McpTool("teleport", "Moves the Fortnite character (writes the body entity's transform)", array{McpArg("player", "player", "player index"), McpArg("pos", "vector3", "position (cm)"), McpOptArg("yaw", "float", "yaw (degrees)")})
+            McpTool("has_tag", "Whether the agent has the tag (reply is true / false)", array{McpArg("player", "player", "player index"), McpArg("tag", "string", "tag name (core.tags)")})
+            McpTool("add_tag", "Adds a tag to the agent (<concrete> tags only; removed when this toolset stops)", array{McpArg("player", "player", "player index"), McpArg("tag", "string", "tag name")})
+            McpTool("remove_tag", "Removes a tag added from MCP (all = true removes every tag of that type)", array{McpArg("player", "player", "player index"), McpArg("tag", "string", "tag name"), McpOptArg("all", "bool", "also remove tags added by other parts (default false)")})
+            McpTool("groups", "List of groups (player_group_component). data: [\{id,name,members\}]", array{})
+            McpTool("join_group", "Joins the group (player_group_component.Join; also leaves sibling groups if so configured)", array{McpArg("player", "player", "player index"), McpArg("group", "entity", "group entity")})
+            McpTool("leave_group", "Leaves the group", array{McpArg("player", "player", "player index"), McpArg("group", "entity", "group entity")})
+            McpTool("state", "Number of players and of tags added from MCP", array{})
 
     McpHandle<override>(Call:mcp_call):mcp_reply =
         Tool := Call.Tool
@@ -111,7 +111,7 @@ mcp_player_toolset_component<public> := class<final_super>(component, mcp_contro
                         AddedTags.Add(Player, NewTag)
                         McpOk("added {Entry.Name}")
                     else:
-                        McpFail("failed", "{Entry.Name} is not <concrete>（find only）")
+                        McpFail("failed", "{Entry.Name} is not <concrete> (find only)")
                 else if (Call.GetLogicOr("all", false) = true):
                     if (AddedTags.Remove[Player, Entry.TagType]) {}
                     if (Player.RemoveAllTags[Entry.TagType]) then McpOk("removed all {Entry.Name}") else McpFail("failed", "no {Entry.Name}")
@@ -120,7 +120,7 @@ mcp_player_toolset_component<public> := class<final_super>(component, mcp_contro
                 else:
                     McpFail("failed", "{Entry.Name} was not added by MCP")
             else:
-                McpFail("bad_args", "unknown tag {Call.GetStringOr("tag", "")}（core.tags）")
+                McpFail("bad_args", "unknown tag {Call.GetStringOr("tag", "")} (core.tags)")
         else if (Tool = "join_group" or Tool = "leave_group"):
             if (GroupEntity := Call.FindEntity["group"], Group := GroupEntity.GetComponent[player_group_component]):
                 if (Tool = "join_group"):
@@ -130,7 +130,7 @@ mcp_player_toolset_component<public> := class<final_super>(component, mcp_contro
                     Group.Leave(Player)
                     McpOk("left members={Group.GetMemberCount()}")
             else:
-                McpFail("no_entity", "group（player_group_component の entity）")
+                McpFail("no_entity", "group (an entity with player_group_component)")
         else:
             McpFail("unknown_tool", Tool)
 

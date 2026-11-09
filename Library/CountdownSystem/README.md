@@ -1,40 +1,40 @@
 # CountdownSystem
 
-決めた秒数（小数も可）を数え、残り秒数（切り上げた整数）が変わるたびと数え終わりを知らせる System です。ゲームの流れ（GameSequenceSystem）の「〜秒たったら次へ」の条件にも、流れの外のタイマーにも使えます。
+A System that counts down a given number of seconds (fractions allowed) and notifies each time the remaining seconds (rounded up to a whole number) change and when the count ends. Usable both as the "after N seconds, go to the next node" condition of the game flow (GameSequenceSystem) and as a timer outside the flow.
 
-## 置き方
+## Placement
 
-| component | 置く場所 | すること |
+| component | Where to place | What it does |
 |---|---|---|
-| `countdown_component` | 起動の合図が届く entity（ゲームの流れなら、ノードの entity かその子孫。`schedule_component` の子孫など）。流れの外でも使える | `DurationSeconds` 秒を数え、残り秒数の変化と数え終わりを子孫へ（`AlsoSendUp` なら祖先へも）知らせる |
-| `countdown_finished_condition_component`（ConditionKit） | `game_transition_component` か `condition_all` / `condition_any` の entity の直下。そのうえで `countdown_component` の entity の子孫 | カウントダウンが 0 になったら満たす。起動し直す・数え直すと満たさなくなる |
+| `countdown_component` | an entity where the activation signal arrives (in a game sequence, the node's entity or a descendant; a descendant of `schedule_component`, etc.). Also usable outside the flow | counts `DurationSeconds` seconds and notifies the descendants (and the ancestors too with `AlsoSendUp`) of changes in the remaining seconds and of the end |
+| `countdown_finished_condition_component` (ConditionKit) | directly under the entity of a `game_transition_component` or `condition_all` / `condition_any`, and also a descendant of the `countdown_component` entity | satisfied when the countdown reaches 0. Re-activating or restarting makes it unsatisfied again |
 
-例：「ノードに入って 10 秒たったら次へ」
+Example: "10 seconds after entering the node, go to the next"
 ```
-ノード（game_node_component + countdown_component、DurationSeconds = 10）
-└ 次へ（game_transition_component）
-  └ 時間切れ（countdown_finished_condition_component）
+Node (game_node_component + countdown_component, DurationSeconds = 10)
+└ Next (game_transition_component)
+  └ Time is up (countdown_finished_condition_component)
 ```
-遷移はノードの直下に置く決まりなので、タイマーはノードと同じ entity に付けます（`countdown_component` は子孫へ知らせるので、条件はその子孫になります）。
+Transitions must be placed directly under the node, so the timer goes on the same entity as the node (`countdown_component` notifies its descendants, so the condition is among them).
 
-ノードの外（祖先）に置いた HUD や部品で残り秒数・終わりを受けたいときは、`AlsoSendUp` をオンにします（親から上へも送る）。
+To receive the remaining seconds and the end in a HUD or a part outside (above) the node, turn on `AlsoSendUp` (also sends upward from the parent).
 
-## 設定（@editable）
-- `countdown_component.DurationSeconds : float = 5.0` — 数える秒数（0.1〜3600 秒。小数可）。今回だけ違う長さにするときは `Restart(?Seconds := option{…})`。
-- `countdown_component.StartOnActivated : logic = true` — オンなら起動の合図で最初から数え直し（数えている途中でもやり直す）、停止の合図で止める（ゲームの流れなら、ノードに入ってから出るまで）。オフなら合図を無視する。
-- `countdown_component.StartOnBegin : logic = false` — オンならシミュレーション開始と同時に数え始める（ゲームの流れを使わないとき）。
-- `countdown_component.AlsoSendUp : logic = false` — オンなら知らせ（`countdown_remaining_changed_event` / `countdown_finished_event`）を、子孫へに加えて親から祖先へ（SendUp）も送る。自分の entity には 1 回だけ届く。
+## Settings (@editable)
+- `countdown_component.DurationSeconds : float = 5.0` — seconds to count (0.1–3600 seconds, fractions allowed). For a different length this once, use `Restart(?Seconds := option{...})`.
+- `countdown_component.StartOnActivated : logic = true` — when on, restarts from the beginning on the activation signal (even while counting) and stops on the deactivation signal (in a game sequence, from entering the node to leaving it). When off, ignores the signals.
+- `countdown_component.StartOnBegin : logic = false` — when on, starts counting at the start of the simulation (when the game flow is not used).
+- `countdown_component.AlsoSendUp : logic = false` — when on, sends the notifications (`countdown_remaining_changed_event` / `countdown_finished_event`) upward from the parent to the ancestors (SendUp) in addition to the descendants. Its own entity receives them only once.
 
-`StartOnActivated` と `StartOnBegin` をどちらもオフにして、コードから `Start` / `Restart` / `Stop` を呼んでもかまいません。`countdown_finished_condition_component` に設定はありません。
+You may turn off both `StartOnActivated` and `StartOnBegin` and call `Start` / `Restart` / `Stop` from code. `countdown_finished_condition_component` has no settings.
 
-## イベント
-- `countdown_remaining_changed_event`（scene_event、SendDown。`AlsoSendUp` なら親から SendUp も）: `Countdown : countdown_component`、`RemainingWholeSeconds : int`（切り上げた整数。1 以上）。数え始め・1 秒ごと・`AddSeconds`・`Resume` で、値が変わったときに届く（0 になったときは届かない）。送り手は `countdown_component`、受け手は子孫の `countdown_finished_condition_component` など。消費しない。
-- `countdown_finished_event`（scene_event、SendDown。`AlsoSendUp` なら親から SendUp も）: `Countdown : countdown_component`。残りが 0 になったときに届く。`Stop` や停止の合図で止めたときは届かない。消費しない。
-- `countdown_component.RemainingChangedEvent : listenable(int)` — 残り秒数（切り上げた整数）が変わるたび（1 秒ごと）、その値で届く。
-- `countdown_component.FinishedEvent : listenable(tuple())` — 数え終わったときに届く。
-- 受けるもの: `countdown_component` は `activated_event`（最初から数え直す）/ `deactivated_event`（止める）（`StartOnActivated` のとき。消費しない）。`countdown_finished_condition_component` は `activated_event` と `countdown_remaining_changed_event`（満たさない状態に戻す）、`countdown_finished_event`（満たす）。どれも消費しない。
+## Events
+- `countdown_remaining_changed_event` (scene_event, SendDown; also SendUp from the parent with `AlsoSendUp`): `Countdown : countdown_component`, `RemainingWholeSeconds : int` (rounded up; 1 or more). Arrives when the value changes: at the start, every second, on `AddSeconds` and `Resume` (not when it reaches 0). Sent by `countdown_component`, received by descendant `countdown_finished_condition_component`s etc. Not consumed.
+- `countdown_finished_event` (scene_event, SendDown; also SendUp from the parent with `AlsoSendUp`): `Countdown : countdown_component`. Arrives when the remaining time reaches 0. Not sent when stopped by `Stop` or the deactivation signal. Not consumed.
+- `countdown_component.RemainingChangedEvent : listenable(int)` — fires with the value each time the remaining seconds (rounded up) change (every second).
+- `countdown_component.FinishedEvent : listenable(tuple())` — fires when the count ends.
+- Received: `countdown_component` takes `activated_event` (restart from the beginning) / `deactivated_event` (stop) (with `StartOnActivated`; not consumed). `countdown_finished_condition_component` takes `activated_event` and `countdown_remaining_changed_event` (back to unsatisfied) and `countdown_finished_event` (satisfied). None are consumed.
 
-## 公開 API
+## Public API
 ```verse
 countdown_remaining_changed_event<public> := class(scene_event):
     Countdown<public>:countdown_component
@@ -50,38 +50,38 @@ countdown_component<public> := class<final_super>(component):
     AlsoSendUp<public>:logic
     RemainingChangedEvent<public><final>:listenable(int)
     FinishedEvent<public><final>:listenable(tuple())
-    Start<public>():void                                    # 数えていなければ DurationSeconds 秒から始める。数えている途中（一時停止中も）なら何もしない
-    Restart<public>(?Seconds:?float = false):void           # 最初から数え直す（途中・一時停止中・終わったあとでも）。Seconds で今回だけの長さ
-    Stop<public>():void                                     # やめる（FinishedEvent は届かない）。数えていなければ何もしない
-    IsRunning<public>()<decides><transacts>:void            # 数えている途中（一時停止中を除く）なら成功
-    IsPaused<public>()<decides><transacts>:void             # 数えている途中で一時停止しているなら成功
+    Start<public>():void                                    # starts from DurationSeconds if not counting. Does nothing while counting (including paused)
+    Restart<public>(?Seconds:?float = false):void           # restarts from the beginning (even while counting, paused or after the end). Seconds sets the length this once
+    Stop<public>():void                                     # stops (FinishedEvent does not fire). Does nothing if not counting
+    IsRunning<public>()<decides><transacts>:void            # succeeds while counting (not paused)
+    IsPaused<public>()<decides><transacts>:void             # succeeds while counting and paused
     Pause<public>():void
     Resume<public>():void
-    AddSeconds<public>(DeltaSeconds:float):void             # 残りを増やす（マイナスなら減らす）。0 以下でその場で数え終わる
-    GetRemainingSeconds<public>()<transacts>:float          # 残り（小数）。数えていなければ 0.0
-    GetRemainingWholeSeconds<public>()<transacts>:int       # 残りを切り上げた整数。数えていなければ 0
+    AddSeconds<public>(DeltaSeconds:float):void             # adds to the remaining time (subtracts when negative). Ends on the spot at 0 or less
+    GetRemainingSeconds<public>()<transacts>:float          # remaining time (fraction). 0.0 if not counting
+    GetRemainingWholeSeconds<public>()<transacts>:int       # remaining time rounded up. 0 if not counting
 
 # ConditionKit
 countdown_finished_condition_component<public> := class<final_super>(condition_component):
 ```
 
-## 名前の決まり
-- 秒の値は、小数（float）なら `…Seconds`、切り上げた整数（int。画面に出す値）なら `…WholeSeconds` と書きます。ScheduleSystem（`schedule_snapshot.GetRemainingSeconds` は小数、`schedule_text_component.GetRemainingWholeSeconds` は整数）とそろえています。
+## Naming
+- Second values are named `...Seconds` for fractions (float) and `...WholeSeconds` for rounded-up whole numbers (int; the value shown on screen). This matches ScheduleSystem (`schedule_snapshot.GetRemainingSeconds` is a fraction, `schedule_text_component.GetRemainingWholeSeconds` a whole number).
 
-## 前提・注意
-- 残りは「終わる時刻 − 今のシミュレーション時刻」で決めます。フレームの数や待ちの積み重ねで数えないので、ずれません。一時停止中は残りが減りません。
-- `Start` は数えている途中なら何もしません（GameSequenceSystem の `Start` / `Restart` と同じ分け方）。途中でやり直すのは `Restart` か起動の合図です。同じフレームに `Stop` してから `Restart` しても取りこぼしません。
-- `AddSeconds` は数えている途中（一時停止中も含む）だけ効きます。一時停止中に残りが 0 以下になったときは、再開したときに数え終わります。
-- `AlsoSendUp` をオンにすると、祖先にある `countdown_finished_condition_component`（ほかのカウントダウン用に置いたもの）にも知らせが届きます。祖先に別の条件があるときはオフのままにします。
-- `countdown_finished_condition_component` は ConditionSystem の条件です。置き方は ConditionSystem の決まり（遷移か `condition_all` / `condition_any` の直下）に従います。
-- この System のコードに `⚠ 未検証` の項目と `@experimental` の API はありません。
+## Requirements, caveats and limits
+- The remaining time is "end time minus the current simulation time". It is not counted by frames or accumulated waits, so it does not drift. It does not decrease while paused.
+- `Start` does nothing while counting (the same split as GameSequenceSystem's `Start` / `Restart`). To restart mid-way, use `Restart` or the activation signal. Calling `Stop` and then `Restart` in the same frame loses nothing.
+- `AddSeconds` works only while counting (including paused). If the remaining time becomes 0 or less while paused, the count ends on resume.
+- With `AlsoSendUp` on, the notifications also reach `countdown_finished_condition_component`s on the ancestors (ones placed for other countdowns). Leave it off when there are other conditions on the ancestors.
+- `countdown_finished_condition_component` is a ConditionSystem condition. Its placement follows the ConditionSystem rules (directly under a transition or `condition_all` / `condition_any`).
+- The code of this System has no `⚠ Unverified` items and no `@experimental` API.
 
-## 確かめ方
-- テスト：`_Test/CountdownSystemTest/` の `countdown_system_test_component`。この component を付けた entity を 1 つ置くだけ（`countdown_component` はテストが実行時に作る。プレイヤーは要らない）。`Start` から `FinishedEvent` までの実時間、残り秒数の知らせの回数と値、`Pause` / `Resume`、`AddSeconds`（増やす・残りより多く減らす）、`Stop`、起動・停止の合図での開始と停止と途中のやり直し、`Restart`（途中・秒数を渡す・1 秒未満）、`AlsoSendUp`（親の entity で受ける）を確かめます。約 20 秒かかります。結果は出力ログの `[TEST] CountdownSystem`。
-- 見本（`_Samples/`）はありません。
+## Verifying
+- Test: `countdown_system_test_component` in `_Test/CountdownSystemTest/`. Just place one entity with this component (the `countdown_component` is created by the test at run time; no player needed). It checks the real time from `Start` to `FinishedEvent`, the count and values of the remaining-seconds notifications, `Pause` / `Resume`, `AddSeconds` (adding, and subtracting more than the remaining time), `Stop`, start / stop / mid-way restart on the activation and deactivation signals, `Restart` (mid-way, with a given length, under 1 second) and `AlsoSendUp` (received on the parent entity). It takes about 20 seconds. Results go to the output log as `[TEST] CountdownSystem`.
+- There is no sample (`_Samples/`).
 
-## 移行が要るもの（2026-11-08）
-- `countdown_component.Seconds : int` → `DurationSeconds : float`（エディターで置いたものは値を入れ直す）。
-- `GetRemainingTimeSeconds():float` → `GetRemainingSeconds():float`、`GetRemainingSeconds():int` → `GetRemainingWholeSeconds():int`（同じ名前で型が変わったので、int として使っていた所はコンパイルエラーになる）。
-- `countdown_remaining_changed_event.RemainingSeconds` → `RemainingWholeSeconds`。
-- `Start()` は数えている途中なら何もしなくなった（前は最初からやり直していた）。やり直すなら `Restart()`。起動の合図は前と同じく最初からやり直す。
+## Migration notes (2026-11-08)
+- `countdown_component.Seconds : int` → `DurationSeconds : float` (re-enter the value on instances placed in the editor).
+- `GetRemainingTimeSeconds():float` → `GetRemainingSeconds():float`, `GetRemainingSeconds():int` → `GetRemainingWholeSeconds():int` (the same name changed type, so code that used it as an int fails to compile).
+- `countdown_remaining_changed_event.RemainingSeconds` → `RemainingWholeSeconds`.
+- `Start()` now does nothing while counting (it used to restart from the beginning). To restart, use `Restart()`. The activation signal still restarts from the beginning as before.

@@ -8,13 +8,13 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：GravitySystem の動作確認。gravity_well_component がプレイヤーを引くこと、gravity_point_ability_component をコードから付与・剥奪し、Toggle（置く・消す）・時間切れ・人の操作で置けることを確かめる
-# テストのレベル：
-#   - player_manager_component を付けた entity を 1 つ
-#   - テスト用の entity に gravity_system_test_component だけを付ける（点と能力はテストが実行時に作る）
-#   - プレイヤーの頭の上 3 m に物が無い、開けた場所でセッションを始める（プレイヤーを上へ引くため）
-# 人の操作：「press fire」と出たら、30 秒以内に射撃のボタンを押す
-# 結果：出力ログの [TEST] GravitySystem
+# Role: verification of GravitySystem. Checks that gravity_well_component pulls the player, that gravity_point_ability_component can be granted / revoked from code, Toggle (place / remove), expiry, and placing by human input
+# Test level:
+#   - one entity with player_manager_component
+#   - the test entity carries only gravity_system_test_component (the point and the ability are created by the test at runtime)
+#   - start the session in an open place with nothing 3 m above the player's head (the player is pulled upwards)
+# Human input: when "press fire" appears, press the fire button within 30 seconds
+# Result: [TEST] GravitySystem in the output log
 gravity_system_test_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =
@@ -37,7 +37,7 @@ gravity_system_test_component<public> := class<final_super>(component):
         else:
             false
 
-    # プレイヤーの 300 cm 上に強い点を置き、1 秒でプレイヤーが 50 cm 以上上がるかを見る
+    # Places a strong point 300 cm above the player and checks that the player rises by 50 cm or more within 1 second
     TestWellPull<private>(Results:test_log, Agent:agent)<suspends>:void =
         if (FortCharacter := Agent.GetFortCharacter[], Start := FortCharacter.FindGlobalTranslation[], SimulationEntity := Entity.GetSimulationEntity[]):
             WellEntity := entity{}

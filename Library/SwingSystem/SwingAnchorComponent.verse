@@ -1,19 +1,19 @@
 using { /Verse.org/SceneGraph }
 using { /Verse.org/Simulation }
 
-# 役割：スイングでつかんだ点の entity に付く目印。つかまれた物が壊れるときに Break を呼ぶと、その点をつかんでいるスイングが途切れる
-# 置き方：実行時に swing_runner（swing_ability_component が動かす）が、つかんだ点の entity に付ける（エディターでは置かない）。swing_target_component.Shatter が呼ぶ
+# Role: marker attached to the entity of a point grabbed by a swing. When the grabbed object breaks, calling Break cuts every swing holding that point
+# Placement: at runtime, swing_runner (driven by swing_ability_component) attaches it to the entity of the grabbed point (not placed in the editor). swing_target_component.Shatter calls it
 swing_anchor_component<public> := class<final_super>(component):
 
-    # Break されたら true（外からは読むだけ）
+    # true once Break has been called (read-only from outside)
     var<private> Broken<public>:logic = false
 
     BrokenEventInternal<private><final>:event() = event(){}
 
-    # Break されたときに届く（Await / Subscribe する。外から Signal はできない）
+    # Fires when Break is called (Await / Subscribe it; it cannot be Signaled from outside)
     BrokenEvent<public><final>:listenable(tuple()) = MakeProxyListenable(BrokenEventInternal)
 
-    # この点をつかんでいるスイングを途切れさせる（Broken を true にし、BrokenEvent を送る）。2 回目以降は何もしない（BrokenEvent は 1 回だけ届く）
+    # Cut every swing holding this point (sets Broken to true and sends BrokenEvent). Does nothing from the second call on (BrokenEvent fires only once)
     Break<public>():void =
         if (Broken?):
             return

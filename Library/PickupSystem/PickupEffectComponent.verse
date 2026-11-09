@@ -6,108 +6,123 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { PickupSystem.TooltipKit }
 
-# 同じ効果（EffectId が同じ）をもう持っている人が、また拾ったときにどうするか
+# What to do when a player who already has the same effect (same EffectId) picks it up again
 pickup_effect_stack_mode<public> := enum:
-    # 続いている効果の残り時間に、新しい効果の DurationSeconds を足す（新しい効果は始めない）
+    # Add the new effect's DurationSeconds to the remaining time of the ongoing effect (the new effect is not started)
     Extend
-    # 続いている効果の残り時間を、新しい効果の DurationSeconds に戻す（新しい効果は始めない）
+    # Reset the remaining time of the ongoing effect to the new effect's DurationSeconds (the new effect is not started)
     Refresh
-    # もう 1 つ重ねる（中の部品が 2 つ分効く。MaxStacks まで。届いていたら一番早く終わるものを Refresh する）
+    # Add another copy (the parts inside take effect twice. Up to MaxStacks; when reached, Refresh the copy ending soonest)
     Stack
-    # 続いている効果を終えて、新しい効果を始める
+    # End the ongoing effect and start the new one
     Replace
-    # 続いているあいだは何もしない（新しい効果は始めない）
+    # Do nothing while the effect is ongoing (the new effect is not started)
     Ignore
+    # Raise the Tier of the ongoing effect by 1 (up to MaxTier) and reset the remaining time to the new effect's DurationSeconds (the new effect is not started)
+    #   The parts inside read the tier with Entity.FindPickupEffect[].GetTier() / TierChangedEvent and change their strength
+    Tier
 
-# 効果（pickup_effect_component）を受けているあいだ、持ち主（agent）に付くタグ。効果 1 つにつき 1 つ付く
-#   何の効果かは、Entity.GetActivePickupEffects(Agent) の EffectId で分かる。中の部品が、効果ごとのタグ（CharacterSystem の BuffKit の character_speed_modified_tag など）も付ける
+# Tag on the owner (agent) while receiving an effect (pickup_effect_component). One per effect
+#   Which effect it is can be read from the EffectId of Entity.GetActivePickupEffects(Agent). The parts inside also add per-effect tags (e.g. character_speed_modified_tag in CharacterSystem's BuffKit)
 pickup_effect_tag<public> := class(player_state_tag):
 
-# 効果が始まった・終わった知らせ
-# 方向：効果の entity から根へ（SendUp。プレイヤーの slot → player_manager_component の entity へと届く）
-# 送り手：pickup_effect_component（Effect）。受け手：slot の祖先の component（ゲームの根など）。消費しない
+# Notification that an effect started or ended
+# Direction: from the effect entity to the root (SendUp; reaches the player's slot and then the player_manager_component entity)
+# Sender: pickup_effect_component (Effect). Receivers: ancestor components of the slot (the game root etc.). Not consumed
 pickup_effect_changed_event<public> := class(scene_event):
-    # 始まった・終わった効果（送り元）
+    # The effect that started / ended (sender)
     Effect<public>:pickup_effect_component
-    # 効果を受けている人（持ち主）
+    # Agent receiving the effect (owner)
     Agent<public>:agent
-    # true なら始まった、false なら終わった
+    # true if started, false if ended
     Started<public>:logic
 
-# 持ち主の側に届く、効果の知らせの種類（pickup_effect_owner_event.Notice）
+# Kind of effect notification delivered on the owner's side (pickup_effect_owner_event.Notice)
 pickup_effect_notice<public> := enum:
-    # 効果が始まった（Instant の効果も。すぐあとに Ended が続く）
+    # The effect started (Instant effects too; Ended follows right after)
     Started
-    # 同じ効果（EffectId が同じ）をまた拾ったが、新しい効果は始めず、続いている効果に任せた（StackMode が Extend / Refresh / Ignore と、Stack の上限）。残り時間は Effect.GetRemainingSeconds で読む
+    # The same effect (same EffectId) was picked up again, but no new effect was started; the ongoing one took over (StackMode Extend / Refresh / Ignore, or the Stack limit). Read the remaining time with Effect.GetRemainingSeconds
     Renewed
-    # 効果が終わった（時間・End・EndPickupEffectsFor）。持ち主の退出などで消えたときは届かない
+    # The effect ended (timer, End, EndPickupEffectsFor). Not delivered when it disappeared because the owner left etc.
     Ended
 
-# 効果の知らせ（持ち主の側）。拾ったときの HUD など、持ち主のロードアウト・キャラクターの中の部品が受ける
-# 方向：持ち主の slot の entity から下へ（SendDown。slot の下の entity すべて：ロードアウト・キャラクター・widget の view・効果のプレハブ）
-# 送り手：pickup_effect_component（拾った効果）。受け手：slot の下の component（HudKit の pickup_effect_hud_component など）。消費しない
-# pickup_effect_changed_event（SendUp。slot の祖先＝ゲームの根などが受ける）と同じ時に届く。Renewed はこちらだけ
+# Effect notification (owner's side). Received by parts inside the owner's loadout / character, such as the pickup HUD
+# Direction: from the owner's slot entity downward (SendDown; every entity under the slot: loadout, character, widget views, effect prefabs)
+# Sender: pickup_effect_component (the picked-up effect). Receivers: components under the slot (HudKit's pickup_effect_hud_component etc.). Not consumed
+# Delivered at the same time as pickup_effect_changed_event (SendUp; received by the slot's ancestors = the game root etc.). Renewed is delivered only here
 pickup_effect_owner_event<public> := class(scene_event):
-    # 続いている効果。Started・Ended なら拾った効果と同じ。Renewed なら、残り時間が延びた（任された）方の効果
+    # The ongoing effect. For Started / Ended, the same as the picked-up effect. For Renewed, the effect whose remaining time was extended (took over)
     Effect<public>:pickup_effect_component
-    # 拾った効果（知らせを送った効果）。Renewed なら、始まらずにすぐ消える方（見せ方（card_info_component）はこちらから読む）
+    # The picked-up effect (the one that sent the notification). For Renewed, the one that disappears right away without starting (read the look (card_info_component) from this one)
     Picked<public>:pickup_effect_component
-    # 効果を受けている人（持ち主）
+    # Agent receiving the effect (owner)
     Agent<public>:agent
-    # 何が起きたか
+    # What happened
     Notice<public>:pickup_effect_notice
 
-# 役割：効果のプレハブの根に置く「効果の土台」。持ち主（拾った人）・寿命（DurationSeconds）・同じ効果の重ねがけ（StackMode）を受け持ち、中身の部品へ寿命の始まりと終わりを合図で伝える
-#   始まり：作られた次のフレームに、この entity とその子孫へ、持ち主が起こした起動の合図（activated_by_agent_event）を送る。中身の部品（バフ・能力の付与・ステージへの合図・HUD の文字など、起動の合図で動くもの）はこれで動き出す
-#   終わり：DurationSeconds 秒たつか End で、停止の合図（deactivated_event）を送ってから、この entity（効果のプレハブ）を消す。中身の部品は停止の合図か OnEndSimulation で元に戻す
-#   中身の部品は、持ち主を FindOwningPlayer（効果はプレイヤーの slot の下に作られる）か起動の合図の Agent で、拾った物（オーブ）を Entity.FindPickupEffect[].FindSource[] で知る。この component を知らない部品（Library の起動の合図で動く部品）もそのまま使える
-# 置き方：エディターで、効果のプレハブの根の entity に付ける。中身の部品は同じ entity か子に置く（同じ型の部品を 2 つ使うなら子の entity に分ける）
-#   プレハブは、オーブ（pickup_component の Effect）か、コードの Entity.GrantPickupEffect(Agent, Prefab, Origin, Source) が、その人の slot の下に作る。作った entity の位置は拾った物の位置
-#   持ち主のいる場所（ロードアウトの中など）にエディターで置いても動く（持ち主 = その場所の持ち主、開始の次のフレームから）
-# いつ：作られた次のフレームから DurationSeconds 秒（0 ならずっと。End か EndPickupEffectsFor で終える）。Instant なら起動の合図を送った次のフレームで終える（1 回きりの効果）
-# 知らせ：StartedEvent / EndedEvent（持ち主）、pickup_effect_changed_event（SendUp）、pickup_effect_owner_event（持ち主の slot から SendDown。Started / Renewed / Ended）
-# タグ：効果のあいだ、持ち主に pickup_effect_tag
-# 外から：End / AddSeconds / GetRemainingSeconds / IsActive / FindOwner / FindSource / GetOriginTransform。Entity.FindPickupEffect[]（祖先の効果）、Entity.GetActivePickupEffects(Agent)、Entity.EndPickupEffectsFor(Agent)
-# 前提：持ち主のいない場所では始まらない（出力ログに出して消える）
+# Role: the "effect base" placed on the root of an effect prefab. Handles the owner (the picker), the lifetime (DurationSeconds) and stacking of the same effect (StackMode), and tells the parts inside when the lifetime starts and ends through signals
+#   Start: on the frame after creation, sends an activate signal raised by the owner (activated_by_agent_event) to this entity and its descendants. The parts inside (buffs, ability grants, stage signals, HUD text, anything driven by the activate signal) start from it
+#   End: after DurationSeconds or on End, sends the deactivate signal (deactivated_event) and then removes this entity (the effect prefab). The parts inside revert on the deactivate signal or in OnEndSimulation
+#   If a part inside sends activation_finished_event (ActivationSystem) upward (e.g. a single-use action cell), the effect ends there
+#   The parts inside learn the owner through FindOwningPlayer (effects are created under the player's slot) or the Agent of the activate signal, and the picked-up object (orb) through Entity.FindPickupEffect[].FindSource[]. Parts that know nothing about this component (library parts driven by the activate signal) work as they are
+# Placement: attach in the editor to the root entity of the effect prefab. Put the parts inside on the same entity or children (use child entities when you need two parts of the same type)
+#   The prefab is created under the agent's slot by an orb (pickup_component's Effect) or by Entity.GrantPickupEffect(Agent, Prefab, Origin, Source) from code. The created entity is positioned at the picked-up object
+#   It also works when placed in the editor somewhere that has an owner (inside a loadout etc.) (owner = that place's owner, from the frame after start)
+# When: DurationSeconds from the frame after creation (0 means forever; ends with End or EndPickupEffectsFor). With Instant, ends on the frame after the activate signal is sent (one-shot effects)
+# Notifies: StartedEvent / EndedEvent (owner), pickup_effect_changed_event (SendUp), pickup_effect_owner_event (SendDown from the owner's slot. Started / Renewed / Ended)
+# Tags: pickup_effect_tag on the owner while the effect lasts
+# From outside: End / AddSeconds / GetRemainingSeconds / IsActive / FindOwner / FindSource / GetOriginTransform. Entity.FindPickupEffect[] (ancestor effect), Entity.GetActivePickupEffects(Agent), Entity.EndPickupEffectsFor(Agent)
+# Requirements: does not start where there is no owner (logs to the output log and disappears)
 pickup_effect_component<public> := class<final_super>(component):
 
-    # 効果が続く秒数。0 ならずっと（End・EndPickupEffectsFor・持ち主の退出まで）。既定 10
+    # Seconds the effect lasts. 0 means forever (until End, EndPickupEffectsFor or the owner leaves). Default 10
     @editable_number(float):
         ToolTip := EffectDurationToolTip
         Categories := array{PickupEffectCategory}
         MinValue := option{0.0}
         MaxValue := option{3600.0}
     DurationSeconds<public>:float = 10.0
-    # オンなら、起動の合図を送った次のフレームで終える（タイムを縮めるなど、1 回きりの効果）。DurationSeconds は使わない。既定オフ
+    # When on, ends on the frame after the activate signal is sent (one-shot effects such as shortening the timer). DurationSeconds is not used. Default off
     @editable:
         ToolTip := EffectInstantToolTip
         Categories := array{PickupEffectCategory}
     Instant<public>:logic = false
-    # 同じ効果の見分け。同じ人の、同じ EffectId の効果どうしに StackMode が効く。空なら毎回別の効果（いつも重ねる）。既定 空
+    # Identifies the same effect. StackMode applies between effects of the same player with the same EffectId. Empty treats every pickup as a separate effect (always stacks). Default empty
     @editable:
         ToolTip := EffectIdToolTip
         Categories := array{PickupEffectCategory}
     EffectId<public>:string = ""
-    # 同じ効果をもう持っている人が拾ったときどうするか（Extend / Refresh / Stack / Replace / Ignore）。既定 Extend
+    # What to do when a player who already has the same effect picks it up (Extend / Refresh / Stack / Replace / Ignore). Default Extend
     @editable:
         ToolTip := EffectStackModeToolTip
         Categories := array{PickupEffectCategory}
     StackMode<public>:pickup_effect_stack_mode = pickup_effect_stack_mode.Extend
-    # StackMode が Stack のとき、同時に重ねられる数の上限。0 なら上限なし。既定 0
+    # When StackMode is Stack, the maximum number of copies at the same time. 0 means no limit. Default 0
     @editable_number(int):
         ToolTip := EffectMaxStacksToolTip
         Categories := array{PickupEffectCategory}
         MinValue := option{0}
         MaxValue := option{100}
     MaxStacks<public>:int = 0
+    # When StackMode is Tier, the maximum tier. Default 3
+    @editable_number(int):
+        ToolTip := EffectMaxTierToolTip
+        Categories := array{PickupEffectCategory}
+        MinValue := option{1}
+        MaxValue := option{100}
+    MaxTier<public>:int = 3
 
     StartedEventInternal<private><final>:event(agent) = event(agent){}
+    TierChangedEventInternal<private><final>:event(int) = event(int){}
+
+    # Fires with the new tier each time the tier goes up (picking the same effect up again with StackMode = Tier, or RaiseTier)
+    TierChangedEvent<public><final>:listenable(int) = MakeProxyListenable(TierChangedEventInternal)
     EndedEventInternal<private><final>:event(agent) = event(agent){}
 
-    # 効果が始まったとき（起動の合図を送ったあと）に、持ち主で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires with the owner when the effect starts (after the activate signal is sent) (Await / Subscribe it; it cannot be Signaled from outside)
     StartedEvent<public><final>:listenable(agent) = MakeProxyListenable(StartedEventInternal)
 
-    # 効果が終わったとき（停止の合図を送ったあと、消す前）に、持ち主で届く
+    # Fires with the owner when the effect ends (after the deactivate signal is sent, before removal)
     EndedEvent<public><final>:listenable(agent) = MakeProxyListenable(EndedEventInternal)
 
     var<private> Owner:?agent = false
@@ -116,11 +131,15 @@ pickup_effect_component<public> := class<final_super>(component):
     var<private> Started:logic = false
     var<private> Finished:logic = false
     var<private> EndSeconds:float = 0.0
+    # Tier (from 1)
+    var<private> Tier:int = 1
+    # Persistent marker (Persistent of GrantPickupEffect. Lasts until End / EndPickupEffectsFor regardless of DurationSeconds)
+    var<private> Persistent:logic = false
     WakeEventInternal<private>:event() = event(){}
     OwnerTags<private>:player_tag_holder = player_tag_holder{}
 
     OnSimulate<override>()<suspends>:void =
-        # 同じプレハブの部品がみな OnBeginSimulation を終えてから合図を送るように、1 フレーム待つ
+        # Wait one frame so that every part of the prefab has finished OnBeginSimulation before the signal is sent
         Sleep(0.0)
         if (Finished? or Started?):
             return
@@ -132,11 +151,11 @@ pickup_effect_component<public> := class<final_super>(component):
                 RunTimer()
             Finish()
         else:
-            Print("[pickup_effect_component] 持ち主がいないので効果を始めません（プレイヤーの slot の下に作ってください。GrantPickupEffect / pickup_component）")
+            Print("[pickup_effect_component] No owner, so the effect does not start (create it under a player's slot: GrantPickupEffect / pickup_component)")
             Finish()
 
     OnEndSimulation<override>():void =
-        # 持ち主の退出などで、終わる前に消えたとき（中身の部品は自分の OnEndSimulation で戻す）
+        # Removed before ending (the owner left etc.) (the parts inside revert in their own OnEndSimulation)
         if (not Finished?):
             set Finished = true
             OwnerTags.RemoveAll()
@@ -144,57 +163,89 @@ pickup_effect_component<public> := class<final_super>(component):
                 EndedEventInternal.Signal(Agent)
         (super:)OnEndSimulation()
 
-    # 今すぐ終える：停止の合図を送り、持ち主のタグを外し、この entity（効果のプレハブ）を消す。もう終わっていれば何もしない
+    # When a part inside reports that it has finished its job (activation_finished_event; e.g. a single-use grant from CharacterSystem's CellKit), end the effect (next frame)
+    OnReceive<override>(SceneEvent:scene_event):logic =
+        if (activation_finished_event[SceneEvent], Started?, not Finished?):
+            spawn{EndNextFrame()}
+        false
+
+    # Wait one frame before ending so we do not stop from inside a notification (no deactivate signal while a delivery is in progress)
+    EndNextFrame<private>()<suspends>:void =
+        Sleep(0.0)
+        End()
+
+    # End now: sends the deactivate signal, removes the owner's tag and removes this entity (the effect prefab). Does nothing if already ended
     End<public>():void =
         Finish()
 
-    # 残り時間に Seconds 秒を足す（負なら縮める）。ずっと続く（DurationSeconds = 0）・Instant の効果では何もしない
+    # Add Seconds to the remaining time (negative shortens it). Does nothing for endless (DurationSeconds = 0) or Instant effects
     AddSeconds<public>(Seconds:float):void =
-        if (DurationSeconds > 0.0, not Instant?, not Finished?):
+        if (not IsEndless[], not Instant?, not Finished?):
             set EndSeconds = Max(EndSeconds, GetSimulationElapsedTime()) + Seconds
             WakeEventInternal.Signal()
 
-    # 残り時間を Seconds 秒にする。ずっと続く・Instant の効果では何もしない
+    # Set the remaining time to Seconds. Does nothing for endless or Instant effects
     SetRemainingSeconds<public>(Seconds:float):void =
-        if (DurationSeconds > 0.0, not Instant?, not Finished?):
+        if (not IsEndless[], not Instant?, not Finished?):
             set EndSeconds = GetSimulationElapsedTime() + Seconds
             WakeEventInternal.Signal()
 
-    # 残りの秒数。ずっと続く効果は -1。始まる前は DurationSeconds、終わったら 0
+    # Remaining seconds. -1 for endless effects. DurationSeconds before start, 0 after the end
     GetRemainingSeconds<public>()<transacts>:float =
         if (Finished?):
             0.0
-        else if (DurationSeconds <= 0.0 and not Instant?):
+        else if (IsEndless[]):
             -1.0
         else if (not Started?):
             DurationSeconds
         else:
             Max(EndSeconds - GetSimulationElapsedTime(), 0.0)
 
-    # 効果が始まっていて、まだ終わっていなければ成功する
+    # Succeeds if the effect does not end by time (DurationSeconds is 0, or it was granted as Persistent. Instant excluded)
+    IsEndless<public>()<decides><transacts>:void =
+        not Instant?
+        DurationSeconds <= 0.0 or Persistent?
+
+    # Succeeds if granted as Persistent (the forever marker; e.g. an effect held from the start of a stage)
+    IsPersistent<public>()<decides><transacts>:void =
+        Persistent?
+
+    # Current tier (from 1. Goes up when picked up again with StackMode = Tier)
+    GetTier<public>()<transacts>:int =
+        Tier
+
+    # Raise the tier by 1 (up to MaxTier). true if it went up (TierChangedEvent fires)
+    RaiseTier<public>():logic =
+        if (Tier >= MaxTier or Finished?):
+            return false
+        set Tier += 1
+        TierChangedEventInternal.Signal(Tier)
+        true
+
+    # Succeeds if the effect has started and has not ended yet
     IsActive<public>()<decides><transacts>:void =
         Started?
         not Finished?
 
-    # 持ち主（効果を受けている人）。まだ決まっていない（作られた最初のフレーム）・持ち主のいない場所なら失敗する
+    # The owner (agent receiving the effect). Fails if not decided yet (the first frame after creation) or if there is no owner
     FindOwner<public>()<decides><transacts>:agent =
         Owner?
 
-    # 効果を与えた物（拾ったオーブの entity）。コードから与えて Source を渡さなかったときは失敗する
+    # The object that gave the effect (the picked-up orb entity). Fails if granted from code without a Source
     FindSource<public>()<decides><transacts>:entity =
         Source?
 
-    # 拾った物の、拾ったときの世界の位置・向き（コードから与えたときは渡した Origin）
+    # World transform of the picked-up object at pickup time (the Origin passed when granted from code)
     GetOriginTransform<public>()<transacts>:transform =
         OriginTransform
 
-    # Agent に、同じ EffectId の効果としてこの効果が続いているなら成功する（重ねがけの判断に使う）
+    # Succeeds if this effect is ongoing for Agent as an effect with the same EffectId (used for the stacking decision)
     IsSameEffectFor<internal>(Agent:agent, Id:string)<decides><transacts>:void =
         EffectId = Id
         Owner? = Agent
         not Finished?
 
-    # Agent の効果なら成功する（持ち主がまだ決まっていない最初のフレームは、作った側の印で見る）。終わったものは失敗する
+    # Succeeds if this is Agent's effect (on the first frame, before the owner is decided, looks at the creator's marker). Fails for ended effects
     IsForAgent<internal>(Agent:agent)<decides><transacts>:void =
         not Finished?
         if (Known := Owner?):
@@ -202,18 +253,19 @@ pickup_effect_component<public> := class<final_super>(component):
         else:
             Entity.GetComponent[pickup_effect_grant_component].Agent = Agent
 
-    # 持ち主・与えた物・位置を、作った側（pickup_effect_grant_component）か、置かれた場所の持ち主から読む
+    # Read the owner, the source object and the transform from the creator (pickup_effect_grant_component) or from the owner of the place where it was put
     ReadGrant<private>():void =
         if (Grant := Entity.GetComponent[pickup_effect_grant_component]):
             set Owner = option{Grant.Agent}
             set Source = Grant.Source
             set OriginTransform = Grant.Origin
+            set Persistent = Grant.Persistent
         else:
             if (Player := Entity.FindOwningPlayer[]):
                 set Owner = option{Player}
             set OriginTransform = Entity.GetGlobalTransform()
 
-    # 同じ効果をもう持っているときの扱い。この効果を始めるなら true
+    # How to handle an effect the player already has. true if this effect should start
     ResolveStacking<private>(Agent:agent):logic =
         if (EffectId = ""):
             return true
@@ -226,7 +278,7 @@ pickup_effect_component<public> := class<final_super>(component):
             return true
         if (StackMode = pickup_effect_stack_mode.Stack and (MaxStacks <= 0 or Others.Length < MaxStacks)):
             return true
-        # 始めずに任せる、続いている効果（持ち主の側へ Renewed で知らせる）
+        # The ongoing effect that takes over instead of starting (notify the owner's side with Renewed)
         var Kept:?pickup_effect_component = false
         if (StackMode = pickup_effect_stack_mode.Extend):
             if (First := Others[0]):
@@ -236,8 +288,14 @@ pickup_effect_component<public> := class<final_super>(component):
             if (First := Others[0]):
                 First.SetRemainingSeconds(Max(First.GetRemainingSeconds(), DurationSeconds))
                 set Kept = option{First}
+        else if (StackMode = pickup_effect_stack_mode.Tier):
+            # Raise the tier and reset the time
+            if (First := Others[0]):
+                First.RaiseTier()
+                First.SetRemainingSeconds(Max(First.GetRemainingSeconds(), DurationSeconds))
+                set Kept = option{First}
         else if (StackMode = pickup_effect_stack_mode.Stack):
-            # 上限に届いている：一番早く終わるものを延ばす
+            # Limit reached: extend the copy ending soonest
             var Soonest:?pickup_effect_component = false
             for (Other : Others):
                 if (Current := Soonest?):
@@ -249,7 +307,7 @@ pickup_effect_component<public> := class<final_super>(component):
                 Found.SetRemainingSeconds(Max(Found.GetRemainingSeconds(), DurationSeconds))
             set Kept = Soonest
         else:
-            # Ignore：何も変えない（拾ったことだけ知らせる）
+            # Ignore: change nothing (only notify the pickup)
             if (First := Others[0]):
                 set Kept = option{First}
         if (Found := Kept?):
@@ -265,16 +323,16 @@ pickup_effect_component<public> := class<final_super>(component):
         Entity.SendUp(pickup_effect_changed_event{Effect := Self, Agent := Agent, Started := true})
         NotifyOwner(Agent, Self, pickup_effect_notice.Started)
 
-    # 持ち主の slot の下へ、効果の知らせ（pickup_effect_owner_event）を送る。slot の下に無ければ送らない
+    # Send the effect notification (pickup_effect_owner_event) under the owner's slot. Not sent if not under a slot
     NotifyOwner<private>(Agent:agent, Target:pickup_effect_component, Notice:pickup_effect_notice):void =
         if (Slot := Entity.FindOwningSlot[]):
             Slot.Entity.SendDown(pickup_effect_owner_event{Effect := Target, Picked := Self, Agent := Agent, Notice := Notice})
 
     RunTimer<private>()<suspends>:void =
         if (Instant?):
-            # 中身の部品が起動の合図で 1 回きりのことを済ませてから終える
+            # Let the parts inside finish their one-shot work on the activate signal before ending
             Sleep(0.0)
-        else if (DurationSeconds <= 0.0):
+        else if (IsEndless[]):
             loop:
                 WakeEventInternal.Await()
                 if (Finished?):
@@ -301,47 +359,59 @@ pickup_effect_component<public> := class<final_super>(component):
         WakeEventInternal.Signal()
         Entity.RemoveFromParent()
 
-# 役割：GrantPickupEffect が効果のプレハブの根に付ける印。だれに・何から・どこで与えたかを持つ（pickup_effect_component が次のフレームに読む）
-#   根に pickup_effect_component が無いプレハブなら、出力ログに出して既定の pickup_effect_component を足す
-# 置き方：実行時に GrantPickupEffect が付ける（エディターでは置かない）
+# Role: marker that GrantPickupEffect attaches to the root of an effect prefab. Holds who, from what and where it was granted (pickup_effect_component reads it on the next frame)
+#   If the prefab has no pickup_effect_component on its root, logs to the output log and adds a default pickup_effect_component
+# Placement: attached at runtime by GrantPickupEffect (not placed in the editor)
 pickup_effect_grant_component<public> := class<final_super><internal>(component):
-    # 効果を受ける人（持ち主）
+    # Agent receiving the effect (owner)
     Agent<public>:agent
-    # 与えた物（拾ったオーブの entity）。コードから与えたときは false のこともある
+    # Object that gave the effect (the picked-up orb entity). May be false when granted from code
     Source<public>:?entity
-    # 与えたときの、与えた物の世界の位置・向き
+    # World transform of the source object when granted
     Origin<public>:transform
+    # true lasts until End / EndPickupEffectsFor regardless of the effect's DurationSeconds (e.g. an effect held from the start of a stage)
+    Persistent<public>:logic = false
 
     OnBeginSimulation<override>():void =
         (super:)OnBeginSimulation()
         if (not Entity.GetComponent[pickup_effect_component]):
-            Print("[pickup_effect_grant_component] 効果のプレハブの根に pickup_effect_component がありません。既定（10 秒）で足します")
+            Print("[pickup_effect_grant_component] The effect prefab has no pickup_effect_component on its root. Adding the default (10 s)")
             Entity.AddComponents(array{pickup_effect_component{Entity := Entity}})
 
-# Agent に効果のプレハブ Prefab を 1 つ作って与える。その人の slot（区画か世界の player_manager_component が作るもの）の下に置き、世界の位置・向きを Origin にする
-#   Source は与えた物（オーブの entity。効果の中身の部品が FindSource[] で読む。無ければ false）。作った entity を返す。slot が見つからない（参加していない）ときは false
-#   同じ効果の重ねがけ（StackMode）は、作った効果が次のフレームに決める（Extend などで始めないときは、作った entity はすぐ消える）
+# Create one instance of the effect prefab Prefab for Agent and give it to them. Placed under the agent's slot (created by the scope's or world's player_manager_component) with world transform Origin
+#   Source is the object that gave the effect (the orb entity; the parts inside read it with FindSource[]. false if none). Returns the created entity. false if no slot is found (the agent is not participating)
+#   Stacking of the same effect (StackMode) is decided by the created effect on the next frame (when it does not start, e.g. Extend, the created entity disappears right away)
 (InEntity:entity).GrantPickupEffect<public>(Agent:agent, Prefab:concrete_subtype(entity), Origin:transform, Source:?entity):?entity =
-    # 引数のままでは Prefab{} と書けない（V3545）ので、いったん変数に受ける
+    # Prefab{} cannot be written on the parameter itself (V3545), so copy it into a variable first
     PrefabType:concrete_subtype(entity) = Prefab
-    InEntity.GrantPickupEffectEntity(Agent, PrefabType{}, Origin, Source)
+    GrantPickupEffectWith(InEntity, Agent, PrefabType{}, Origin, Source, false)
 
-# 組み立て済みの entity（根に pickup_effect_component）を効果として Agent に与える（GrantPickupEffect の中身。テストやコードで効果を組み立てるとき）。slot が見つからなければ false
+# Same as GrantPickupEffect, but lasts until End / EndPickupEffectsFor regardless of the effect's DurationSeconds (Persistent; e.g. an effect held from the start of a stage)
+#   (Adding a named optional parameter to an extension method makes calls that pass it by name a type error, so this is a separate function)
+(InEntity:entity).GrantPersistentPickupEffect<public>(Agent:agent, Prefab:concrete_subtype(entity), Origin:transform, Source:?entity):?entity =
+    PrefabType:concrete_subtype(entity) = Prefab
+    GrantPickupEffectWith(InEntity, Agent, PrefabType{}, Origin, Source, true)
+
+# Give an assembled entity (pickup_effect_component on its root) to Agent as an effect (the body of GrantPickupEffect; for tests or code that assembles effects). false if no slot is found
 (InEntity:entity).GrantPickupEffectEntity<public>(Agent:agent, Effect:entity, Origin:transform, Source:?entity):?entity =
+    GrantPickupEffectWith(InEntity, Agent, Effect, Origin, Source, false)
+
+# Body of GrantPickupEffectEntity (with a Persistent choice)
+GrantPickupEffectWith<internal>(InEntity:entity, Agent:agent, Effect:entity, Origin:transform, Source:?entity, Persistent:logic):?entity =
     if (Manager := InEntity.FindScopedComponent[player_manager_component], Player := player[Agent], Slot := Manager.FindSlot[Player]):
-        Effect.AddComponents(array{pickup_effect_grant_component{Entity := Effect, Agent := Agent, Source := Source, Origin := Origin}})
+        Effect.AddComponents(array{pickup_effect_grant_component{Entity := Effect, Agent := Agent, Source := Source, Origin := Origin, Persistent := Persistent}})
         Slot.Entity.AddEntities(array{Effect})
         Effect.SetGlobalTransform(Origin)
         option{Effect}
     else:
-        Print("[pickup] 効果を与える人の slot が見つかりません（player_manager_component が区画か世界に 1 つ要ります。参加していない人には与えられません）")
+        Print("[pickup] No slot found for the agent to give the effect to (one player_manager_component is needed in the scope or the world. Effects cannot be given to agents who are not participating)")
         false
 
-# InEntity か、その祖先の効果の土台（pickup_effect_component）。効果のプレハブの中でなければ失敗する
+# The effect base (pickup_effect_component) on InEntity or an ancestor. Fails if not inside an effect prefab
 (InEntity:entity).FindPickupEffect<public>()<decides><transacts>:pickup_effect_component =
     InEntity.FindNearestAncestorComponent[pickup_effect_component]
 
-# Agent が今受けている効果（始まる前の最初のフレームのものも含む。終わったものは除く）。並び順は決まっていない
+# Effects Agent is currently receiving (including those on their first frame before starting; ended ones excluded). The order is unspecified
 (InEntity:entity).GetActivePickupEffects<public>(Agent:agent)<transacts>:[]pickup_effect_component =
     if (Manager := InEntity.FindScopedComponent[player_manager_component], Player := player[Agent], Slot := Manager.FindSlot[Player]):
         for (Effect : Slot.Entity.FindDescendantComponents(pickup_effect_component), Effect.IsForAgent[Agent]):
@@ -349,14 +419,14 @@ pickup_effect_grant_component<public> := class<final_super><internal>(component)
     else:
         array{}
 
-# Agent が今受けている効果をすべて今すぐ終える（ゲームの流れでやり直す・マップを出るときなど）。終えた数を返す
+# End every effect Agent is currently receiving right now (game-flow reset, leaving the map, etc.). Returns the number ended
 (InEntity:entity).EndPickupEffectsFor<public>(Agent:agent):int =
     Effects := InEntity.GetActivePickupEffects(Agent)
     for (Effect : Effects):
         Effect.End()
     Effects.Length
 
-# Effects のうち、Exclude 以外で、同じ人の同じ EffectId のもの
+# Those of Effects, other than Exclude, with the same EffectId for the same agent
 (Effects:[]pickup_effect_component).FilterSameEffect<internal>(Exclude:pickup_effect_component, Id:string)<transacts>:[]pickup_effect_component =
     for (Effect : Effects, Effect <> Exclude, Agent := Exclude.FindOwner[], Effect.IsSameEffectFor[Agent, Id]):
         Effect

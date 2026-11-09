@@ -3,25 +3,25 @@ using { /Verse.org/Simulation }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：区画の探し方を確かめるための目印
+# Role: marker for checking scope lookup
 scope_test_marker_component<public> := class<final_super>(component):
 
-    # どの区画の目印か（テストで見分ける）
+    # Which scope this marker belongs to (the test tells them apart)
     @editable
     Label<public>:string = ""
 
-# どこにも置かない component（見つからないときを確かめる）
+# Component placed nowhere (checks the not-found case)
 scope_test_absent_component<public> := class<final_super>(component):
 
-# 役割：SceneGraphSystem の動作確認。区画（game_scope_component）の中から探すこと、区画が無いときは世界から探すこと、直下の子だけを見ること、近い祖先から探すこと（FindNearestAncestorComponent）、探して覚えること（ResolveScopedComponent）を確かめる
-# テストのレベル：
-#   - entity A（game_scope_component）の下に scope_test_marker_component（Label = "A"）の entity と、ScopedChild に入れる entity
-#   - entity B（game_scope_component）の下に scope_test_marker_component（Label = "B"）の entity
-#   - このテストの component は、どの区画にも入らない場所に置く
-# 結果：出力ログの [TEST] SceneGraphSystem
+# Role: verification of SceneGraphSystem. Checks finding inside a scope (game_scope_component), finding in the world when there is no scope, looking only at direct children, finding from the nearest ancestor (FindNearestAncestorComponent), and find-and-remember (ResolveScopedComponent)
+# Test level:
+#   - under entity A (game_scope_component): an entity with scope_test_marker_component (Label = "A") and the entity to put into ScopedChild
+#   - under entity B (game_scope_component): an entity with scope_test_marker_component (Label = "B")
+#   - place this test component where it belongs to no scope
+# Result: [TEST] SceneGraphSystem in the output log
 scene_graph_system_test_component<public> := class<final_super>(component):
 
-    # 区画 A の中の entity（FindScopedComponent が A の目印を返すことを確かめる）
+    # Entity inside scope A (checks that FindScopedComponent returns A's marker)
     @editable
     ScopedChild<public>:?entity = false
 
@@ -43,7 +43,7 @@ scene_graph_system_test_component<public> := class<final_super>(component):
         TestResolveScoped(Results)
         if (Results.Finish[]) {}
 
-    # Entity ─ Outer（目印 "outer"）─ Inner（目印 "inner"）─ Leaf を実行時に作り、近い順に探すことを確かめる
+    # Creates Entity - Outer (marker "outer") - Inner (marker "inner") - Leaf at runtime and checks that the nearest is found first
     TestNearestAncestor<private>(Results:test_log):void =
         Outer := entity{}
         Outer.AddComponents(array{scope_test_marker_component{Entity := Outer, Label := "outer"}})
@@ -64,13 +64,13 @@ scene_graph_system_test_component<public> := class<final_super>(component):
         Results.Check("FindNearestAncestorComponent fails when no ancestor has it", if (Entity.FindNearestAncestorComponent[scope_test_marker_component]) then false else true)
         Outer.RemoveFromParent()
 
-    # ResolveScopedComponent は、覚えていれば探さずにそれを返し、無ければ区画から探す
+    # ResolveScopedComponent returns the remembered one without searching, otherwise finds it from the scope
     TestResolveScoped<private>(Results:test_log):void =
         if (Child := ScopedChild?):
             var Known:?scope_test_marker_component = false
             set Known = Child.ResolveScopedComponent(Known, scope_test_marker_component)
             Results.Check("ResolveScopedComponent finds in scope A", if (Found := Known?, Found.Label = "A") then true else false)
-            # 区画の外から呼んでも、覚えているもの（A）がそのまま返る
+            # Even when called from outside the scope, the remembered one (A) is returned as is
             Again := Entity.ResolveScopedComponent(Known, scope_test_marker_component)
             Results.Check("ResolveScopedComponent keeps the known one", if (Found := Again?, Found.Label = "A") then true else false)
         Nothing:?scope_test_absent_component = false

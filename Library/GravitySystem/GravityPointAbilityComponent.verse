@@ -12,83 +12,83 @@ using { MovementSystem }
 using { SceneGraphSystem }
 using { GravitySystem.TooltipKit }
 
-# 役割：引力の点を置く能力。付与された人が PlaceAction（既定は射撃）を押すと、レティクルの先（PlaceDistanceCm 以内で物に当たればその手前、当たらなければ PlaceDistanceCm 先）に引力の点（gravity_well_component）を置き、DurationSeconds 秒で消す。
-#   置いているあいだにもう一度押すと、時間を待たずに消す。1 人が置けるのは 1 つまで（この能力 1 つにつき）。剥奪されても、置いた点は時間まで残る（シミュレーションの終わりには消す）
-#   点の見た目は WellPrefab（メッシュなどを付けた prefab）から作り、gravity_well_component（RadiusCm・StrengthCmPerSecondSquared）を足す。WellPrefab が既定の entity のままなら見た目の無い点になる
-# 付与の仕方は同じ entity に置く component で選ぶ：
-#   - アイテムとして（装備しているあいだ） → アイテムの entity に item_component・item_holder_component・ability_grant_item_component と一緒に置く。1 人 1 つまでにするなら exclusive_item_component
-#   - 全員に最初から／起動しているあいだ → ability_grant_players_component（1 人 1 つずつ置ける）
-#   - 条件を満たしているあいだ → ability_grant_condition_component（子に条件）
-#   - コードから → Grant / Revoke
-# 知らせ：置いたら PlacedEvent、消えたら RemovedEvent
-# 前提：引力が引く相手を知るため、区画（または世界）に player_manager_component が 1 つ
+# Role: an ability that places gravity points. When a granted player presses PlaceAction (fire by default), places a gravity point (gravity_well_component) where the reticle aims (in front of whatever is hit within PlaceDistanceCm, or PlaceDistanceCm ahead if nothing is hit) and removes it after DurationSeconds seconds.
+#   Pressing again while placed removes it without waiting. Each player can place at most one (per instance of this ability). A placed point stays until its time runs out even if the ability is revoked (removed at the end of the simulation)
+#   The point's look is created from WellPrefab (a prefab with a mesh etc.) and gravity_well_component (RadiusCm, StrengthCmPerSecondSquared) is added. With the default entity as WellPrefab, the point has no visual
+# How it is granted is chosen by a component on the same entity:
+#   - as an item (while equipped) → place it on the item's entity together with item_component, item_holder_component and ability_grant_item_component. Add exclusive_item_component to limit it to one per player
+#   - to everyone from the start / while active → ability_grant_players_component (each player can place one)
+#   - while a condition holds → ability_grant_condition_component (conditions as children)
+#   - from code → Grant / Revoke
+# Notifies: PlacedEvent on placing, RemovedEvent on removal
+# Requirements: one player_manager_component in the scope (or the world), so the gravity knows whom to pull
 gravity_point_ability_component<public> := class<final_super>(ability_component):
 
-    # 置く点の見た目にする prefab。置くたびにこれを作り、引力を足す（既定の entity のままなら見た目の無い点）
+    # The prefab used as the look of a placed point. Each placement creates one and adds gravity (with the default entity, the point has no visual)
     @editable:
         ToolTip := GravityWellPrefabToolTip
         Categories := array{GravityCategory}
     WellPrefab<public>:concrete_subtype(entity) = entity
-    # 置いた点が消えるまでの時間（秒。既定 30）。置いているあいだにもう一度押すとすぐ消える
+    # Time until a placed point disappears (seconds; default 30). Pressing again while placed removes it at once
     @editable_number(float):
         ToolTip := GravityDurationToolTip
         Categories := array{GravityCategory}
         MinValue := option{1.0}
         MaxValue := option{600.0}
     DurationSeconds<public>:float = 30.0
-    # レティクルの先、何センチメートルに置くか（既定 800）。あいだに物があればその手前に置く
+    # How many centimeters ahead of the reticle to place it (default 800). If something is in the way, it is placed in front of it
     @editable_number(float):
         ToolTip := GravityPlaceDistanceToolTip
         Categories := array{GravityCategory}
         MinValue := option{100.0}
         MaxValue := option{10000.0}
     PlaceDistanceCm<public>:float = 800.0
-    # 置いた点の引力が届く半径（センチメートル。既定 1500）。中心で一番強く、この距離で 0
+    # Radius the placed point's pull reaches (centimeters; default 1500). Strongest at the center, 0 at this distance
     @editable_number(float):
         ToolTip := GravityRadiusToolTip
         Categories := array{GravityCategory}
         MinValue := option{100.0}
         MaxValue := option{20000.0}
     RadiusCm<public>:float = 1500.0
-    # 置いた点の中心での引く強さ（センチメートル毎秒毎秒。既定 1200）
+    # Pull strength of the placed point at its center (centimeters per second squared; default 1200)
     @editable_number(float):
         ToolTip := GravityStrengthToolTip
         Categories := array{GravityCategory}
         MinValue := option{0.0}
         MaxValue := option{10000.0}
     StrengthCmPerSecondSquared<public>:float = 1200.0
-    # 押すと点を置く（置いているときは消す）操作。既定は WeaponPrimary（攻撃のボタン）
+    # The input that places a point (or removes it while placed). Default WeaponPrimary (the attack button)
     @editable:
         ToolTip := GravityPlaceActionToolTip
         Categories := array{GravityCategory, GravityInputCategory}
     PlaceAction<public>:input_action(logic) = Character.WeaponPrimary
-    # 付与しているあいだ有効にするキー割り当て。PlaceAction を含むもの。既定は RangedWeaponMapping
+    # The key mapping enabled while granted. One that contains PlaceAction. Default RangedWeaponMapping
     @editable:
         ToolTip := GravityPlaceMappingToolTip
         Categories := array{GravityCategory, GravityInputCategory}
     PlaceMapping<public>:input_mapping = Character.RangedWeaponMapping
-    # true なら剥奪したときに PlaceMapping を外す（この能力専用の割り当てのときだけ。既定 false）
+    # true removes PlaceMapping when revoked (only for a mapping dedicated to this ability; default false)
     @editable:
         ToolTip := GravityRemoveMappingToolTip
         Categories := array{GravityCategory, GravityInputCategory}
     RemoveMappingOnRevoke<public>:logic = false
 
-    # 当たった面から手前に離す距離（センチメートル）
+    # Distance to keep in front of the hit surface (centimeters)
     SurfaceGapCm<private>:float = 150.0
 
     PlacedEventInternal<private><final>:event(tuple(agent, gravity_well_component)) = event(tuple(agent, gravity_well_component)){}
     RemovedEventInternal<private><final>:event(agent) = event(agent){}
 
-    # だれかが点を置いたときに、（置いた人, 置いた点）で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires when someone places a point, with (the placer, the placed point) (Await / Subscribe; cannot be signaled from outside)
     PlacedEvent<public><final>:listenable(tuple(agent, gravity_well_component)) = MakeProxyListenable(PlacedEventInternal)
 
-    # だれかの点が消えた（時間切れ・もう一度押した・シミュレーションの終わり）ときに、置いた人で届く
+    # Fires with the placer when someone's point disappears (timed out, pressed again, end of the simulation)
     RemovedEvent<public><final>:listenable(agent) = MakeProxyListenable(RemovedEventInternal)
 
     var Wells<private>:[agent]gravity_well_component = map{}
     var PlaceCounts<private>:[agent]int = map{}
 
-    # Agent が置いた点が今あれば返す。無ければ失敗する
+    # Returns the point Agent placed if it exists now. Fails if none
     FindWell<public>(Agent:agent)<decides><transacts>:gravity_well_component =
         Wells[Agent]
 
@@ -101,14 +101,14 @@ gravity_point_ability_component<public> := class<final_super>(ability_component)
                     PlayerInput.AwaitPressed(PlaceAction)
                     Toggle(Agent)
 
-    # Agent の点が無ければレティクルの先に置き、あれば消す（押したときと同じ処理。入力を通さずに使わせたいときに呼ぶ）。キャラクターがいなければ何もしない
+    # Places a point where the reticle aims if Agent has none, removes it if one exists (same as pressing the button; call it to let a player use it without input). Does nothing without a character
     Toggle<public>(Agent:agent):void =
         if (FindWell[Agent]):
             RemoveWell(Agent)
         else if (FortCharacter := Agent.GetFortCharacter[]):
             PlaceWell(Agent, FindPlacePosition(FortCharacter))
 
-    # Agent の点を消す。無ければ何もしない
+    # Removes Agent's point. Does nothing if none
     RemoveWell<public>(Agent:agent):void =
         if (Well := Wells[Agent]):
             set Wells = Wells.RemoveKey(Agent)

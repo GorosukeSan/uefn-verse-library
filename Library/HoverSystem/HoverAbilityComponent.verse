@@ -13,56 +13,56 @@ using { MovementSystem }
 using { PlayerSystem }
 using { HoverSystem.TooltipKit }
 
-# ホバーしている人（agent）に付くタグ。hover_ability_component が付け外しする（ほかの System は Agent.HasPlayerTag[hovering_tag] で確かめる）
+# Tag attached to a hovering person (agent). hover_ability_component attaches and removes it (other Systems check with Agent.HasPlayerTag[hovering_tag])
 hovering_tag<public> := class(player_state_tag):
 
-# 方向：hover_ability_component の entity から上へ（SendUp）。ホバーを始めた・やめたときに送る
-# 受け手：祖先（アイテムなら持ち主のプレイヤーまで）。演出や HUD。消費しない
+# Direction: up from the hover_ability_component's entity (SendUp). Sent when hovering starts and stops
+# Receivers: ancestors (for an item, up to the owning player). Effects and HUD. Not consumed
 hover_changed_event<public> := class(scene_event):
-    # 送った能力
+    # The ability that sent it
     Ability<public>:hover_ability_component
-    # ホバーを始めた・やめた人
+    # The person who started / stopped hovering
     Agent<public>:agent
-    # true ならホバーを始めた、false ならやめた
+    # true = started hovering, false = stopped
     Active<public>:logic
 
-# 役割：ホバーの能力。付与された人が空中で HoverAction（既定は Jump）を押し続けると、落ちる速さを MaxFallSpeedCmPerSecond までに抑えて浮く。
-#   エネルギー（FindEnergyFor：この entity か子の energy_component、無ければプレイヤーに付いたもの）があれば、ホバーしているあいだ 1 秒に EnergyPerSecond 使い、0 になるとホバーできない（アイテムは無くならない）。
-#   エネルギーの回復はこの能力では持たない（チェックポイントで満たすなら CheckpointSystem の EnergyKit、使って回復するなら EnergySystem の RestoreKit）。動きを操られている人（controlled_movement_tag が付いている。スイング中など）はホバーしない
-# 付与の仕方は同じ entity に置く component で選ぶ：
-#   - 全員に最初から／起動しているあいだ → ability_grant_players_component（エネルギーをこの entity に置くと全員で分け合う。1 人ずつにするならプレイヤーに付ける）
-#   - アイテムとして（装備しているあいだ） → アイテムの entity に item_component・item_holder_component・ability_grant_item_component と一緒に置く（エネルギーはアイテムの entity に）
-#   - 条件を満たしているあいだ → ability_grant_condition_component（子に条件）
-#   - コードから → Grant / Revoke
-# 知らせ：ホバーを始めた・やめたときに HoverChangedEvent と hover_changed_event
-# タグ：ホバーしているあいだ、その人（agent）に hovering_tag を付ける
+# Role: the hover ability. While a granted person holds HoverAction (default Jump) in the air, their fall speed is capped at MaxFallSpeedCmPerSecond so they float.
+#   If there is energy (FindEnergyFor: an energy_component on this entity or a child, otherwise one attached to the player), it uses EnergyPerSecond per second while hovering, and hovering is impossible at 0 (the item is not lost).
+#   This ability does not restore energy (to refill at checkpoints use CheckpointSystem's EnergyKit; to restore by using something use EnergySystem's RestoreKit). A person whose movement is being controlled (controlled_movement_tag attached, e.g. while swinging) does not hover
+# How it is granted is chosen by the component placed on the same entity:
+#   - To everyone from the start / while activated -> ability_grant_players_component (energy placed on this entity is shared by everyone; attach it to the player to have one per person)
+#   - As an item (while equipped) -> place on the item's entity together with item_component, item_holder_component and ability_grant_item_component (energy on the item's entity)
+#   - While a condition holds -> ability_grant_condition_component (conditions as children)
+#   - From code -> Grant / Revoke
+# Notifications: HoverChangedEvent and hover_changed_event when hovering starts and stops
+# Tags: while hovering, hovering_tag is attached to the person (agent)
 hover_ability_component<public> := class<final_super>(ability_component):
 
-    # ホバーしているあいだの落ちる速さの上限（センチメートル毎秒。既定 100）。0 ならその高さで止まる
+    # Fall speed cap while hovering (centimeters per second; default 100). 0 holds the current height
     @editable_number(float):
         ToolTip := HoverMaxFallSpeedToolTip
         Categories := array{HoverCategory}
         MinValue := option{0.0}
         MaxValue := option{3000.0}
     MaxFallSpeedCmPerSecond<public>:float = 100.0
-    # ホバーしているあいだ 1 秒に使うエネルギー（既定 20）。エネルギーが無ければ減らさない
+    # Energy used per second while hovering (default 20). Nothing is consumed if there is no energy
     @editable_number(float):
         ToolTip := HoverEnergyPerSecondToolTip
         Categories := array{HoverCategory}
         MinValue := option{0.0}
         MaxValue := option{1000.0}
     EnergyPerSecond<public>:float = 20.0
-    # 空中で押し続けるとホバーする操作。既定は Jump
+    # Input held in the air to hover. Default is Jump
     @editable:
         ToolTip := HoverActionToolTip
         Categories := array{HoverCategory, HoverInputCategory}
     HoverAction<public>:input_action(logic) = Character.Jump
-    # 付与しているあいだ有効にするキー割り当て。HoverAction を含むもの。既定は TraversalMapping
+    # Key mapping enabled while granted. Must contain HoverAction. Default is TraversalMapping
     @editable:
         ToolTip := HoverMappingToolTip
         Categories := array{HoverCategory, HoverInputCategory}
     HoverMapping<public>:input_mapping = Character.TraversalMapping
-    # true なら剥奪したときに HoverMapping を外す（この能力専用の割り当てのときだけ。既定 false）
+    # true removes HoverMapping on revoke (only for a mapping dedicated to this ability; default false)
     @editable:
         ToolTip := HoverRemoveMappingToolTip
         Categories := array{HoverCategory, HoverInputCategory}
@@ -70,12 +70,12 @@ hover_ability_component<public> := class<final_super>(ability_component):
 
     HoverChangedEventInternal<private><final>:event(tuple(agent, logic)) = event(tuple(agent, logic)){}
 
-    # だれかがホバーを始めた・やめたときに、（その人, true = 始めた / false = やめた）で届く（Await / Subscribe する。外から Signal はできない）
+    # Delivered as (the person, true = started / false = stopped) when someone starts or stops hovering (Await / Subscribe; cannot be Signaled from outside)
     HoverChangedEvent<public><final>:listenable(tuple(agent, logic)) = MakeProxyListenable(HoverChangedEventInternal)
 
     var HoveringTags<private>:player_tag_holder = player_tag_holder{}
 
-    # Agent が今ホバーしている（落ちる速さを抑えている）なら成功する
+    # Succeeds if Agent is hovering now (fall speed being capped)
     IsHovering<public>(Agent:agent)<decides><transacts>:void =
         HoveringTags.Has[Agent]
 
@@ -93,7 +93,7 @@ hover_ability_component<public> := class<final_super>(ability_component):
                         HoverWhileHeld(Agent)
                     SetHovering(Agent, false)
         else if (not player[Agent]):
-            Print("[hover_ability_component] プレイヤーでない agent に付与されました。入力が取れないので動きません")
+            Print("[hover_ability_component] Granted to an agent that is not a player. Input cannot be read, so it does nothing")
 
     HoverWhileHeld<private>(Agent:agent)<suspends>:void =
         loop:

@@ -1,93 +1,93 @@
 # PlayerSystem
 
-参加しているプレイヤーを扱う System です。`player_manager_component` が参加した人ごとに slot の entity を作り、ほかの System はその slot の下に 1 人分の view を作って（`player_view_set`）人ごとの処理をします。ほかに、プレイヤーの状態タグの基底と付け外し（PlayerTags）、「だれのものか」を entity の木から決める `FindOwningPlayer`（PlayerOwner）、体の entity とプレイヤーの行き来（PlayerBody）、プレイヤーの体に物を付ける `player_attach_component`、Fortnite キャラクターの動きへの反応（MotionKit）があります。
+The System that deals with participating players. `player_manager_component` creates a slot entity for every player who joins, and the other Systems create one view per player under that slot (`player_view_set`) for per-player processing. It also provides the base class and attach / remove helpers for player state tags (PlayerTags), `FindOwningPlayer`, which decides "whose is it" from the entity tree (PlayerOwner), conversion between a body entity and its player (PlayerBody), `player_attach_component`, which attaches things to a player's body, and reactions to Fortnite character motion (MotionKit).
 
-## 置き方
+## Setup (placement)
 
-| component | 置く場所 | すること |
+| component | Where to place | What it does |
 |---|---|---|
-| `player_manager_component` | 区画（または世界）に 1 つ。ほかの部品から `FindScopedComponent` で探される | 参加した人ごとに slot の entity を子に作り、退出で消す。参加と退出を区画全体へ知らせる |
-| `player_slot_component` | 実行時に `player_manager_component` が作る（エディターでは置かない） | 参加中の 1 人を表す。view やロードアウトはこの entity の子に作られる |
-| `player_attach_component` | 起動の合図が届く場所（`ActiveOnBegin` ならどこでもよい）。ロードアウトのプレハブの中に置くと持ち主だけに付ける | プレイヤーの体に `Prefab` を作って付け、体と一緒に動かす。リスポーンで体が変わったら付け直す |
-| `player_group_component` | どこでもよい。排他にする組（1 人 1 つ）は、同じ親の下に兄弟として並べる | だれが起こしたか分かる起動の合図（選択メニューの `Targets` など）で、その人を組に入れる。入ったら `Targets` へその人の起動の合図を送る。「選んだ人」の置き場（UI を選んだ人にだけ出すのは WidgetSystem の `widget_show_in_group_component`） |
-| `player_count_condition_component`（ConditionKit） | `game_transition_component` か `condition_all` / `condition_any` の entity の直下 | 参加人数が `MinPlayerCount` 以上なら満たす |
-| `player_group_count_condition_component`（ConditionKit） | 同上。数える組は `Group` で選ぶ（空なら、この entity かその祖先の組） | 組（`player_group_component`）の人数が `MinMemberCount` 以上・`MaxMemberCount` 以下なら満たす（組の人がいる・そろった・だれもいない） |
-| `player_motion_trigger_component`（MotionKit） | どこでもよい。ロードアウトのプレハブの中なら持ち主だけ、持ち主のいない場所なら区画の全員を見る | キャラクターの一瞬の動き（ジャンプ・着地など）が起きるたびに、`Targets` へ起動の合図（だれが起こしたか付き）を送り、`player_motion_event` を上へ送る |
-| `player_state_trigger_component`（MotionKit） | ロードアウトのプレハブの中（持ち主のいる場所）。持ち主がいないと何もしない | 持ち主のキャラクターが `State` に入ったら `Targets` へ起動の合図、出たら停止の合図を送る |
-| `player_state_condition_component`（MotionKit） | ロードアウトのプレハブの中で、`ability_grant_condition_component` / `game_transition_component` / `condition_all` / `condition_any` の entity の直下 | 持ち主のキャラクターが `State` にいるあいだ満たす |
+| `player_manager_component` | One per scope (or world). Other parts find it with `FindScopedComponent` | Creates a slot entity as a child for every player who joins and removes it when they leave. Notifies the whole scope of joins and leaves |
+| `player_slot_component` | Created at runtime by `player_manager_component` (not placed in the editor) | Represents one participating player. Views and loadouts are created as children of this entity |
+| `player_attach_component` | Wherever the activation signal reaches (anywhere if `ActiveOnBegin`). Placed inside a loadout prefab, it attaches only to the owner | Creates a `Prefab` on the player's body and moves it with the body. Reattaches when the body changes on respawn |
+| `player_group_component` | Anywhere. Mutually exclusive groups (one per player) are placed as siblings under the same parent | On an activation signal that tells who caused it (a selection menu's `Targets` etc.), adds that player to the group. On join, sends that player's activation signal to `Targets`. The place that records "who chose" (showing UI only to those who chose is WidgetSystem's `widget_show_in_group_component`) |
+| `player_count_condition_component` (ConditionKit) | Directly under the entity of a `game_transition_component` or `condition_all` / `condition_any` | Satisfied when the number of participants is `MinPlayerCount` or more |
+| `player_group_count_condition_component` (ConditionKit) | Same as above. Choose the group to count in `Group` (if empty, the group on this entity or its ancestors) | Satisfied when the member count of the group (`player_group_component`) is between `MinMemberCount` and `MaxMemberCount` (someone in the group, everyone gathered, nobody left) |
+| `player_motion_trigger_component` (MotionKit) | Anywhere. Inside a loadout prefab it watches only the owner; somewhere without an owner it watches everyone in the scope | Each time a momentary character motion (jump, landing, etc.) happens, sends the activation signal (with who caused it) to `Targets` and sends `player_motion_event` upward |
+| `player_state_trigger_component` (MotionKit) | Inside a loadout prefab (somewhere with an owner). Does nothing without an owner | Sends the activation signal to `Targets` when the owner's character enters `State` and the deactivation signal when it leaves |
+| `player_state_condition_component` (MotionKit) | Inside a loadout prefab, directly under the entity of an `ability_grant_condition_component` / `game_transition_component` / `condition_all` / `condition_any` | Satisfied while the owner's character is in `State` |
 
-`player_view_set` と `player_tag_holder` は component ではなく、component のフィールドに持つクラスです。
+`player_view_set` and `player_tag_holder` are not components but classes held in a component's field.
 
-例：「2 人そろったら始める」と「ジャンプするたびに頭の上に目印を出す」
+Example: "start when 2 players have gathered" and "show a marker above the head on every jump"
 ```
-ゲーム（player_manager_component）
-└ 待機（game_node_component）
-  └ 次へ（game_transition_component）
-    └ 2 人以上（player_count_condition_component、MinPlayerCount = 2）
+Game (player_manager_component)
+└ Waiting (game_node_component)
+  └ Next (game_transition_component)
+    └ 2 or more players (player_count_condition_component, MinPlayerCount = 2)
 
-ロードアウトのプレハブ（loadout_component の Prefab）
-└ ジャンプ（player_motion_trigger_component、Motion = Jumped）
-  └ 目印（player_attach_component、AttachToEveryone = オン）
+Loadout prefab (loadout_component's Prefab)
+└ Jump (player_motion_trigger_component, Motion = Jumped)
+  └ Marker (player_attach_component, AttachToEveryone = on)
 ```
-実行時は `player_manager_component` の entity の下に slot（`player_slot_component`）が人数ぶん作られ、その下に各 System の view やロードアウトが作られます。
+At runtime, one slot (`player_slot_component`) per player is created under the `player_manager_component` entity, and the views and loadouts of each System are created under it.
 
-## 設定（@editable）
-- `player_count_condition_component.MinPlayerCount : int = 2` — この人数以上が参加していれば満たす（1〜100）。
-- `player_group_count_condition_component.Group : ?entity = false` — 人数を数える組（`player_group_component` を付けた entity）。空なら、この entity かその祖先の組（`FindAncestorGroup`）。
-- `player_group_count_condition_component.MinMemberCount : int = 1` — 組の人数がこの数以上なら満たす（0〜100）。
-- `player_group_count_condition_component.MaxMemberCount : int = 100` — 組の人数がこの数以下なら満たす（0〜100。既定 100 は上限なし）。`Min 0・Max 0` で「組にだれもいない」。
-- `player_attach_component.Prefab : concrete_subtype(entity) = entity` — 体に付ける entity（prefab）。既定のままなら中身の無い entity。
-- `player_attach_component.OffsetCm : vector3 = vector3{Up := 200.0}` — 体の原点からのずらし（センチメートル。Forward・Left・Up）。
-- `player_attach_component.Visibility : player_attach_visibility = Everyone` — だれに見せるか。`Everyone` は全員、`OwnerOnly` は付けた本人だけ、`OthersOnly` は本人以外。
-- `player_attach_component.AttachToEveryone : logic = true` — オンなら起動で全員（途中参加も）に付ける。持ち主のいる場所では持ち主だけ。オフなら `AttachTo` で決めた人だけ。
-- `player_attach_component.ActiveOnBegin : logic = false` — オンならゲームの開始から付ける。オフなら起動の合図から。
-- `player_attach_component.RefreshSeconds : float = 1.0` — 体が変わっていないか（リスポーンなど）を見回る間隔（0.1〜10 秒）。
-- `player_group_component.LeaveOthers : logic = true` — オンなら、組に入るとき同じ親の下のほかの組から出る（選び直すと前の選びが外れる）。
-- `player_group_component.Targets : []entity = array{}` — 組に入った人の起動の合図（`activated_by_agent_event`）を送る entity。もう入っている人がまた選んだときも、合図だけ送り直す（ラウンドごとのワープなど）。
-- `player_motion_trigger_component.Motion : player_motion = Jumped` — 見張る動き。
-- `player_motion_trigger_component.Targets : []entity = array{}` — 起動の合図を送る entity（その entity と子孫に届く）。空なら、この entity とその子孫へ送る。
-- `player_motion_trigger_component.CooldownSeconds : float = 0.0` — 同じ人の次の動きを無視する時間（0〜60 秒）。0 なら無視しない。
-- `player_state_trigger_component.State : player_motion_state = InAir` — 見張る状態。
-- `player_state_trigger_component.Targets : []entity = array{}` — 合図を送る entity。空なら、この entity の子の entity へ送る（自分の entity へは送らない）。
-- `player_state_condition_component.State : player_motion_state = Crouching` — 満たす状態。
+## Settings (@editable)
+- `player_count_condition_component.MinPlayerCount : int = 2` — satisfied when at least this many players participate (1-100).
+- `player_group_count_condition_component.Group : ?entity = false` — the group whose members are counted (an entity with `player_group_component`). If empty, the group on this entity or its ancestors (`FindAncestorGroup`).
+- `player_group_count_condition_component.MinMemberCount : int = 1` — satisfied when the group has at least this many members (0-100).
+- `player_group_count_condition_component.MaxMemberCount : int = 100` — satisfied when the group has at most this many members (0-100; the default 100 means no upper limit). `Min 0, Max 0` means "nobody in the group".
+- `player_attach_component.Prefab : concrete_subtype(entity) = entity` — the entity (prefab) attached to the body. Left at the default, an empty entity.
+- `player_attach_component.OffsetCm : vector3 = vector3{Up := 200.0}` — offset from the body's origin (centimeters; Forward, Left, Up).
+- `player_attach_component.Visibility : player_attach_visibility = Everyone` — whom it is shown to. `Everyone`: all players, `OwnerOnly`: only the player it is attached to, `OthersOnly`: everyone except that player.
+- `player_attach_component.AttachToEveryone : logic = true` — when on, attaches to everyone on activation (including later joins). Somewhere with an owner, only the owner. When off, only to players chosen with `AttachTo`.
+- `player_attach_component.ActiveOnBegin : logic = false` — when on, attaches from the start of the game. When off, from the activation signal.
+- `player_attach_component.RefreshSeconds : float = 1.0` — interval of the patrol that checks whether the body changed (respawn etc.) (0.1-10 seconds).
+- `player_group_component.LeaveOthers : logic = true` — when on, joining leaves the other groups under the same parent (choosing again cancels the previous choice).
+- `player_group_component.Targets : []entity = array{}` — entities that receive the activation signal (`activated_by_agent_event`) of a player who joined. When a member chooses again, only the signal is resent (warping each round etc.).
+- `player_motion_trigger_component.Motion : player_motion = Jumped` — the motion to watch.
+- `player_motion_trigger_component.Targets : []entity = array{}` — entities that receive the activation signal (reaches the entity and its descendants). If empty, sent to this entity and its descendants.
+- `player_motion_trigger_component.CooldownSeconds : float = 0.0` — time during which the same player's next motion is ignored (0-60 seconds). 0 ignores nothing.
+- `player_state_trigger_component.State : player_motion_state = InAir` — the state to watch.
+- `player_state_trigger_component.Targets : []entity = array{}` — entities that receive the signals. If empty, sent to the child entities of this entity (not to its own entity).
+- `player_state_condition_component.State : player_motion_state = Crouching` — the state that satisfies.
 
-`player_motion` の値：`Jumped` / `Landed` / `LeftGround` / `CrouchStarted` / `CrouchEnded` / `SprintStarted` / `SprintEnded` / `Eliminated` / `Damaged`。
-`player_motion_state` の値：`OnGround` / `InAir` / `Falling` / `Crouching` / `Sprinting` / `Gliding` / `InWater` / `Flying` / `Down`（倒れているが脱落していない）。
+Values of `player_motion`: `Jumped` / `Landed` / `LeftGround` / `CrouchStarted` / `CrouchEnded` / `SprintStarted` / `SprintEnded` / `Eliminated` / `Damaged`.
+Values of `player_motion_state`: `OnGround` / `InAir` / `Falling` / `Crouching` / `Sprinting` / `Gliding` / `InWater` / `Flying` / `Down` (downed but not out).
 
-## イベント
-- `player_added_event`（scene_event、SendScoped：区画全体。区画が無ければ世界全体）: `Manager : player_manager_component`、`Agent : agent`。`player_manager_component` が、参加して slot ができたあとに送る（受けた側で `FindSlot` が成功する）。消費しない。
-- `player_removed_event`（scene_event、SendScoped）: `Manager : player_manager_component`、`Agent : agent`。退出して slot が消えたあとに送る（受けた側で `FindSlot` は失敗する）。消費しない。
-- `player_event`（scene_event、SendDown）: `Sender : component`、`Event : scene_event`。同じ人の view どうしで知らせを渡す包み。`SendToPlayer` で slot の entity から下へ送る。受け手は同じ人の slot の下の view。消費しない。
-- `player_view_source_event`（scene_event、SendDown）: `Event : scene_event`。view を作った component から view へ知らせを渡す包み。`player_view_set.SendToViews` で送る。消費しない。
-- `player_motion_event`（scene_event、SendUp）: `Trigger : player_motion_trigger_component`、`Agent : agent`、`Motion : player_motion`。`player_motion_trigger_component` の entity から根へ。受け手は祖先の component。消費しない。
-- listenable（外から Signal はできない）
-  - `player_manager_component.PlayerAddedEvent : listenable(player)` — 参加して slot ができたあとに届く。
-  - `player_manager_component.PlayerRemovedEvent : listenable(player)` — 退出して slot が消えたあとに届く。
-  - `player_attach_component.AttachedEvent : listenable(tuple(agent, entity))` — 付けたときに（その人, 付けた entity）で届く。
-  - `player_attach_component.DetachedEvent : listenable(agent)` — 外したときにその人で届く。
-  - `player_group_component.JoinedEvent : listenable(agent)` / `LeftEvent : listenable(agent)` — 組に入った・出た（ほかの組を選んだ・`Leave`・`Clear`・退出）ときにその人で届く。
-  - `player_motion_trigger_component.MotionEvent : listenable(tuple(agent, player_motion))` — `Motion` が起きるたびに（その人, 動き）で届く。
-- 送るもの: `player_motion_trigger_component` は `Targets`（空なら自分の entity）へ `activated_by_agent_event`（`SendActivatedBy`）。`player_state_trigger_component` は `Targets`（空なら子の entity）へ `activated_event` / `deactivated_event`（だれかは付かない）。
-- `player_group_joined_event` / `player_group_left_event`（scene_event、SendDown：組の entity から下へ）: `Group : player_group_component`、`Agent : agent`。組に人が入った・出たとき。消費しない。
-- 受けるもの: `player_view_set.HandleActivation` と `player_attach_component` は `activated_event` / `deactivated_event`。`player_group_component` は、だれかの分かる `activated_event` でその人を入れ、`deactivated_event` でその人（だれか分からなければ全員）を出す。`player_count_condition_component` は `player_added_event` / `player_removed_event`。`player_group_count_condition_component` は scene_event ではなく、組の `JoinedEvent` / `LeftEvent` を購読する（組が祖先でなくても届く）。
+## Events
+- `player_added_event` (scene_event, SendScoped: the whole scope, or the whole world if there is no scope): `Manager : player_manager_component`, `Agent : agent`. Sent by `player_manager_component` after a player joins and the slot is created (`FindSlot` succeeds on the receiving side). Not consumed.
+- `player_removed_event` (scene_event, SendScoped): `Manager : player_manager_component`, `Agent : agent`. Sent after a player leaves and the slot is removed (`FindSlot` fails on the receiving side). Not consumed.
+- `player_event` (scene_event, SendDown): `Sender : component`, `Event : scene_event`. Wrapper that passes a notification between the views of the same player. Sent down from the slot's entity with `SendToPlayer`. Receivers are the views under the same player's slot. Not consumed.
+- `player_view_source_event` (scene_event, SendDown): `Event : scene_event`. Wrapper that passes a notification from the component that created the view to the view. Sent with `player_view_set.SendToViews`. Not consumed.
+- `player_motion_event` (scene_event, SendUp): `Trigger : player_motion_trigger_component`, `Agent : agent`, `Motion : player_motion`. From the `player_motion_trigger_component` entity to the root. Receivers are ancestor components. Not consumed.
+- listenables (cannot be Signaled from outside)
+  - `player_manager_component.PlayerAddedEvent : listenable(player)` — delivered after a player joins and the slot is created.
+  - `player_manager_component.PlayerRemovedEvent : listenable(player)` — delivered after a player leaves and the slot is removed.
+  - `player_attach_component.AttachedEvent : listenable(tuple(agent, entity))` — delivered with (the player, the attached entity) on attach.
+  - `player_attach_component.DetachedEvent : listenable(agent)` — delivered with the player on detach.
+  - `player_group_component.JoinedEvent : listenable(agent)` / `LeftEvent : listenable(agent)` — delivered with the player on joining / leaving the group (chose another group, `Leave`, `Clear`, left the game).
+  - `player_motion_trigger_component.MotionEvent : listenable(tuple(agent, player_motion))` — delivered with (the player, the motion) each time `Motion` happens.
+- Sent: `player_motion_trigger_component` sends `activated_by_agent_event` (`SendActivatedBy`) to `Targets` (its own entity if empty). `player_state_trigger_component` sends `activated_event` / `deactivated_event` (without who) to `Targets` (the child entities if empty).
+- `player_group_joined_event` / `player_group_left_event` (scene_event, SendDown: from the group's entity downward): `Group : player_group_component`, `Agent : agent`. When a player joins / leaves the group. Not consumed.
+- Received: `player_view_set.HandleActivation` and `player_attach_component` receive `activated_event` / `deactivated_event`. `player_group_component` adds the player on an `activated_event` that tells who, and removes that player (everyone if unknown) on `deactivated_event`. `player_count_condition_component` receives `player_added_event` / `player_removed_event`. `player_group_count_condition_component` subscribes to the group's `JoinedEvent` / `LeftEvent` rather than a scene_event (reaches it even when the group is not an ancestor).
 
-## タグ
-- `player_state_tag` — プレイヤーの状態を表すタグの抽象基底。状態を持つ System はこの派生を作る。派生で付けたタグは基底の型でも見つかる（`Agent.HasPlayerTag[player_state_tag]` は「何かの状態にある」）。
-- `controlled_movement_tag` — 能力などがプレイヤーの動き（速度・位置）を直接操っているあいだ付くタグ（`player_state_tag` の派生）。ほかの力（引力・ホバーなど）は、これが付いている人の速度を書き換えない。自分で動きを操る能力を作るときもこの派生を付ける。
-- `player_tag_holder` — 付け外しの部品。状態に入ったら `Tags.Add(Agent, xxx_tag{})`（または `Set`）、抜けたら `Tags.Remove(Agent)`、止まるとき（`OnEndSimulation`・能力の `defer`）に `Tags.RemoveAll()`。`AddTag` が返す `tag_key` を人ごとに覚え、自分が付けた分だけを外すので、ほかの部品が付けた同じ型のタグは消さない。同じ holder で同じ人にもう付けていれば `Add` は何もしない。
-- タグはキャラクターの entity ではなく agent に付く（スポーン前・倒れているあいだ・リスポーンのあとも消えない）。
-- 確かめる側は `Agent.HasPlayerTag[タグの型]`（中は `ContainsTag`）。PlayerSystem 自身はタグを付けない。
+## Tags
+- `player_state_tag` — abstract base of tags that represent player state. A System that holds a state creates a subclass. A tag attached via a subclass is also found by the base type (`Agent.HasPlayerTag[player_state_tag]` means "in some state").
+- `controlled_movement_tag` — tag attached while an ability or similar directly controls the player's movement (velocity / position) (a `player_state_tag` subclass). Other forces (gravity, hover, etc.) do not overwrite the velocity of someone carrying this. Attach a subclass when you write your own movement-controlling ability.
+- `player_tag_holder` — the attach / remove helper. On entering the state `Tags.Add(Agent, xxx_tag{})` (or `Set`), on leaving `Tags.Remove(Agent)`, when stopping (`OnEndSimulation`, an ability's `defer`) `Tags.RemoveAll()`. It remembers the `tag_key` returned by `AddTag` per player and removes only what it attached, so tags of the same type attached by other parts are left alone. If the same holder already attached a tag to the same player, `Add` does nothing.
+- Tags go on the agent, not the character's entity (they survive before spawn, while downed and after respawn).
+- Checkers use `Agent.HasPlayerTag[tag type]` (`ContainsTag` inside). PlayerSystem itself attaches no tags.
 
-## 持ち主
-- プレイヤーの slot（`player_slot_component` の entity）の下にある entity は、その人のもの（持ち主がいる）です。`InEntity.FindOwningPlayer[]` は、自分か祖先をたどって最初に見つかった slot のプレイヤーを返し、slot の下に無ければ失敗します。`FindOwningSlot[]` は slot の component を返します。
-- slot の下に部品を置く一番の方法は、LoadoutSystem の `loadout_component`（プレハブを人ごとに作って slot の下に置く）です。`player_view_set` の view も slot の下に作られます。
-- `FindOwningPlayer[]` が成功する場所では、全員ではなく持ち主だけに効く部品があります。能力の付与（AbilitySystem）、widget と標準 HUD を隠す部品（WidgetSystem）、`item_grant_component`（ItemSystem）、独自キャラクター（CharacterSystem）、デバイスの橋渡しの `Owner`（FNDeviceSystem）、そしてこの System の次の部品です。
-  - `player_attach_component` — 持ち主のいる場所では、起動したとき（`AttachToEveryone` がオンなら）持ち主にだけ付ける。全員にも途中参加の人にも付けない。
-  - `player_motion_trigger_component` — 持ち主のいる場所では持ち主だけを見る。持ち主がいなければ区画の全員（途中参加も）を見る。
-  - `player_state_trigger_component` / `player_state_condition_component` — 持ち主がいないと動かない（出力ログに「持ち主がいません」と出る）。
-- 新しく作る部品も、`FindOwningPlayer[]` が成功したら持ち主だけに効くようにそろえます。
+## Owners
+- Entities under a player's slot (the entity of a `player_slot_component`) belong to that player (they have an owner). `InEntity.FindOwningPlayer[]` returns the player of the first slot found on itself or its ancestors, and fails when not under a slot. `FindOwningSlot[]` returns the slot component.
+- The main way to put parts under a slot is LoadoutSystem's `loadout_component` (creates a prefab per player and places it under the slot). `player_view_set` views are also created under the slot.
+- Where `FindOwningPlayer[]` succeeds, some parts affect only the owner instead of everyone: ability granting (AbilitySystem), widgets and the part that hides the standard HUD (WidgetSystem), `item_grant_component` (ItemSystem), custom characters (CharacterSystem), the `Owner` of device bridges (FNDeviceSystem), and the following parts of this System.
+  - `player_attach_component` — somewhere with an owner, attaches only to the owner on activation (when `AttachToEveryone` is on). Not to everyone, not to later joins.
+  - `player_motion_trigger_component` — somewhere with an owner, watches only the owner. Without an owner, watches everyone in the scope (including later joins).
+  - `player_state_trigger_component` / `player_state_condition_component` — do not work without an owner ("No owner" appears in the output log).
+- New parts should follow the same rule: when `FindOwningPlayer[]` succeeds, affect only the owner.
 
-## 公開 API
+## Public API
 ```verse
 # PlayerManagerComponent / PlayerSlotComponent
 player_added_event<public> := class(scene_event):
@@ -101,9 +101,9 @@ player_removed_event<public> := class(scene_event):
 player_manager_component<public> := class<final_super>(component):
     PlayerAddedEvent<public><final>:listenable(player)
     PlayerRemovedEvent<public><final>:listenable(player)
-    GetPlayerCount<public>()<reads>:int                                   # 直下の slot の数
-    GetSlots<public>()<reads>:[]player_slot_component                     # 並び順は決まっていない
-    FindSlot<public>(Player:player)<decides><reads>:player_slot_component # 参加の処理より前と退出のあとは失敗
+    GetPlayerCount<public>()<reads>:int                                   # Number of direct-child slots
+    GetSlots<public>()<reads>:[]player_slot_component                     # Order is undefined
+    FindSlot<public>(Player:player)<decides><reads>:player_slot_component # Fails before the join is processed and after leaving
 
 player_slot_component<public> := class<final_super>(component):
     Player<public>:player
@@ -118,29 +118,29 @@ player_view_source_event<public> := class(scene_event):
 
 player_view_set<public> := class<unique>:
     IsActive<public>()<decides><transacts>:void
-    GetViews<public>()<transacts>:[]entity                                # 世界に入っている view だけ（退出した人・HideFor の分は含まない）
-    Activate<public>(Owner:entity, MakeView:type{_(:entity, :player_slot_component):component}, ?Everyone:logic = true, ?ViewFilter:?player_view_filter = false):void   # Everyone = false なら ShowFor で決めた人だけ。ViewFilter が許す人にだけ作る
+    GetViews<public>()<transacts>:[]entity                                # Only views in the world (excludes players who left and HideFor)
+    Activate<public>(Owner:entity, MakeView:type{_(:entity, :player_slot_component):component}, ?Everyone:logic = true, ?ViewFilter:?player_view_filter = false):void   # Everyone = false: only players chosen with ShowFor. Creates only for players the ViewFilter allows
     Deactivate<public>():void
     HandleActivation<public>(SceneEvent:scene_event, Owner:entity, MakeView:type{_(:entity, :player_slot_component):component}):void
     FindViewFor<public>(Agent:agent)<decides><transacts>:entity
     HideFor<public>(Agent:agent):void
-    ShowFor<public>(Agent:agent):void                                     # 起動中で、view が無ければ作る
-    SendToViews<public>(SceneEvent:scene_event):void                      # player_view_source_event で包んで送る
+    ShowFor<public>(Agent:agent):void                                     # While active, creates the view if there is none
+    SendToViews<public>(SceneEvent:scene_event):void                      # Wrapped in player_view_source_event
 
-(View:component).SendToPlayer<public>(SceneEvent:scene_event):void        # player_event で包んで同じ人の slot の下へ
+(View:component).SendToPlayer<public>(SceneEvent:scene_event):void        # Wrapped in player_event, down from the same player's slot
 (View:component).FindViewSlot<public>()<decides><transacts>:player_slot_component
 
 # PlayerSubscription
 (InEntity:entity).SubscribePlayers<public>(OnAdded:type{_(:player):void}, OnRemoved:type{_(:player):void}):?cancelable
 
 # PlayerOwner
-(InEntity:entity).FindOwningPlayer<public>()<decides><transacts>:player              # 自分か祖先の slot のプレイヤー
+(InEntity:entity).FindOwningPlayer<public>()<decides><transacts>:player              # The player of the slot on itself or an ancestor
 (InEntity:entity).FindOwningSlot<public>()<decides><transacts>:player_slot_component
 
 # PlayerBody
-(Agent:agent).FindPlayerEntity<public>()<decides><transacts>:entity       # キャラクターがいないと失敗
-(Body:entity).FindPossessingAgent<public>()<decides><transacts>:agent     # possessable_component の Agent
-(Body:entity).FindPlayer<public>()<decides><transacts>:player             # 操っているのがプレイヤーでなければ失敗
+(Agent:agent).FindPlayerEntity<public>()<decides><transacts>:entity       # Fails when there is no character
+(Body:entity).FindPossessingAgent<public>()<decides><transacts>:agent     # The Agent of the possessable_component
+(Body:entity).FindPlayer<public>()<decides><transacts>:player             # Fails when the controller is not a player
 (Body:entity).FindFortCharacter<public>()<decides><transacts>:fort_character
 
 # PlayerTags
@@ -170,9 +170,9 @@ player_attach_component<public> := class<final_super>(component):
     RefreshSeconds<public>:float
     AttachedEvent<public><final>:listenable(tuple(agent, entity))
     DetachedEvent<public><final>:listenable(agent)
-    Activate<public>():void                                     # もう起動していれば何もしない
-    Deactivate<public>():void                                   # 全員から外す
-    AttachTo<public>(Agent:agent):entity                        # 付いていればその entity を返す。起動していなければ起動する
+    Activate<public>():void                                     # Does nothing if already active
+    Deactivate<public>():void                                   # Detaches from everyone
+    AttachTo<public>(Agent:agent):entity                        # Returns the entity if already attached. Activates if not active
     DetachFrom<public>(Agent:agent):void
     DetachAll<public>():void
     FindAttached<public>(Agent:agent)<decides><transacts>:entity
@@ -183,10 +183,10 @@ player_count_condition_component<public> := class<final_super>(condition_compone
     MinPlayerCount<public>:int
 
 player_group_count_condition_component<public> := class<final_super>(condition_component):
-    Group<public>:?entity                                       # 空なら、この entity かその祖先の組
+    Group<public>:?entity                                       # If empty, the group on this entity or its ancestors
     MinMemberCount<public>:int
     MaxMemberCount<public>:int
-    FindTargetGroup<public>()<decides><transacts>:player_group_component   # 数えている組。開始前・見つからないときは失敗
+    FindTargetGroup<public>()<decides><transacts>:player_group_component   # The group being counted. Fails before start or when not found
 
 # MotionKit
 player_motion<public> := enum:
@@ -222,7 +222,7 @@ player_motion_trigger_component<public> := class<final_super>(component):
     CooldownSeconds<public>:float
     MotionEvent<public><final>:listenable(tuple(agent, player_motion))
 
-player_view_filter<public> := interface:                       # player_view_set がだれに view を作ってよいか
+player_view_filter<public> := interface:                       # Whom a player_view_set may create a view for
     AllowsView<public>(Agent:agent)<decides><transacts>:void
 
 player_group_joined_event<public> := class(scene_event):
@@ -237,38 +237,38 @@ player_group_component<public> := class<final_super>(component):
     Targets<public>:[]entity
     JoinedEvent<public><final>:listenable(agent)
     LeftEvent<public><final>:listenable(agent)
-    Join<public>(Agent:agent):void                               # 兄弟の組から出してから入れ、Targets へ合図。もう入っていれば合図だけ
+    Join<public>(Agent:agent):void                               # Leaves the sibling groups, joins, signals Targets. If already a member, only the signal
     Leave<public>(Agent:agent):void
     Clear<public>():void
     IsMember<public>(Agent:agent)<decides><transacts>:void
-    GetMembers<public>()<transacts>:[]agent                      # 入った順
+    GetMembers<public>()<transacts>:[]agent                      # In join order
     GetMemberCount<public>()<transacts>:int
-    GetMemberPlayerEntities<public>()<transacts>:[]entity       # 今キャラクターがいる人の体（FindPlayerEntity）。体の無い人は含まない
+    GetMemberPlayerEntities<public>()<transacts>:[]entity       # Bodies of members who currently have a character (FindPlayerEntity). Members without a body are excluded
 
-(InEntity:entity).FindAncestorGroup<public>()<decides><transacts>:player_group_component   # InEntity かその祖先のいちばん近い組
+(InEntity:entity).FindAncestorGroup<public>()<decides><transacts>:player_group_component   # The nearest group on InEntity or its ancestors
 
 player_state_trigger_component<public> := class<final_super>(component):
     State<public>:player_motion_state
     Targets<public>:[]entity
-    IsActive<public>()<decides><transacts>:void                 # 持ち主が今 State にいるなら成功
+    IsActive<public>()<decides><transacts>:void                 # Succeeds if the owner is currently in State
 
 player_state_condition_component<public> := class<final_super>(condition_component):
     State<public>:player_motion_state
 ```
 
-## 前提・注意
-- `player_view_set`・`player_count_condition_component`・`player_attach_component`（`AttachToEveryone` で持ち主がいないとき）・`player_motion_trigger_component`（持ち主がいないとき）と、それを使うほかの System は、区画（または世界）に `player_manager_component` が 1 つ要る。見つからないと `player_view_set.Activate` は起動した扱いになるが view は作らない（参加も待たない。出力ログに `[player_view_set] player_manager_component が…見つかりません` と 1 回出る）。
-- 退出すると `player_manager_component` が slot の entity を外し、その下の view も世界から外れる（view の component は `OnEndSimulation` を通る）。`player_view_set` は `GetViews` / `FindViewFor` / `SendToViews` で世界に入っている view だけを見て、manager の `PlayerRemovedEvent` で退出した人の view を一覧から除く。view の component は、止まるとき（`OnEndSimulation`）に人ごとの状態を戻す（`player_ready_view_component` の「準備 OK」など）。⚠ 未検証：外した slot の下の view で `GetSimulationEntity` が失敗すること（digest の説明では「シーンに無いと失敗」）。
-- シミュレーション開始の時点でいる人の slot は `player_manager_component` の `OnBeginSimulation` の中で作られ、そのときの知らせ（scene event・event とも）はまだ購読していない相手には届かない。あとから購読するコードは、先に `GetSlots` で今いる人を見てから `PlayerAddedEvent` を待つ。
-- `SubscribePlayers` は、すでにいるプレイヤーにはこの関数の中で（返る前に）`OnAdded` を呼ぶ。playspace が取れない entity では false を返し、何も呼ばない。返り値は `OnEndSimulation` で Cancel する。世界に 1 つの slot が欲しいだけなら `player_manager_component` を使う。
-- `player_attach_component` は体の entity と親子にせず、自分の entity の子に作った entity を `SetOrigin(entity_origin{Entity := 体})` で体を基準にする（体の中身には触らない）。同じ人には 1 つだけ付ける。体がいないあいだは隠し、`RefreshSeconds` ごとの見回りで付け直す。`OthersOnly` は区画の `player_manager_component` の参加者から本人を除いた人に見せる。
-- 区画の `player_manager_component` は、`player_count_condition_component`・`player_attach_component`・`player_view_set` とも、最初に見つけたものを覚えて使う（SceneGraphSystem の `ResolveScopedComponent`）。`player_attach_component` は止まるとき、`player_view_set` は `Deactivate` で忘れる。
-- `player_group_count_condition_component` は開始時に組を探して購読する。組が見つからなければ出力ログに「player_group_component が見つかりません」と出て、満たさない。実行時に作った組を数えるときは、組を先に作ってから条件を足す。
-- MotionKit の部品は毎フレーム（`TickEvents.PrePhysics`）キャラクターを調べる。リスポーンでキャラクターが変わると購読し直す。`Landed` / `LeftGround` は地面にいるかの変化で決め、`Sprinting` の状態は `SprintedEvent` の知らせで覚える。`player_state_trigger_component` は開始時にすでに `State` にいれば、すぐ起動の合図を送り、止まるときに `State` にいれば停止の合図を送る。
-- ⚠ 未検証（PlayerTags.verse）：agent に付けたタグの付け外し・`ContainsTag` が UEFN 43.00 の実機で動くか（digest では agent は entity の派生で、entity は has_tags）。`_Test/PlayerSystemTest` で確かめる。
-- ⚠ 未検証（PlayerAttachComponent.verse）：`entity_origin` で体に付けた entity が、体の向き・しゃがみに合わせて動くか。
+## Requirements, caveats and limits
+- `player_view_set`, `player_count_condition_component`, `player_attach_component` (with `AttachToEveryone` and no owner), `player_motion_trigger_component` (without an owner) and the other Systems that use them need one `player_manager_component` in the scope (or world). If none is found, `player_view_set.Activate` counts as activated but creates no views (and does not wait for joins; `[player_view_set] No player_manager_component found...` appears once in the output log).
+- On leaving, `player_manager_component` removes the slot entity and the views under it leave the world too (the view's component goes through `OnEndSimulation`). `player_view_set` looks only at views in the world in `GetViews` / `FindViewFor` / `SendToViews` and drops the views of players who left on the manager's `PlayerRemovedEvent`. A view component resets its per-player state when stopping (`OnEndSimulation`) (the "ready" of `player_ready_view_component` etc.). ⚠ Unverified: that `GetSimulationEntity` fails for a view under a removed slot (the digest says "fails when not in the scene").
+- Slots of players present when the simulation starts are created inside `player_manager_component`'s `OnBeginSimulation`, and the notifications at that time (both scene event and event) do not reach anyone not yet subscribed. Code that subscribes later should first look at who is present with `GetSlots`, then wait for `PlayerAddedEvent`.
+- `SubscribePlayers` calls `OnAdded` for players already present inside the function (before it returns). On an entity whose playspace cannot be obtained it returns false and calls nothing. Cancel the return value in `OnEndSimulation`. If you only want one slot per world, use `player_manager_component`.
+- `player_attach_component` does not parent to the body entity; it creates the entity as a child of its own entity and bases it on the body with `SetOrigin(entity_origin{Entity := body})` (the body's contents are not touched). Only one per player. Hidden while there is no body, and reattached by the patrol every `RefreshSeconds`. `OthersOnly` shows to the participants of the scope's `player_manager_component` minus the player.
+- `player_count_condition_component`, `player_attach_component` and `player_view_set` all remember the first `player_manager_component` found in the scope and keep using it (SceneGraphSystem's `ResolveScopedComponent`). `player_attach_component` forgets it when stopping, `player_view_set` on `Deactivate`.
+- `player_group_count_condition_component` finds and subscribes to the group at start. If no group is found, "No player_group_component found" appears in the output log and the condition is never satisfied. To count a group created at runtime, create the group first and then add the condition.
+- The MotionKit parts inspect the character every frame (`TickEvents.PrePhysics`). When the character changes on respawn they resubscribe. `Landed` / `LeftGround` are decided from the change in being on the ground, and the `Sprinting` state is remembered from the `SprintedEvent` notification. `player_state_trigger_component` sends the activation signal right away if already in `State` at start, and the deactivation signal if in `State` when stopping.
+- ⚠ Unverified (PlayerTags.verse): whether adding / removing tags on an agent and `ContainsTag` work in UEFN 43.00 (in the digest, agent derives from entity and entity is has_tags). Checked by `_Test/PlayerSystemTest`.
+- ⚠ Unverified (PlayerAttachComponent.verse): whether an entity attached to the body with `entity_origin` follows the body's facing and crouching.
 
-## 確かめ方
-- テスト：`_Test/PlayerSystemTest/` の `player_system_test_component`。`player_manager_component` を付けた entity を 1 つと、この component を付けた entity を 1 つ置き、プレイヤー 1 人以上で始める（参加を最大 10 秒待つ。そろっていれば次のフレームで終わる）。slot（`GetPlayerCount` / `GetSlots` / `FindSlot`）、`player_count_condition_component`、`player_view_set`（`Activate` / `Deactivate` / `GetViews` / `FindViewSlot`）、`SubscribePlayers`、タグ（`player_tag_holder` / `HasPlayerTag`。派生のタグを基底の型で探す、ほかの holder の分は残る）、組（`Join` / `Leave` / `GetMemberCount` / `GetMemberPlayerEntities` / `FindAncestorGroup`）と `player_group_count_condition_component`（祖先の組を数える、1 人以上・だれもいない、`ChangedEvent` の回数）を確かめます。結果は出力ログの `[TEST] PlayerSystem`。
-- `player_attach_component`・MotionKit・`FindOwningPlayer`・PlayerBody・`player_group_component` の合図（`Targets`・`LeaveOthers`）は、このテストでは確かめない。`FindOwningPlayer` は `_Test/LoadoutSystemTest/` が使う。
-- 見本：`_Samples/ScopeSample/`（`FindScopedComponent[player_manager_component]` がどこを見つけるか）。`player_view_set` の使い方は `_Samples/AbilitySample/`・`_Samples/WidgetSample/`（`SendToPlayer` も）・`_Samples/InputSampleExperimentalKit/`・`_Samples/VirtualPointerSampleExperimentalKit/`。名前が `ExperimentalKit` で終わる見本は、VerseShare で「実験的を含む」をオンにしたプロジェクトにだけ配られる。
+## Verifying
+- Test: `player_system_test_component` in `_Test/PlayerSystemTest/`. Place one entity with `player_manager_component` and one with this component, and start with at least one player (waits up to 10 seconds for a join; finishes on the next frame if players are present). It checks slots (`GetPlayerCount` / `GetSlots` / `FindSlot`), `player_count_condition_component`, `player_view_set` (`Activate` / `Deactivate` / `GetViews` / `FindViewSlot`), `SubscribePlayers`, tags (`player_tag_holder` / `HasPlayerTag`; finding a subclass tag by the base type, tags of another holder remain), groups (`Join` / `Leave` / `GetMemberCount` / `GetMemberPlayerEntities` / `FindAncestorGroup`) and `player_group_count_condition_component` (counting an ancestor group, at least one / nobody, the count of `ChangedEvent`). Results are in the output log under `[TEST] PlayerSystem`.
+- `player_attach_component`, MotionKit, `FindOwningPlayer`, PlayerBody and the signals of `player_group_component` (`Targets`, `LeaveOthers`) are not checked by this test. `FindOwningPlayer` is used by `_Test/LoadoutSystemTest/`.
+- Samples: `_Samples/ScopeSample/` (what `FindScopedComponent[player_manager_component]` finds). For how to use `player_view_set`, see `_Samples/AbilitySample/`, `_Samples/WidgetSample/` (also `SendToPlayer`), `_Samples/InputSampleExperimentalKit/` and `_Samples/VirtualPointerSampleExperimentalKit/`. Samples whose name ends in `ExperimentalKit` are distributed only to projects with "include experimental" turned on in VerseShare.

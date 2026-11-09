@@ -5,19 +5,19 @@ using { SceneGraphSystem }
 using { SwingSystem }
 using { SwingSystem.TooltipKit }
 
-# 役割：リフトの的。同じ entity の swing_target_component を起点に振り出されると（地面で待っているあいだは動かない）、TravelCm だけ SpeedCmPerSecond でまっすぐ動き、着いたら Shatter で壊す（つかんでいる人のスイングは途切れる）
-# 知らせ：動き出すときに swing_lift_changed_event{Active := true} を自分の entity へ送る（見た目の切り替え用）
-# 置き方：エディターで、swing_target_component と同じ entity に付ける（スイングでつかませたいキューブ）。mover と同じ entity には置かない（位置を取り合う）。実行時に作るときも同じ（swing_target_component と一緒に AddComponents する）
-# 同じ entity：swing_target_component（必須）、当たり判定のあるメッシュ。見た目を変えるなら swing_lift_changed_event を受ける component
-# 前提・注意：位置は毎フレーム（TickEvents.PrePhysics）SetGlobalTransform で動かす。経過時間は DeltaTime の足し合わせ
+# Role: lift target. When a swing is launched from the swing_target_component on the same entity (it does not move while the player waits on the ground), it moves straight by TravelCm at SpeedCmPerSecond and, on arrival, breaks with Shatter (the swing of whoever holds it is cut)
+# Notifies: sends swing_lift_changed_event{Active := true} to its own entity when it starts moving (for switching the look)
+# Placement: attach in the editor to the same entity as swing_target_component (the cube you want players to grab). Do not put it on the same entity as a mover (they fight over the position). Same when created at runtime (AddComponents together with swing_target_component)
+# Same entity: swing_target_component (required), a mesh with collision. To change the look, a component that receives swing_lift_changed_event
+# Requirements / notes: the position is moved every frame (TickEvents.PrePhysics) with SetGlobalTransform. Elapsed time is the sum of DeltaTime
 swing_lift_component<public> := class<final_super>(component):
 
-    # 振り出されたときに動く向きと距離（センチメートル。既定は真上に 4000）
+    # Direction and distance to move when launched (centimeters; default straight up 4000)
     @editable:
         ToolTip := SwingLiftTravelToolTip
         Categories := array{SwingCategory, SwingLiftCategory}
     TravelCm<public>:vector3 = vector3{Up := 4000.0}
-    # 振り出されたあと動く速さ（センチメートル毎秒。既定 800）
+    # Speed after launch (centimeters per second; default 800)
     @editable_number(float):
         ToolTip := SwingLiftSpeedToolTip
         Categories := array{SwingCategory, SwingLiftCategory}
@@ -46,10 +46,10 @@ swing_lift_component<public> := class<final_super>(component):
             if (Ratio >= 1.0):
                 break
 
-# リフトの的（swing_lift_component）が動き出した（Active := true）
-# 向き：swing_lift_component が自分の entity へ SendDown する。受け手：同じ entity・子孫の見た目の component。消費しない
+# The lift target (swing_lift_component) started moving (Active := true)
+# Direction: swing_lift_component SendDowns it to its own entity. Receivers: look components on the same entity / descendants. Not consumed
 swing_lift_changed_event<public> := class(scene_event):
-    # 送り元
+    # Sender
     Lift<public>:swing_lift_component
-    # true なら動き出した
+    # true when it started moving
     Active<public>:logic

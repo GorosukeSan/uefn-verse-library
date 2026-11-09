@@ -1,5 +1,6 @@
 using { /Verse.org/SceneGraph }
 using { /Verse.org/Simulation }
+using { /Verse.org/Colors }
 using { /UnrealEngine.com/Temporary/UI }
 using { ActivationSystem }
 using { PlayerSystem }
@@ -7,12 +8,13 @@ using { SceneGraphSystem }
 using { WidgetSystem }
 using { WidgetSystem.HudKit }
 using { WidgetSystem.MenuKit }
+using { WidgetSystem.CardKit }
 using { _Test }
 
-# テストで渡す知らせ
+# Notification passed by the test
 test_widget_ping_event<public> := class(scene_event):
 
-# 役割：テスト用。1 人分の窓口ごとに、届いた知らせと閉じた回数を数える
+# Role: test helper. Counts the received notifications and the close count per per-player widget handle
 test_widget_counter<public> := class:
     var<private> Received:int = 0
     var<private> Hidden:int = 0
@@ -26,8 +28,8 @@ test_widget_counter<public> := class:
     GetReceivedCount<public>()<transacts>:int = Received
     GetHiddenCount<public>()<transacts>:int = Hidden
 
-# 役割：テスト用の画面表示の component。空の canvas を出し、窓口ごとに数える
-# 置き方：テストのコードが実行時に作る
+# Role: test screen component. Shows an empty canvas and counts per handle
+# Placement: created by the test code at runtime
 test_player_widget_component<public> := class<final_super>(player_widget_component):
 
     var<private> Counters:[]test_widget_counter = array{}
@@ -39,22 +41,23 @@ test_player_widget_component<public> := class<final_super>(player_widget_compone
         set Counters += array{Counter}
         canvas{}
 
-    # 作った窓口ごとの数（作った順）
+    # Counts per created handle (in creation order)
     GetCounters<public>()<transacts>:[]test_widget_counter = Counters
 
-# 役割：WidgetSystem の動作確認
-#   - 起動の合図で全員に出る（IsShown・CreateWidget の回数）、SendToWidgets が ReceivedEvent に届く、停止の合図で消えて HiddenEvent が 1 回届く
-#   - Audience = Chosen：起動しても出ない、ShowFor で 1 人に出る、同じ人に 2 回 ShowFor しても 1 枚、HideFor で消える
-#   - Mode = Menu の 1 人 1 枚：同じ人に 2 つ目のメニューを出すと、1 つ目が閉じる（CloseOther）
-#   - text_hud / gauge_hud / notification_hud / choice_menu が出て、値を変えても失敗しない
-# テストのレベル：player_manager_component を付けた entity を 1 つと、この component を付けた entity を 1 つ。プレイヤー 1 人以上で始める（参加を最大 10 秒待つ）
-# 見た目：テストの途中で、文字・ゲージ・通知・メニューが一瞬出る
-# 結果：出力ログの [TEST] WidgetSystem
+# Role: verification of WidgetSystem
+#   - shown to everyone on the activate signal (IsShown, CreateWidget count), SendToWidgets reaches ReceivedEvent, hidden on the deactivate signal with HiddenEvent once
+#   - Audience = Chosen: not shown on activation, ShowFor shows it to one player, a second ShowFor for the same player still makes one, HideFor hides it
+#   - Mode = Menu, one per player: showing a second menu to the same player closes the first (CloseOther)
+#   - text_hud / gauge_hud / notification_hud / choice_menu appear and changing their values does not fail
+# Test level: one entity with player_manager_component and one entity with this component. Start with at least one player (waits up to 10 seconds for them to join)
+# Look: text, a gauge, a notification and a menu flash briefly during the test
+# Result: [TEST] WidgetSystem in the output log
 widget_system_test_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =
         Results := test_log{Name := "WidgetSystem"}
         TickEvents.PrePhysics.Await()
+        TestCards(Results)
         if (Manager := Entity.FindScopedComponent[player_manager_component]):
             if (Manager.GetPlayerCount() = 0):
                 Arrived := AwaitWithin(Manager.PlayerAddedEvent, 10.0)
@@ -68,6 +71,22 @@ widget_system_test_component<public> := class<final_super>(component):
         else:
             Results.Fail("setup", "player_manager_component not found")
         if (Results.Finish[]) {}
+
+    # Passing through widget_card's With* keeps every item other than the replaced one (checks that CopyCard was not forgotten when an item was added)
+    TestCards<private>(Results:test_log):void =
+        Base := widget_card{Id := "id", Title := "title", Subtitle := "sub", Description := "desc", Badge := "badge", AccentColor := color{R := 0.1, G := 0.2, B := 0.3}, Enabled := false}
+        Card := Base.WithSubtitle("sub2").WithBadge("badge2").WithEnabled(true)
+        Results.Check("card: Id kept", if (Card.Id = "id") then true else false)
+        Results.Check("card: Title kept", if (Card.Title = "title") then true else false)
+        Results.Check("card: Subtitle replaced", if (Card.Subtitle = "sub2") then true else false)
+        Results.Check("card: Description kept", if (Card.Description = "desc") then true else false)
+        Results.Check("card: Badge replaced", if (Card.Badge = "badge2") then true else false)
+        Results.Check("card: Image kept (none)", if (Card.Image?) then false else true)
+        Results.CheckFloat("card: AccentColor kept", Card.AccentColor.B, 0.3, 0.0001)
+        Results.Check("card: Enabled replaced", Card.Enabled)
+        Kept := Base.WithSubtitle("x")
+        Results.Check("card: Enabled kept", if (Kept.Enabled?) then false else true)
+        Results.Check("card: Badge kept", if (Kept.Badge = "badge") then true else false)
 
     TestEveryone<private>(Results:test_log, Manager:player_manager_component):void =
         WidgetEntity := entity{}

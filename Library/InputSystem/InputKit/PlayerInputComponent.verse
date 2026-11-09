@@ -8,26 +8,26 @@ using { SceneGraphSystem }
 using { InputSystem }
 using { InputSystem.TooltipKit }
 
-# 役割：起動している間、各プレイヤーに InputMapping を足し、InputAction が押されたら区画全体へ player_input_triggered_event を送り、TriggeredEvent に押した人を届ける
-# 置き方：エディターで entity に付ける。1 entity に何個置いてもよい（それぞれ別の割り当てを受け持つ）。同じ InputMapping を複数で使ってもよい（1 つを止めても、まだ動いているほうの入力は切れない）
-# 親：起動の合図が届く場所（ゲームの流れなら、ノードの entity かその子孫）
-# いつ：起動の合図（activated_event）から停止の合図（deactivated_event）まで。ActiveOnBegin が true ならシミュレーション開始から。コードから Activate / Deactivate を呼んでもよい
-# 知らせ：player_input_triggered_event を区画全体へ送り、TriggeredEvent に届ける
-# 前提：区画（または世界）に player_manager_component が 1 つ
+# Role: while active, adds InputMapping to every player; when InputAction is pressed, sends player_input_triggered_event to the whole zone and fires TriggeredEvent with the agent who pressed
+# Placement: attach to an entity in the editor. Any number per entity (each handles a different mapping). The same InputMapping may be used by several (stopping one does not cut the input of the ones still running)
+# Parent: wherever the activation signal arrives (for the game flow, the node's entity or a descendant)
+# When: from the activation signal (activated_event) to the deactivation signal (deactivated_event). From the start of the simulation when ActiveOnBegin is true. Activate / Deactivate may also be called from code
+# Notifies: sends player_input_triggered_event to the whole zone and fires TriggeredEvent
+# Requirements: one player_manager_component in the zone (or the world)
 player_input_component<public> := class<final_super>(component):
 
-    # true ならシミュレーション開始から受け付ける。false なら起動の合図から（既定 false）
+    # When true, accepts input from the start of the simulation. When false, from the activation signal (default false)
     @editable:
         ToolTip := InputActiveOnBeginToolTip
         Categories := array{InputCategory}
     ActiveOnBegin<public>:logic = false
 
-    # 受け付けているあいだ各プレイヤーに足すキー割り当て（既定 MenuNavigationMapping）
+    # The key mapping added to every player while accepting input (default MenuNavigationMapping)
     @editable:
         ToolTip := InputMappingToolTip
         Categories := array{InputCategory, InputMappingCategory}
     InputMapping<public>:input_mapping = MenuNavigationMapping
-    # 押されたことを知らせる操作。InputMapping に含まれるものを選ぶ（既定 NextTab = E キー、ゲームパッドは RB）
+    # The action whose press is notified. Choose one contained in InputMapping (default NextTab = E key, RB on gamepad)
     @editable:
         ToolTip := InputActionToolTip
         Categories := array{InputCategory, InputActionCategory}
@@ -35,7 +35,7 @@ player_input_component<public> := class<final_super>(component):
 
     TriggeredEventInternal<private><final>:event(agent) = event(agent){}
 
-    # InputAction が押されるたびに、押した人で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires with the agent who pressed every time InputAction is pressed (Await / Subscribe; cannot be Signaled from outside)
     TriggeredEvent<public><final>:listenable(agent) = MakeProxyListenable(TriggeredEventInternal)
 
     Views<private>:player_view_set = player_view_set{}
@@ -49,11 +49,11 @@ player_input_component<public> := class<final_super>(component):
         Views.HandleActivation(SceneEvent, Entity, CreateView)
         false
 
-    # 受け付けを始める（今いる全員と途中参加の人に InputMapping を足す）。もう受け付けていれば何もしない
+    # Starts accepting input (adds InputMapping to everyone present and to late joiners). Does nothing when already accepting
     Activate<public>():void =
         Views.Activate(Entity, CreateView)
 
-    # 受け付けをやめる（全員から InputMapping を外す。同じ人でまだ動いているほかの player_input_component の割り当ては足し直す）。受け付けていなければ何もしない
+    # Stops accepting input (removes InputMapping from everyone. Mappings of other player_input_components still running for the same player are re-added). Does nothing when not accepting
     Deactivate<public>():void =
         Views.Deactivate()
 
@@ -61,7 +61,7 @@ player_input_component<public> := class<final_super>(component):
         Views.Deactivate()
         (super:)OnEndSimulation()
 
-    # 起動しているあいだ成功する
+    # Succeeds while active
     IsActive<public>()<decides><transacts>:void =
         Views.IsActive[]
 
@@ -71,29 +71,29 @@ player_input_component<public> := class<final_super>(component):
             Source := Self
             Player := Slot.Player
 
-    # view から呼ばれる。押されたことを区画全体と TriggeredEvent に知らせる
+    # Called from the view. Notifies the press to the whole zone and to TriggeredEvent
     NotifyTriggered<internal>(Player:player):void =
         Entity.SendScoped(player_input_triggered_event{Input := Self, Agent := Player, Action := InputAction})
         TriggeredEventInternal.Signal(Player)
 
-# 役割：1 人分のキー割り当てと、押されたときの知らせを受け持つ
-# 置き方：実行時に player_input_component が作る（エディターでは置かない）
-# いつ：その人の入力（player_input）が取れるまで 1 フレームずつ待ってから（参加した直後・シミュレーション開始の直後はまだ取れないことがある）、InputMapping を足して InputAction を購読する。取れる前に退出したら何もしない
-# 前提・注意：止まるときは InputMapping を外したあと、同じ人（同じ slot の下）でまだ動いているほかの player_input_view_component の InputMapping を足し直す。
-#   input_mapping は比べられない（等しいかを調べられない）ので、同じ割り当てかどうかは見分けずに全部足し直す。エンジンは AddInputMapping を数えない前提（InputHelpers の HoldInputMapping と同じ）
-#   ⚠ 未検証：エンジンが AddInputMapping を数えて持つなら、足し直した分が最後まで外れずに残る。外して同じフレームで足し直したとき、押している途中の入力が切れないか
+# Role: handles one player's key mapping and the notification when pressed
+# Placement: created at runtime by player_input_component (not placed in the editor)
+# When: waits frame by frame until the player's input (player_input) is available (right after joining or right after the simulation starts it may not be yet), then adds InputMapping and subscribes to InputAction. Does nothing when the player leaves before it is available
+# Requirements: when stopping, after removing InputMapping, re-adds the InputMappings of other player_input_view_components still running for the same player (under the same slot).
+#   input_mapping cannot be compared (there is no equality check), so all are re-added without telling whether they are the same mapping. Assumes the engine does not count AddInputMapping (same as HoldInputMapping in InputHelpers)
+#   ⚠ Unverified: if the engine does count AddInputMapping, the re-added ones stay until the end. Whether an input mid-press is cut when a mapping is removed and re-added in the same frame
 player_input_view_component<public> := class<final_super>(component):
 
-    # この view を作った player_input_component
+    # The player_input_component that created this view
     Source<public>:player_input_component
-    # この view が受け持つ人
+    # The player this view handles
     Player<public>:player
 
     var Subscription<private>:?cancelable = false
-    # InputMapping を足した相手（足してから外すまで）
+    # The input InputMapping was added to (from adding until removal)
     var AddedTo<private>:?player_input = false
 
-    # InputMapping を足していれば成功する（入力が取れる前・止まったあとは失敗する）
+    # Succeeds while InputMapping is added (fails before the input is available and after stopping)
     IsMappingAdded<internal>()<decides><transacts>:void =
         AddedTo?
 
@@ -114,7 +114,7 @@ player_input_view_component<public> := class<final_super>(component):
             RestoreOtherMappings(PlayerInput)
         (super:)OnEndSimulation()
 
-    # 同じ slot の下でまだ動いているほかの view の InputMapping を足し直す（外した割り当てがそれと同じでも、その view の入力が切れないように）
+    # Re-adds the InputMappings of other views still running under the same slot (so their input is not cut even if the removed mapping was the same one)
     RestoreOtherMappings<private>(PlayerInput:player_input):void =
         if (Slot := Entity.GetParent[]):
             for:

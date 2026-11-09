@@ -8,7 +8,7 @@ using { PickupSystem }
 using { PickupSystem.StageKit }
 using { _Test }
 
-# 役割：テスト用。届いた起動・停止の合図を数える
+# Role: test helper. Counts the activate / deactivate signals received
 pickup_test_probe_component<public> := class<final_super>(component):
     var<private> Activated:int = 0
     var<private> Deactivated:int = 0
@@ -27,13 +27,13 @@ pickup_test_probe_component<public> := class<final_super>(component):
     GetDeactivated<public>()<transacts>:int = Deactivated
     FindLastAgent<public>()<decides><transacts>:agent = LastAgent?
 
-# 役割：PickupSystem の動作確認
-#   効果：GrantPickupEffectEntity で組み立てた効果が、持ち主（slot の下）・次のフレームの起動の合図（持ち主が起こした）・pickup_effect_tag・DurationSeconds で停止の合図と消えること
-#   重ねがけ：同じ EffectId の Extend（1 つのまま延びる）、Stack と MaxStacks、Replace。Instant。EndPickupEffectsFor
-#   オーブ：pickup_component の TryPickup（拾える状態・見た目・RespawnSeconds で戻る・RespawnSeconds 0 は戻らない・Restore・停止の合図で隠す）、RequireGroupMember
-#   ステージ（StageKit）：pickup_stage_signal_component が範囲の Group の相手に起動の合図を送り、効果の終わりで元に戻す。2 つの効果が重なったら両方終わってから戻す
-# テストのレベル：player_manager_component を付けた entity を 1 つと、この component を付けた entity を 1 つ（どちらも最上位）。プレイヤー 1 人で始める（参加を最大 10 秒待つ）
-# 結果：出力ログの [TEST] PickupSystem。約 4 秒
+# Role: verification of PickupSystem
+#   Effects: an effect built with GrantPickupEffectEntity gets its owner (under the slot), the activate signal on the next frame (raised by the owner), pickup_effect_tag, and the deactivate signal and disposal after DurationSeconds
+#   Stacking: Extend with the same EffectId (stays one, extended), Stack and MaxStacks, Replace. Instant. EndPickupEffectsFor
+#   Orbs: pickup_component's TryPickup (available state, look, returns after RespawnSeconds, RespawnSeconds 0 never returns, Restore, hidden on the deactivate signal), RequireGroupMember
+#   Stages (StageKit): pickup_stage_signal_component sends the activate signal to targets of the Group in the volume and reverts when the effect ends. When 2 effects overlap, reverts only after both have ended
+# Test level: one entity with player_manager_component and one entity with this component (both top level). Start with one player (waits up to 10 seconds for them to join)
+# Result: [TEST] PickupSystem in the output log. About 4 seconds
 pickup_system_test_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =
@@ -55,7 +55,7 @@ pickup_system_test_component<public> := class<final_super>(component):
             Results.Fail("setup", "player_manager_component not found")
         if (Results.Finish[]) {}
 
-    # 効果の entity（根に pickup_effect_component と数える部品）を組み立てる
+    # Builds the effect entity (pickup_effect_component and the counting part at the root)
     MakeEffect<private>(Duration:float, Id:string, Mode:pickup_effect_stack_mode, Stacks:int, IsInstant:logic):tuple(entity, pickup_effect_component, pickup_test_probe_component) =
         Made := entity{}
         Effect := pickup_effect_component{Entity := Made, DurationSeconds := Duration, EffectId := Id, StackMode := Mode, MaxStacks := Stacks, Instant := IsInstant}
@@ -84,7 +84,7 @@ pickup_system_test_component<public> := class<final_super>(component):
         Results.Check("removed from the slot", if (Parts(0).GetParent[]) then false else true)
         Results.Check("tag removed", if (Agent.HasPlayerTag[pickup_effect_tag]) then false else true)
 
-        # Instant：次のフレームで終わる
+        # Instant: ends on the next frame
         Instant := MakeEffect(10.0, "", pickup_effect_stack_mode.Extend, 0, true)
         Grant(Agent, Instant(0))
         Sleep(0.2)
@@ -92,7 +92,7 @@ pickup_system_test_component<public> := class<final_super>(component):
         Results.CheckInt("instant: deactivated", Instant(2).GetDeactivated(), 1)
 
     TestStacking<private>(Results:test_log, Agent:agent)<suspends>:void =
-        # Extend：2 つ目は始まらず、1 つ目が延びる
+        # Extend: the second does not start; the first is extended
         A := MakeEffect(1.0, "ext", pickup_effect_stack_mode.Extend, 0, false)
         Grant(Agent, A(0))
         Sleep(0.1)
@@ -104,7 +104,7 @@ pickup_system_test_component<public> := class<final_super>(component):
         A(1).End()
         Results.CheckInt("End sends deactivated", A(2).GetDeactivated(), 1)
 
-        # Stack と MaxStacks = 2：3 つ目は始まらない
+        # Stack with MaxStacks = 2: the third does not start
         S1 := MakeEffect(5.0, "stk", pickup_effect_stack_mode.Stack, 2, false)
         S2 := MakeEffect(5.0, "stk", pickup_effect_stack_mode.Stack, 2, false)
         Grant(Agent, S1(0))
@@ -116,7 +116,7 @@ pickup_system_test_component<public> := class<final_super>(component):
         Results.CheckInt("stack: two activated", S1(2).GetActivated() + S2(2).GetActivated(), 2)
         Results.CheckInt("stack: third refused", S3(2).GetActivated(), 0)
 
-        # Replace：前のは終わる
+        # Replace: the previous one ends
         R1 := MakeEffect(5.0, "rep", pickup_effect_stack_mode.Replace, 0, false)
         Grant(Agent, R1(0))
         Sleep(0.1)
@@ -150,7 +150,7 @@ pickup_system_test_component<public> := class<final_super>(component):
         Results.Check("activated restores", if (Pickup.IsAvailable[]) then true else false)
         Orb.RemoveFromParent()
 
-        # RespawnSeconds = 0 は戻らない。RequireGroupMember は組の人だけ
+        # RespawnSeconds = 0 never returns. RequireGroupMember only for group members
         Room := entity{}
         Group := player_group_component{Entity := Room}
         Room.AddComponents(array{Group})
@@ -172,7 +172,7 @@ pickup_system_test_component<public> := class<final_super>(component):
         Entity.EndPickupEffectsFor(Agent)
 
     TestStage<private>(Results:test_log, Agent:agent)<suspends>:void =
-        # 相手：この entity の下（最上位の entity の中）に Group "t" の相手と、Group "other" の相手
+        # Targets: under this entity (inside the top-level entity), a target of Group "t" and a target of Group "other"
         Target := entity{}
         TargetMark := pickup_stage_target_component{Entity := Target, Group := "t"}
         TargetProbe := pickup_test_probe_component{Entity := Target}

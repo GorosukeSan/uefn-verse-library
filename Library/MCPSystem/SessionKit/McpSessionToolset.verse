@@ -5,34 +5,34 @@ using { /Fortnite.com/Game }
 using { MCPSystem }
 using { MCPSystem.TooltipKit }
 
-# 役割：Session ツールセット（宛先 "session"）。状態の書き出し・復元（DESIGN の session_restorable の土台）
-#   mcp_session_restorable_tag の entity の component から mcp_session_restorable を集め、キーごとの JSON を 1 つにまとめて返す（snapshot）・配って戻す（restore）
-#   ラウンドが始まるたびに RestoreOnRoundStart（snapshot の JSON）を戻す（空なら何もしない。MCP がセッション開始の前に書いておくと、決めた状態から始められる）
-# 置き方：受け箱と同じ entity に付けるとよい
-# 状態の形：{"v":1,"t":<秒>,"players":<人数>,"items":{"<キー>":<その部品の JSON>,...}}（大きければ受け箱が分けて出す）
-# マルチプレイ：プレイヤーは「その回の番号」（core.players の順）で当てる。保存した人数より今が少なければ余りは捨て、多ければ足りない人はそのまま
-#   復元する位置どうしが MinSeparationCm より近いときは左へずらす（mcp_session_context.ClaimPosition。当たりの掃引はしない）
-# タグ：自分の entity に mcp_controllable_tag
+# Role: Session toolset (destination "session"). State snapshot / restore (the base of session_restorable in DESIGN)
+#   Collects mcp_session_restorable from the components of entities with mcp_session_restorable_tag, returns the per-key JSON as one object (snapshot) and distributes it back (restore)
+#   At every round start, restores RestoreOnRoundStart (snapshot JSON) (empty does nothing; when MCP writes it before the session starts, the game starts from a chosen state)
+# Placement: best attached to the same entity as the inbox
+# State shape: {"v":1,"t":<seconds>,"players":<count>,"items":{"<key>":<that part's JSON>,...}} (the inbox splits it when large)
+# Multiplayer: players are matched by "the index in that run" (the order of core.players). When fewer players than saved are present the extras are dropped; when more, the missing ones stay as they are
+#   Restored positions closer than MinSeparationCm are shifted to the left (mcp_session_context.ClaimPosition; no collision sweep)
+# Tags: mcp_controllable_tag on its own entity
 mcp_session_toolset_component<public> := class<final_super>(component, mcp_controllable):
 
-    # 同じツールセットを複数置くときの名前（空なら "session" だけで届く）
+    # Name used when the same toolset is placed more than once (when empty, "session" alone reaches it)
     @editable:
         ToolTip := McpToolsetIdToolTip
         Categories := array{McpCategory}
     InstanceId<public>:string = ""
-    # ラウンドが始まるたびに戻す状態（snapshot の JSON）。空なら何もしない
+    # State restored at every round start (snapshot JSON). Empty does nothing
     @editable:
         ToolTip := McpSessionRestoreOnRoundStartToolTip
         Categories := array{McpCategory}
     RestoreOnRoundStart<public>:string = ""
-    # ラウンドが始まってから戻すまでの秒数（ロードアウト・独自キャラクターができるのを待つ）。既定 1.5
+    # Seconds between round start and the restore (waits for loadouts and custom characters to be created). Default 1.5
     @editable_number(float):
         ToolTip := McpSessionRestoreOnRoundStartToolTip
         Categories := array{McpCategory}
         MinValue := option{0.0}
         MaxValue := option{30.0}
     RestoreDelaySeconds<public>:float = 1.5
-    # 復元する位置どうしを離す距離（cm）。既定 120
+    # Minimum distance between restored positions (cm). Default 120
     @editable_number(float):
         ToolTip := McpSessionMinSeparationToolTip
         Categories := array{McpCategory}
@@ -71,9 +71,9 @@ mcp_session_toolset_component<public> := class<final_super>(component, mcp_contr
 
     McpTools<override>()<transacts>:[]mcp_tool =
         array:
-            McpTool("keys", "状態を書き出せる部品のキーの一覧", array{})
-            McpTool("snapshot", "状態を書き出す。data に \{v,t,players,items:\{キー:JSON\}\}", array{McpOptArg("keys", "string[]", "このキーだけ")})
-            McpTool("restore", "状態を戻す（snapshot の data をそのまま渡す）。reply にキーごとの結果", array{McpArg("state", "json", "snapshot の data"), McpOptArg("keys", "string[]", "このキーだけ")})
+            McpTool("keys", "List of keys of the parts that can be snapshotted", array{})
+            McpTool("snapshot", "Snapshots the state. data: \{v,t,players,items:\{key:JSON\}\}", array{McpOptArg("keys", "string[]", "only these keys")})
+            McpTool("restore", "Restores the state (pass the data of snapshot as is). reply gives the result per key", array{McpArg("state", "json", "the data of snapshot"), McpOptArg("keys", "string[]", "only these keys")})
 
     McpHandle<override>(Call:mcp_call):mcp_reply =
         Tool := Call.Tool
@@ -98,7 +98,7 @@ mcp_session_toolset_component<public> := class<final_super>(component, mcp_contr
         else:
             McpFail("unknown_tool", Tool)
 
-    # State（snapshot の data）の items をキーごとに配る。結果の文（"key=ok; key2=..."）
+    # Distributes the items of State (the data of snapshot) by key. Returns the result text ("key=ok; key2=...")
     RestoreFrom<private>(State:[string]value, Keys:[]string):string =
         Context := MakeContext()
         Items := if (ItemsValue := State["items"], O := ItemsValue.AsObject[]) then O else State

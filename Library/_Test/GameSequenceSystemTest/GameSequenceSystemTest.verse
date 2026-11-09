@@ -4,7 +4,7 @@ using { GameSequenceSystem }
 using { _Test }
 using { _Test.ConditionSystemTest }
 
-# 役割：ノードから出た理由を覚える（ExitedEvent の Subscribe に Record を渡す）
+# Role: remembers why a node was exited (pass Record to Subscribe of ExitedEvent)
 test_exit_recorder<public> := class:
 
     var<private> Count:int = 0
@@ -16,19 +16,19 @@ test_exit_recorder<public> := class:
 
     GetCount<public>()<transacts>:int = Count
 
-    # 最後に出た理由が transitioned なら成功する
+    # Succeeds when the last exit reason is transitioned
     WasTransitioned<public>()<decides><transacts>:void =
         LastReason? = game_node_exit_reason.Transitioned
 
-    # 最後に出た理由が jumped なら成功する
+    # Succeeds when the last exit reason is jumped
     WasJumped<public>()<decides><transacts>:void =
         LastReason? = game_node_exit_reason.Jumped
 
-    # 最後に出た理由が stopped なら成功する
+    # Succeeds when the last exit reason is stopped
     WasStopped<public>()<decides><transacts>:void =
         LastReason? = game_node_exit_reason.Stopped
 
-# 役割：流れの状態の変化を覚える（StateChangedEvent の Subscribe に Record を渡す）
+# Role: remembers state changes of the sequence (pass Record to Subscribe of StateChangedEvent)
 test_sequence_state_recorder<public> := class:
 
     var<private> Seen:[]game_sequence_state = array{}
@@ -36,19 +36,19 @@ test_sequence_state_recorder<public> := class:
     Record<public>(State:game_sequence_state):void =
         set Seen += array{State}
 
-    # State を一度でも受けていれば成功する
+    # Succeeds when State has been received at least once
     HasSeen<public>(State:game_sequence_state)<decides><transacts>:void =
         Seen.Find[State]
 
-# 役割：GameSequenceSystem の動作確認。Order で決まる最初のノード、遷移（条件が 2 つなら両方満たすまで進まない）、Finished、Restart、JumpTo、Stop、出た理由、StartOnActivate の流れ（ノードの下に置いた流れが、そのノードに入ると始まり、出ると止まる）、同じフレームの Stop → Start（止まってから始め直す。親が同じノードに入り直したときの子の流れ）を確かめる
-# テストのレベル：この component を付けた entity を 1 つ置くだけ（流れ・ノード・遷移・条件はテストが実行時に作る）。プレイヤーは要らない
-# 作る流れ：
-#   sequence（StartOnRoundStart / StartOnBegin はオフ）
-#   ├ B（Order 1）─ 終わり（Target なし）─ 条件 2 つ
-#   ├ A（Order 0）─ B へ ─ 条件 1 つ
-#   └ C（Order 5）─ 遷移なし（JumpTo でだけ入る）
-#     └ inner（StartOnActivate、StartOnRoundStart はオフ）─ D（Order 0）
-# 結果：出力ログの [TEST] GameSequenceSystem
+# Role: verification of GameSequenceSystem. Checks the first node chosen by Order, transitions (with 2 conditions it does not advance until both are satisfied), Finished, Restart, JumpTo, Stop, exit reasons, a StartOnActivate sequence (a sequence placed under a node starts when the node is entered and stops when it is exited), and Stop -> Start on the same frame (stop, then start again; the child sequence when the parent re-enters the same node)
+# Test level: just one entity with this component (sequence, nodes, transitions and conditions are created by the test at runtime). No player needed
+# Sequence built:
+#   sequence (StartOnRoundStart / StartOnBegin off)
+#   ├ B (Order 1) - end (no Target) - 2 conditions
+#   ├ A (Order 0) - to B - 1 condition
+#   └ C (Order 5) - no transition (entered only by JumpTo)
+#     └ inner (StartOnActivate; StartOnRoundStart off) - D (Order 0)
+# Result: [TEST] GameSequenceSystem in the output log
 game_sequence_system_test_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =
@@ -59,7 +59,7 @@ game_sequence_system_test_component<public> := class<final_super>(component):
         SequenceEntity.AddComponents(array{Sequence})
         Entity.AddEntities(array{SequenceEntity})
 
-        # 並び順が最初にならないように、B を先に足す
+        # Add B first so that insertion order is not what makes it first
         B := AddNode(SequenceEntity, 1)
         A := AddNode(SequenceEntity, 0)
         C := AddNode(SequenceEntity, 5)
@@ -101,7 +101,7 @@ game_sequence_system_test_component<public> := class<final_super>(component):
         Results.Check("two conditions: both -> Finished", if (Sequence.State = game_sequence_state.Finished) then true else false)
         Results.Check("no current node after Finished", if (Sequence.CurrentNode?) then false else true)
 
-        # やり直す前に条件を戻す（戻さないと A からすぐ B、B からすぐ終わりへ進む）
+        # Reset the conditions before restarting (otherwise A goes straight to B and B straight to the end)
         CondAB.SetSatisfied(false)
         CondEnd1.SetSatisfied(false)
         Sequence.Restart()
@@ -125,7 +125,7 @@ game_sequence_system_test_component<public> := class<final_super>(component):
         Sleep(0.2)
         Results.Check("JumpTo while stopped starts at B", if (Sequence.CurrentNode? = B) then true else false)
 
-        # 同じフレームの Stop → Start：捨てずに、止まってから最初のノード（A）で始め直す
+        # Stop -> Start on the same frame: not dropped; stops, then starts again at the first node (A)
         States := test_sequence_state_recorder{}
         StateSubscription := Sequence.StateChangedEvent.Subscribe(States.Record)
         Sequence.Stop()
@@ -136,7 +136,7 @@ game_sequence_system_test_component<public> := class<final_super>(component):
         Results.Check("Stop then Start in the same frame: went through Stopped", if (States.HasSeen[game_sequence_state.Stopped]) then true else false)
         StateSubscription.Cancel()
 
-        # 入れ子：親が同じノード（C）に入り直すと、子の流れは停止と起動の合図を同じフレームで続けて受ける。止まったままにならず、子は D から進む
+        # Nesting: when the parent re-enters the same node (C), the child sequence receives the deactivate and activate signals on the same frame in a row. It does not stay stopped; the child advances from D
         Sequence.JumpTo(C)
         Sleep(0.2)
         Sequence.JumpTo(C)

@@ -1,4 +1,4 @@
-# LoadoutSystem の Kit をライブラリの外（利用者のコード）から使えるように public にする。
-# フォルダから作られるモジュールは既定で internal なので、宣言しないと外から using できない。
-# エディターに出す説明（message）
+# Makes the LoadoutSystem Kits public so that code outside the library (your code) can use them.
+# Modules created from folders are internal by default, so they cannot be used from outside without this declaration.
+# Descriptions shown in the editor (message)
 TooltipKit<public> := module {}

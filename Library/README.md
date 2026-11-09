@@ -1,94 +1,95 @@
-# Library — UEFN Scene Graph の部品集
+# Library — a UEFN Scene Graph component library
 
-Scene Graph（entity / component）で作る、組み合わせて使う部品。対象は UEFN v43.00 以降。
+Parts built with Scene Graph (entity / component) that you combine. Targets UEFN v43.00 and later.
 
-## フォルダとモジュール
-- `<名前>System/` … 1 つの仕組み（例 `CountdownSystem`）。直下に中心の component とイベント。
-- `<名前>System/<名前>Kit/` … その仕組みの差し替え部品（例 `ConditionKit`）。Kit は `<名前>SystemKits.verse` で `<public>` にする（フォルダのモジュールは既定で internal）。
-- `<名前>System/TooltipKit/` … エディターに出す説明（`message`）。
-- `<名前>System/README.md` … その System の使い方（概要 / 置き方 / 設定 / イベント / タグ / 公開 API / 前提・注意 / 確かめ方）。
-- `_Test/<名前>SystemTest/` … 動作確認テスト（フォルダ名を System と同じにするとモジュール名がぶつかる）（`_Test/README.md`）。
-- `<名前>ExperimentalKit/`（System の下でも `_Samples` の下でもよい）… `@experimental` の API を使うコードだけを置くフォルダ。名前が `ExperimentalKit` で終わるフォルダの外のコードは、実験的な API も、このフォルダの中の型も使わない。VerseShare は「実験的を含む」をオンにしたプロジェクトにだけ、このフォルダを配る（オフのプロジェクトでは、あっても無くても触らない）。
-- 新しい System は `LibraryModules.verse` に `<名前>System<public> := module {}` を足す。
+## Folders and modules
+- `<Name>System/` ... one mechanism (e.g. `CountdownSystem`). The central component and its events live at the top of the folder.
+- `<Name>System/<Name>Kit/` ... swappable parts of that mechanism (e.g. `ConditionKit`). Kits are made `<public>` in `<Name>SystemKits.verse` (folder modules are internal by default).
+- `<Name>System/TooltipKit/` ... descriptions shown in the editor (`message`).
+- `<Name>System/README.md` ... how to use that System (overview / placement / settings / events / tags / public API / requirements and caveats / verifying).
+- `_Test/<Name>SystemTest/` ... tests that check the behavior (a folder named the same as a System would clash with its module name) (`_Test/README.md`).
+- `<Name>ExperimentalKit/` (under a System or under `_Samples`) ... a folder holding only code that uses `@experimental` APIs. Code outside a folder whose name ends in `ExperimentalKit` uses neither experimental APIs nor the types inside such a folder. VerseShare distributes this folder only to projects with "include experimental" turned on (projects with it off are not touched whether or not the folder exists).
+- A new System adds `<Name>System<public> := module {}` to `LibraryModules.verse`.
 
-## System の一覧
-| System | すること |
+## List of Systems
+| System | What it does |
 |---|---|
-| SceneGraphSystem | 区画（`game_scope_component`）、区画で 1 つを探す・探して覚える（`ResolveScopedComponent` / `AwaitScopedComponent`）・送る、一番近い祖先から探す（`FindNearestAncestorComponent`）、cancelable、map の補助 |
-| ActivationSystem | 起動・停止の合図（だれが起こしたかの分かる `activated_by_agent_event` も）、開始で起動、合図で有効・無効 |
-| ConditionSystem | 条件の基底、all / any、届いた scene_event で満たす（EventKit の `event_received_condition_component`） |
-| PlayerSystem | 参加者の slot、1 人ずつの view、タグ、持ち主（`FindOwningPlayer`）、体（`possessable_component`）、プレイヤーに付ける物、Fortnite キャラクターの動きへの反応（MotionKit）、人数・組の人数の条件（ConditionKit の `player_count_condition_component` / `player_group_count_condition_component`） |
-| LoadoutSystem | プレイヤー 1 人分の部品（プレハブ）を人ごとに作って付ける。中の部品は持ち主だけに効く |
-| PickupSystem | 拾える物（オーブ）と、拾った人に付く効果（効果のプレハブ＝土台 `pickup_effect_component` ＋起動の合図で動く部品の組み合わせ。寿命・重ねがけ・持ち主）、ステージへの合図（StageKit）、拾ったときの知らせと続いている効果の一覧を持ち主の画面に出す HUD（HudKit。見せ方は効果のプレハブの根の card_info_component） |
-| CharacterSystem | 独自キャラクター（自前の物理・カプセルの掃引・input_action の操作）と、動き・反応・条件の部品、触れる面と動く足場に乗る部品（SurfaceKit）、バフ・能力の付与（BuffKit。体に倍率・空中ジャンプ・ダッシュの許可を重ねる `AddModifier`） |
-| InputSystem | 入力の補助（`AwaitPlayerInput` など）、入力の部品、準備 OK |
-| WidgetSystem | 1 人ずつの画面（HUD・メニュー）、文字・ゲージ・通知・選択メニュー、標準 HUD を隠す |
-| VolumeSystem | プレイヤーが範囲に入った・出た、人数の条件、起動の部品 |
-| InteractSystem | 押して使う物と、起動・条件をつなぐ |
-| GameSequenceSystem / ModeSystem / CountdownSystem / ScheduleSystem | ゲームの流れ、モードの選択、カウントダウン、実時刻のスケジュール |
-| AbilitySystem / EnergySystem / ItemSystem | 能力と付与の仕方、エネルギー、アイテム |
-| HoverSystem / JetpackSystem / SwingSystem / GravitySystem / MovementSystem | Fortnite キャラクター向けの移動の能力と補助 |
-| CheckpointSystem / SpawnSystem / GridSystem / MoverSystem | 足場（乗ったらエネルギーを満たす EnergyKit の `checkpoint_energy_refill_component` も）、自動で出す・消す（帯で出し続ける `spawner_component`・決めた場所に好きな数を出す PrefabKit の `spawn_prefab_component` と関数の `SpawnPrefab`）、グリッドの借用、動く物 |
-| MCPSystem | MCP（エディターの外の Python）からライブ編集でセッション中のゲームに命令を送り、返事を受け取る（受け箱・ツールセットの interface・Core。ほかの System 用のツールセットは Kit。UI は画面ごとのオプトイン） |
-| FNDeviceSystem | クリエイティブ デバイスに頼る処理（デバイスとの橋渡し、ゲーム終了・職業・スコア・シネマティック・音）。ほかの System はデバイスに依存しない |
+| SceneGraphSystem | scopes (`game_scope_component`), finding one thing in the scope / finding and remembering it (`ResolveScopedComponent` / `AwaitScopedComponent`) / sending, finding from the nearest ancestor (`FindNearestAncestorComponent`), cancelable, map helpers |
+| ActivationSystem | activation / deactivation signals (including `activated_by_agent_event`, which tells who triggered it), activate on begin, enable / disable on the signal |
+| ConditionSystem | condition base, all / any, satisfied by a received scene_event (EventKit's `event_received_condition_component`) |
+| PlayerSystem | participant slots, per-player views, tags, owner (`FindOwningPlayer`), body (`possessable_component`), things attached to a player, reactions to Fortnite character motion (MotionKit), conditions on the player count / group count (ConditionKit's `player_count_condition_component` / `player_group_count_condition_component`) |
+| LoadoutSystem | creates and attaches one player's worth of parts (a prefab) per player. The parts inside affect only the owner |
+| PickupSystem | pickups (orbs) and the effects attached to whoever picks them up (an effect prefab = the `pickup_effect_component` base + parts driven by the activation signal; lifetime, stacking, owner), signals to stages (StageKit), a HUD on the owner's screen that shows pickup notifications and the list of ongoing effects (HudKit; the look comes from the `card_info_component` at the root of the effect prefab) |
+| CharacterSystem | custom characters (own physics, capsule sweeps, input_action controls) with movement / reaction / condition parts, parts for touching surfaces and riding moving platforms (SurfaceKit), buffs and ability grants (BuffKit; `AddModifier` stacks multipliers, air jumps and dash permission on the body) |
+| InputSystem | input helpers (`AwaitPlayerInput`, etc.), input parts, ready-up |
+| WidgetSystem | per-player screens (HUD, menus), text, gauges, notifications, choice menus, hiding the standard HUD |
+| VolumeSystem | players entering / leaving a volume, player-count conditions, activation parts |
+| InteractSystem | things you press to use, connected to activation and conditions |
+| GameSequenceSystem / ModeSystem / CountdownSystem / ScheduleSystem | game flow, mode selection, countdowns, real-time schedules |
+| AbilitySystem / EnergySystem / ItemSystem | abilities and how they are granted, energy, items |
+| HoverSystem / JetpackSystem / SwingSystem / GravitySystem / MovementSystem | movement abilities and helpers for Fortnite characters |
+| CheckpointSystem / SpawnSystem / GridSystem / MoverSystem | platforms (including EnergyKit's `checkpoint_energy_refill_component`, which refills energy when stepped on), automatic spawning and removal (`spawner_component`, which keeps spawning in a band; PrefabKit's `spawn_prefab_component` and the `SpawnPrefab` function, which spawn any number at chosen places), grid reservations, movers |
+| MCPSystem | lets MCP (Python outside the editor) send commands to the game running in a session through live edit and read the replies (inbox, toolset interface, Core; toolsets for the other Systems are Kits; UI is opt-in per screen) |
+| FNDeviceSystem | processing that relies on Creative devices (device bridges, game end, classes, score, cinematics, audio). The other Systems do not depend on devices |
 
-## 設計の決まり
+## Design rules
 
-### 1. 継承に頼らず、component を付け外しして組み合わせる
-- component は基本 `class<final_super>(component)` の具象。設定は `@editable`。
-- 「何をするか」と「いつ・だれに・どの場面で」を別の component に分ける。例：能力（`AbilitySystem`）は `ability_component` の派生が中身だけを持ち、付与の仕方は同じ entity に置く `ability_grant_players` / `ability_grant_item` / `ability_grant_condition` で選ぶ。中身の component は付与の仕方を知らない。
-- 継承を使ってよいのは「中身を 1 つだけ書かせる」とき（抽象基底 → 具象の 1 段）。抽象 → 抽象 → 具象のような段は作らない。基底に流れを書いて派生にいくつもの穴（protected のフック）を埋めさせる形は避け、イベントの購読や同じ entity の別 component で代える。
-- interface を実装させて受け取る（listener）形は使わない。コールバック（関数）か `listenable` を渡す。
-- 1 人ずつの処理は、component が `player_view_set`（PlayerSystem）を持ち、slot の下に普通の component の view を作る（基底を継承しない）。
-- プレイヤーの slot の下（LoadoutSystem のロードアウトの中など）に置いた部品は「持ち主がいる」。`Entity.FindOwningPlayer[]` が成功する部品は、全員ではなく持ち主だけに効く（能力の付与・widget・付ける物・アイテム・標準 HUD・独自キャラクター）。新しく作る部品もこれにそろえる。
+### 1. Compose by attaching and removing components instead of inheriting
+- Components are normally concrete `class<final_super>(component)`. Settings are `@editable`.
+- Separate "what it does" from "when, to whom, in which situation" into different components. Example: an ability (`AbilitySystem`) is an `ability_component` subclass that holds only its contents; how it is granted is chosen by `ability_grant_players` / `ability_grant_item` / `ability_grant_condition` on the same entity. The contents component knows nothing about how it is granted.
+- Inheritance is allowed only to "have exactly one piece of content written" (one step: abstract base → concrete). Never build chains like abstract → abstract → concrete. Avoid writing the flow in the base and having subclasses fill many holes (protected hooks); use event subscriptions or another component on the same entity instead.
+- Do not use the "implement an interface to receive" (listener) form. Pass a callback (function) or a `listenable`.
+- For per-player processing, the component holds a `player_view_set` (PlayerSystem) and creates views of ordinary components under the slot (no base class inheritance).
+- Parts placed under a player's slot (inside a LoadoutSystem loadout, etc.) "have an owner". Parts for which `Entity.FindOwningPlayer[]` succeeds affect only the owner, not everyone (ability grants, widgets, attached things, items, the standard HUD, custom characters). New parts follow the same rule.
 
-### 2. 公開イベントは Epic の標準 component と同じ形
-- 状態の変化は `XxxEventInternal<private><final>:event(t)` ＋ `XxxEvent<public><final>:listenable(t) = MakeProxyListenable(XxxEventInternal)`。外から Signal できない。
-- entity の木の中の配送には `scene_event` の派生も送る。名前は、起きたこと = 過去形（`*_reached_event`）、変化 = `*_changed_event`、依頼 = `*_request_event`。項目に送り元（component か entity）を持たせ、人は `Agent:agent` で持つ。型の上に「方向・送り手・受け手・消費するか」を書く。
-- 送り元の項目名：送った component を、その役割名（型名から `_component` と System 名の接頭辞を除いた名詞。`player_group_component` → `Group`、`countdown_component` → `Countdown`）で、具体型のまま項目の先頭に置く。能力（`*_ability_component`）から送るものは `Ability`。役割名がほかの項目とぶつかるときは型名から `_component` を除いた全体（`player_ready_component` → `PlayerReady`。`Ready:logic` とぶつかるため）。送り手がいろいろな型になりうるとき（`component` / `entity` 型）だけ `Sender`（entity は component でない送り手のときだけ）。`Source` は使わない。人（`Agent:agent`、いないかもしれないなら `?agent`）は送り元の次。起動・停止の合図の系統、だれからでもよい依頼（`hud_*_request_event`）、作った側の view にだけ届く包み（`player_view_source_event`）は送り元を持たなくてよい。
-- 「世界に 1 つ」を探すときは `FindScopedComponent`（区画 `game_scope_component` の中、無ければ世界）。全体へ送るときは `SendScoped`。
-- 見つけたものを覚えるときは `set Manager = Entity.ResolveScopedComponent(Manager, player_manager_component)`（覚える場所は自分のフィールド。条件の `IsSatisfied` など `<decides>` の判定の中では探さずに `Manager?` を読む。止まるときに `false` に戻す）。見つかるまで待つなら `Entity.AwaitScopedComponent(...)`。自身か祖先の一番近いものは `Entity.FindNearestAncestorComponent[...]`（エンジンの `FindAncestorComponents` は並び順が決まっていない）。
-- 起動の合図を送る部品は、だれが起こしたかが分かるなら `SendActivatedBy(Agent)`（`activated_by_agent_event`。`activated_event` の派生なので受け手はそのまま動く）を使う。人が要る受け手（デバイスの橋渡しなど）は `FindActivatingAgent[]` で読む。
-- モジュールの `var` の `weak_map`（セッション・プレイヤーごとの記録）は使わない（数に上限がある）。人ごとの記録は component のフィールド（`[agent]t`）に持ち、slot の下の entity から探す。
+### 2. Public events have the same shape as Epic's standard components
+- State changes are `XxxEventInternal<private><final>:event(t)` + `XxxEvent<public><final>:listenable(t) = MakeProxyListenable(XxxEventInternal)`. They cannot be signaled from outside.
+- For delivery within the entity tree, also send `scene_event` subclasses. Names: something happened = past tense (`*_reached_event`), a change = `*_changed_event`, a request = `*_request_event`. Fields carry the sender (component or entity), and a player is held as `Agent:agent`. Above the type, write "direction, sender, receivers, whether it is consumed".
+- Sender field name: the sending component, as its concrete type, placed first among the fields and named by its role (the noun from the type name without `_component` and the System prefix: `player_group_component` → `Group`, `countdown_component` → `Countdown`). Events sent from an ability (`*_ability_component`) use `Ability`. When the role name clashes with another field, use the whole type name without `_component` (`player_ready_component` → `PlayerReady`, because it clashes with `Ready:logic`). Only when the sender can be of various types (`component` / `entity` type) use `Sender` (entity only when the sender is not a component). Never use `Source`. The player (`Agent:agent`, or `?agent` when there may be none) comes right after the sender. The activation / deactivation signal family, requests from anyone (`hud_*_request_event`) and wrappers that reach only the creating side's view (`player_view_source_event`) need no sender.
+- To find "the one in the world", use `FindScopedComponent` (inside the scope `game_scope_component`, or the world without one). To send to everything, use `SendScoped`.
+- To remember what you found: `set Manager = Entity.ResolveScopedComponent(Manager, player_manager_component)` (store it in your own field. Inside `<decides>` checks such as a condition's `IsSatisfied`, do not look it up; read `Manager?`. Reset it to `false` when stopping). To wait until it exists, `Entity.AwaitScopedComponent(...)`. For the nearest on itself or an ancestor, `Entity.FindNearestAncestorComponent[...]` (the engine's `FindAncestorComponents` has no defined order).
+- A part that sends the activation signal uses `SendActivatedBy(Agent)` (`activated_by_agent_event`; a subclass of `activated_event`, so receivers run as usual) when it knows who triggered it. Receivers that need a player (device bridges, etc.) read it with `FindActivatingAgent[]`.
+- Do not use module-level `var` `weak_map`s (per-session / per-player records) (they have a count limit). Keep per-player records in component fields (`[agent]t`) and find them from the entity under the slot.
 
-### 3. プレイヤーの状態はタグで知らせる
-- 「その人が今〜している」（ホバー中・スイング中・チェックポイントの上・準備 OK など）を持つ System は、そのあいだプレイヤー（`agent`。v43 では `agent` も entity なのでタグを持てる）に Verse のタグ（`tag` の派生）を付け、終わったら外す。キャラクターの entity ではなく agent に付けるので、スポーン前・倒れているあいだ・リスポーンのあとも消えない（⚠ 未検証：UEFN 実機での agent へのタグ付け。`_Test/PlayerSystemTest` で確かめる）。
-- 付け外しは `player_tag_holder`（PlayerSystem/PlayerTags.verse）を通す。`AddTag` が返す `tag_key` を覚えて自分の分だけ `RemoveTag` するので、ほかの部品が付けた同じ型のタグは消さない。止まるとき（`OnEndSimulation`・能力の `defer`）に必ず外す。
-- 確かめる側は `Agent.HasPlayerTag[タグの型]`（中は `ContainsTag`）。相手の component を探したり using したりしない。
-- タグの型は状態を持つ System に置き、すべて `player_state_tag` の派生にする。動き（速度・位置）を操る状態は `controlled_movement_tag` の派生にし、ほかの力（引力・ホバー）はそれが付いた人に手を出さない。
-- 今あるタグ：`pickup_effect_tag`（Pickup。効果を受けているあいだ）、`character_modified_tag` の派生（Character / BuffKit。速さ・ジャンプ・重力・空中ジャンプ・ダッシュ）、`hovering_tag`（Hover）、`swinging_tag`（Swing。controlled_movement。実際に付くのは派生の `swing_anchored_tag`（地面で待つ）/ `swing_pendulum_tag`（振っている）。`HasPlayerTag[swinging_tag]` はどちらでも成功する）、`jetpack_boosting_tag`（Jetpack。controlled_movement）、`on_checkpoint_tag`（Checkpoint）、`player_ready_tag`（Input / ReadyKit）、`in_volume_tag`（Volume）、`custom_character_tag`（Character。独自キャラクターを動かしているあいだ）。
+### 3. Player state is announced with tags
+- A System that holds "this player is currently doing X" (hovering, swinging, on a checkpoint, ready, etc.) attaches a Verse tag (a `tag` subclass) to the player (`agent`; in v43 an `agent` is also an entity, so it can carry tags) for that time and removes it afterwards. Because it goes on the agent rather than the character entity, it survives before spawning, while downed and after a respawn (⚠ Unverified: tagging agents in UEFN. Check with `_Test/PlayerSystemTest`).
+- Attach and remove through `player_tag_holder` (PlayerSystem/PlayerTags.verse). It remembers the `tag_key` returned by `AddTag` and only `RemoveTag`s its own, so tags of the same type attached by other parts are kept. Always remove when stopping (`OnEndSimulation`, an ability's `defer`).
+- The checking side uses `Agent.HasPlayerTag[tag type]` (internally `ContainsTag`). It does not look up or `using` the other component.
+- Tag types live in the System that holds the state and all derive from `player_state_tag`. States that control movement (velocity, position) derive from `controlled_movement_tag`, and other forces (gravity, hover) leave players carrying one alone.
+- Current tags: `pickup_effect_tag` (Pickup; while under an effect), `character_modified_tag` subclasses (Character / BuffKit; speed, jump, gravity, air jump, dash), `hovering_tag` (Hover), `swinging_tag` (Swing; controlled_movement. What is actually attached is a subclass, `swing_anchored_tag` (waiting on the ground) / `swing_pendulum_tag` (swinging). `HasPlayerTag[swinging_tag]` succeeds for either), `jetpack_boosting_tag` (Jetpack; controlled_movement), `on_checkpoint_tag` (Checkpoint), `player_ready_tag` (Input / ReadyKit), `in_volume_tag` (Volume), `custom_character_tag` (Character; while driving a custom character).
 
-### 4. 実時間の処理
-- 1 フレーム待つのは `Sleep(0.0)` が一般的な書き方。前のフレームからの秒数が要るとき・毎フレームのコールバックにしたいときは、component の `TickEvents.PrePhysics.Await()`（戻り値が前のフレームからの秒数）か `TickEvents.PrePhysics.Subscribe`（OnBeginSimulation で購読、OnEndSimulation で Cancel）を使う。Library のコードは後者で書いている。
-- component でない実行時のクラス（ランナー）は、持ち主の component から `listenable(float)`（`TickEvents.PrePhysics` を渡す）を受け取って待つ。
-- 経過時間はフレーム数で数えず、DeltaTime の足し合わせか `GetSimulationElapsedTime()` の差で測る。
-- 多数の物について同じ計算をするなら、1 つの component がまとめて決まった間隔（例 毎秒）で計算する。結果は「開始時刻からの経過時間で決まる値」にして、途中参加・一時停止・やり直しでもずれないようにする（物ごとのループを持たない）。
-- 毎フレーム世界全体を探さない。見つけた相手は覚えておく。決まった間隔で問い合わせる（ポーリング）より、イベントを待つ。
-- 位置を毎フレーム Verse で動かすより、`keyframed_movement_component` などエンジン側で動くものを使う。
+### 4. Real-time processing
+- `Sleep(0.0)` is the usual way to wait one frame. When you need the seconds since the previous frame, or want a per-frame callback, use the component's `TickEvents.PrePhysics.Await()` (returns the seconds since the previous frame) or `TickEvents.PrePhysics.Subscribe` (subscribe in OnBeginSimulation, Cancel in OnEndSimulation). Library code uses the latter.
+- Run-time classes that are not components (runners) receive a `listenable(float)` (pass `TickEvents.PrePhysics`) from the owning component and wait on it.
+- Measure elapsed time by summing DeltaTime or by the difference of `GetSimulationElapsedTime()`, not by counting frames.
+- When the same calculation applies to many things, one component computes them all at a fixed interval (e.g. every second). Make the result "a value determined by the time elapsed since the start" so that late joins, pauses and restarts do not drift (no per-object loops).
+- Do not search the whole world every frame. Remember what you found. Prefer waiting for an event over polling at a fixed interval.
+- Prefer engine-driven movement such as `keyframed_movement_component` over moving positions from Verse every frame.
 
-- Fortnite のラウンド（`fort_round_manager`）に合わせるときは、部品に直接ラウンドの購読を書かない。合図で動く部品は `activate_on_round_component`（ラウンド開始で `round_started_event`、終了で `round_ended_event`。どちらも起動・停止の合図の派生）の配下に置き、ActiveOnBegin / StartOnBegin はオフにする。コードで要るときは `round_watcher`（ActivationSystem）をフィールドに持つ（`SubscribeRoundStarted` の処理はラウンドの終わりで止められる）。ラウンド単位の状態は、開始と終了の両方で片付ける。
+- To follow Fortnite rounds (`fort_round_manager`), do not subscribe to rounds directly in parts. Place signal-driven parts under `activate_on_round_component` (`round_started_event` on round start, `round_ended_event` on round end; both are subclasses of the activation / deactivation signals) and turn off their ActiveOnBegin / StartOnBegin. When code needs it, hold a `round_watcher` (ActivationSystem) in a field (the `SubscribeRoundStarted` handler is canceled at the end of the round). Clean up per-round state at both the start and the end.
 
-- 人ごとの選び（メニューで選んだモード・ジャンル・役など）は `player_group_component`（PlayerSystem）に置き、その人にだけ効かせる。画面（widget）は、全員に出すものでなければ同じ entity に `widget_show_in_group_component` などの絞り込みを置く（だれが何を選んだかを各部品で覚えない）。
+- Per-player choices (the mode, genre, role, etc. chosen in a menu) go into `player_group_component` (PlayerSystem) and affect only that player. Unless a screen (widget) is shown to everyone, put a filter such as `widget_show_in_group_component` on the same entity (do not have each part remember who chose what).
 
-### 5. 名前と値
-- 失敗するかもしれない問い合わせは `<decides>`（`Find*` / `Is*` / `Has*`）。`Get*` は失敗しない。副作用があって `<decides>` にできないものだけ `Try*` で `logic` を返し、理由をコメントに書く。
-- 外から読むだけの状態は `var<private> X<public>`、読めなくてよいものは `<private>`。状態の問い合わせは `IsActive[]` などの関数にそろえる。
-- 公開する数値には単位を名前に付ける：長さ `Cm`、時間 `Seconds`、角度 `Degrees`、速さ `CmPerSecond`。割合・倍率（`Ratio` / `Multiplier`）は単位なし。長さはエンジンと同じセンチメートル。
-- 子の並び順に意味を持たせない。順番が要るなら `@editable Order:int`。
-- 内部の補助は `<internal>`（Kit からも見える）。実行時にだけ作るクラスは `class<internal>` でコンストラクターを内部にする。
-- System をまたいで使う共通の補助は関数で作る。型引数を持つクラス（`scoped_lookup(t)` のような入れ物）は、名前の順でそのモジュールより前のモジュールのフィールドに使うと V3502（Can't access a function from a preceding type）になる（standalone の型チェッカーで再現。SceneGraphSystem の `ScopedLookup.verse`）。
+### 5. Names and values
+- Queries that may fail are `<decides>` (`Find*` / `Is*` / `Has*`). `Get*` never fails. Only those with side effects that cannot be `<decides>` are `Try*` returning `logic`, with the reason in a comment.
+- State that is only read from outside is `var<private> X<public>`; state that need not be readable is `<private>`. State queries are functions such as `IsActive[]`.
+- Public numbers carry their unit in the name: length `Cm`, time `Seconds`, angle `Degrees`, speed `CmPerSecond`. Ratios and multipliers (`Ratio` / `Multiplier`) have no unit. Lengths are in centimeters like the engine.
+- Child order carries no meaning. When an order is needed, use `@editable Order:int`.
+- Internal helpers are `<internal>` (visible from Kits too). Classes created only at run time are `class<internal>` so the constructor is internal.
+- Shared helpers used across Systems are functions. Using a generic class (a container like `scoped_lookup(t)`) in a field of a module that sorts before that module by name gives V3502 (Can't access a function from a preceding type) (reproduced with the standalone type checker; SceneGraphSystem's `ScopedLookup.verse`).
 
-### 6. 説明
-- 公開する型・関数・イベントには、すぐ上に 1〜2 行の説明（何をするか、失敗する条件、単位、前提）。
-- component の先頭には `役割` / `置き方` / `親` / `子` / `同じ entity` / `いつ` / `知らせ` / `タグ` / `外から` / `前提` のうち当てはまるもの。
-- 実機で確かめていない振る舞いには `⚠ 未検証：` を付ける（確かめたら外す）。`@experimental` の API は `…ExperimentalKit` フォルダの中だけで使い、README と component の `前提` に書く（使うと島を公開できない）。
-- ログ（Print）は `[snake_case の component 名] 何が起きたか` の形にする。前提が欠けているときは黙って失敗せず Print する。
-- `@editable` には `ToolTip`（TooltipKit の message）と `Categories`。
+### 6. Descriptions
+- Public types, functions and events get a 1-2 line description right above them (what it does, when it fails, units, requirements).
+- A component starts with whichever of `Role` / `Placement` / `Parent` / `Children` / `Same entity` / `When` / `Notifies` / `Tags` / `From outside` / `Requirements` apply.
+- Behavior not confirmed in UEFN is marked `⚠ Unverified:` (removed once confirmed). `@experimental` APIs are used only inside `...ExperimentalKit` folders and noted in the README and the component's `Requirements` (an island using them cannot be published).
+- Logs (Print) have the form `[snake_case component name] what happened`. When a requirement is missing, Print instead of failing silently.
+- `@editable`s get a `ToolTip` (a TooltipKit message) and `Categories`.
+- Everything in the library is written in English: comments, tooltips, log messages, test names and READMEs (the public repository is English only).
 
-## 確かめ方
-- 型チェック：verse-standalone（UE のソースから自分でビルドする Verse の型チェッカー。配布キット: https://github.com/GorosukeSan/verse-standalone-kit ）の `verse_check.py --profile fortnite --runtime runtime-uefn43`。listenable / event / TickEvents の `Await` に出る「internal」「Unknown member」と、それに続く `race` / `loop` のエラー（V3538 / V3579）はチェッカー側の既知の誤り（UEFN ではビルドが通る）。
-- それ以外の V3512（effects not allowed）は本当のエラー。例：`<suspends>` の関数を `if` の条件の中で呼ぶ（`if (AwaitWithin(...)?)`）。先に変数で受けてから `if (X?)` にする。
-- 動き：`_Test` のテストを UEFN で動かす。
-- UEFN のビルドでだけ出るエラーがある（standalone の型チェッカーでは出ない）。例：引数で受けた関数を `Subscribe` にそのまま渡す（V3502）→ メソッドで包む小さなクラスを通す。配る前に UEFN でビルドする。
-- 公開している型の種類を変える（クラス → enum など）と、開いているエディターが古い型を覚えていて 9002 が残ることがある。エディターを再起動すれば消える（エディターの中の型を Python などで書き換えて直そうとしない。クラッシュする）。
-- 実験的な API を使っていないか：digest の `@experimental` の名前と、`ExperimentalKit` の外のコードを突き合わせる（使っていたら `…ExperimentalKit` へ移す）。
+## Verifying
+- Type check: verse-standalone (a Verse type checker you build yourself from the UE source; distribution kit: https://github.com/GorosukeSan/verse-standalone-kit ) with `verse_check.py --profile fortnite --runtime runtime-uefn43`. The "internal" / "Unknown member" errors on `Await` of listenable / event / TickEvents, and the `race` / `loop` errors that follow them (V3538 / V3579), are known false positives of the checker (the UEFN build passes).
+- Any other V3512 (effects not allowed) is a real error. Example: calling a `<suspends>` function inside an `if` condition (`if (AwaitWithin(...)?)`). Receive it in a variable first, then `if (X?)`.
+- Behavior: run the `_Test` tests in UEFN.
+- Some errors appear only in the UEFN build (not in the standalone type checker). Example: passing a function received as an argument straight to `Subscribe` (V3502) → go through a small class that wraps it in a method. Build in UEFN before distributing.
+- Changing the kind of a public type (class → enum, etc.) can leave a 9002 because the open editor still remembers the old type. Restarting the editor clears it (do not try to fix it by rewriting the editor's types with Python etc.; it crashes).
+- Check that no experimental API is used: compare the `@experimental` names in the digest against the code outside `ExperimentalKit` folders (move any use into an `...ExperimentalKit`).

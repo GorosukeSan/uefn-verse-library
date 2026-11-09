@@ -6,46 +6,46 @@ using { SceneGraphSystem }
 using { WidgetSystem }
 using { WidgetSystem.TooltipKit }
 
-# 通知を出す依頼
-# 方向：利用者の component から notification_hud_component の entity へ（SendDown か、祖先から SendDown）
-# 送り手：利用者の component。受け手：notification_hud_component。消費しない
+# Request to show a notification
+# Direction: from your component to the notification_hud_component's entity (SendDown, or SendDown from an ancestor)
+# Sender: your component. Receiver: notification_hud_component. Not consumed
 hud_notification_request_event<public> := class(scene_event):
-    # 出す相手。false なら全員
+    # Who to show it to. false means everyone
     Agent<public>:?agent = false
-    # 出す文字
+    # Text to show
     Text<public>:message
 
-# 役割：数秒で消える通知を、画面の決まった位置に縦に積んで出す HUD（操作は奪わない。重ね順は手前）。同じ人に続けて出すと下に積み、MaxLines を超えたら古いものから消す
-# 置き方：エディターで entity に付ける。既定で開始から全員に出す（ActiveOnBegin）
-# 知らせを受ける：hud_notification_request_event で出す（コードを書かずに、ほかの部品から出すとき）
-# 外から：Notify / NotifyAll
+# Role: HUD that shows notifications that disappear after a few seconds, stacked vertically at a fixed screen position (does not take input. Stacked in front). Showing several in a row to the same person stacks them downward; beyond MaxLines the oldest are removed
+# Placement: in the editor, attach to an entity. By default shown to everyone from the start (ActiveOnBegin)
+# Notifications received: shows via hud_notification_request_event (to show from other parts without writing code)
+# From outside: Notify / NotifyAll
 notification_hud_component<public> := class<final_super>(player_widget_component):
 
     ActiveOnBegin<override>:logic = true
     ZOrder<override>:int = 10000
 
-    # 1 つの通知を出しておく時間（秒）。既定 3
+    # How long one notification stays (seconds). Default 3
     @editable_number(float):
         ToolTip := NotificationSecondsToolTip
         Categories := array{NotificationHudCategory}
         MinValue := option{0.5}
         MaxValue := option{60.0}
     DisplaySeconds<public>:float = 3.0
-    # 同時に出す通知の数の上限。既定 4
+    # Maximum number of notifications shown at once. Default 4
     @editable_number(int):
         ToolTip := NotificationMaxLinesToolTip
         Categories := array{NotificationHudCategory}
         MinValue := option{1}
         MaxValue := option{20}
     MaxLines<public>:int = 4
-    # 置く位置（画面の横の割合 0.0〜1.0）。既定 0.5
+    # Position (horizontal screen ratio 0.0-1.0). Default 0.5
     @editable_number(float):
         ToolTip := WidgetPositionXToolTip
         Categories := array{NotificationHudCategory}
         MinValue := option{0.0}
         MaxValue := option{1.0}
     PositionXRatio<public>:float = 0.5
-    # 置く位置（画面の縦の割合 0.0〜1.0）。既定 0.3
+    # Position (vertical screen ratio 0.0-1.0). Default 0.3
     @editable_number(float):
         ToolTip := WidgetPositionYToolTip
         Categories := array{NotificationHudCategory}
@@ -56,7 +56,7 @@ notification_hud_component<public> := class<final_super>(player_widget_component
     var<private> Stacks:[agent]stack_box = map{}
     var<private> Lines:[agent][]text_block = map{}
 
-    # Agent に通知を出す。その人に出していなければ（Audience が Chosen で ShowFor していないなど）何もしない
+    # Show a notification to Agent. Does nothing if not shown to that person (Audience is Chosen without ShowFor, etc.)
     Notify<public>(Agent:agent, Text:message):void =
         if (Stack := Stacks[Agent]):
             Line := text_block{DefaultText := Text}
@@ -74,7 +74,7 @@ notification_hud_component<public> := class<final_super>(player_widget_component
             if (set Lines[Agent] = Next) {}
             spawn{ExpireLine(Agent, Line)}
 
-    # 出している全員に通知を出す
+    # Show a notification to everyone it is shown to
     NotifyAll<public>(Text:message):void =
         for (Agent -> Stack : Stacks):
             Notify(Agent, Text)

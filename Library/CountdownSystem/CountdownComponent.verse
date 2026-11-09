@@ -3,32 +3,32 @@ using { /Verse.org/Simulation }
 using { ActivationSystem }
 using { CountdownSystem.TooltipKit }
 
-# 残りの秒数（整数に切り上げた値）が変わった知らせ。数え始め・1 秒ごと・AddSeconds で届く（0 になったときは届かず、countdown_finished_event が届く）
-# 方向：countdown_component の entity から下へ（SendDown）。AlsoSendUp がオンなら、親から上へ（SendUp）も送る
-# 送り手：countdown_component。受け手：子孫の countdown_finished_condition_component・残り秒数を出す画面など（AlsoSendUp なら祖先のノード・HUD も）。消費しない
+# Notification that the remaining seconds (rounded up to a whole number) changed. Arrives at the start, every second and on AddSeconds (not when it reaches 0; countdown_finished_event arrives then)
+# Direction: from the countdown_component's entity downward (SendDown). With AlsoSendUp on, also upward from the parent (SendUp)
+# Sender: countdown_component. Receivers: descendant countdown_finished_condition_components, screens that show the remaining seconds, etc. (with AlsoSendUp, also ancestor nodes and HUDs). Not consumed
 countdown_remaining_changed_event<public> := class(scene_event):
-    # 送ったカウントダウン
+    # The countdown that sent it
     Countdown<public>:countdown_component
-    # 残りの秒数（切り上げた整数。1 以上）
+    # Remaining seconds (rounded up; 1 or more)
     RemainingWholeSeconds<public>:int
 
-# 数え終わった（残りが 0 になった）知らせ。Stop や停止の合図で止めたときは届かない
-# 方向：countdown_component の entity から下へ（SendDown）。AlsoSendUp がオンなら、親から上へ（SendUp）も送る
-# 送り手：countdown_component。受け手：子孫の countdown_finished_condition_component など（AlsoSendUp なら祖先も）。消費しない
+# Notification that the count ended (the remaining time reached 0). Not sent when stopped by Stop or the deactivation signal
+# Direction: from the countdown_component's entity downward (SendDown). With AlsoSendUp on, also upward from the parent (SendUp)
+# Sender: countdown_component. Receivers: descendant countdown_finished_condition_components etc. (with AlsoSendUp, also ancestors). Not consumed
 countdown_finished_event<public> := class(scene_event):
-    # 送ったカウントダウン
+    # The countdown that sent it
     Countdown<public>:countdown_component
 
-# 役割：DurationSeconds 秒を数え、残り秒数（整数）が変わるたびと、数え終わりを子孫へ知らせる
-# 置き方：エディターで entity に付ける。ゲームの流れの外でも使える
-# いつ始めるか：StartOnActivated が true なら起動の合図（activated_event）で最初から数え直し（数えている途中でもやり直す）、停止の合図（deactivated_event）で止める（ゲームの流れなら、ノードに入ってから出るまで）。StartOnBegin が true ならシミュレーション開始で始める。どちらも false にして、コードから Start / Restart / Stop を呼んでもよい
-# 子：残り秒数を使うもの（countdown_finished_condition など）は、この entity かその子孫に置く
-# 知らせ：countdown_remaining_changed_event / countdown_finished_event を下へ送り（AlsoSendUp なら上へも）、RemainingChangedEvent / FinishedEvent に届ける
-# 外から：Start / Restart / Stop / Pause / Resume / AddSeconds。IsRunning / IsPaused / GetRemainingSeconds（小数）/ GetRemainingWholeSeconds（切り上げた整数）で今の状態を問い合わせる
-# 前提・注意：残りは「終わる時刻 − 今のシミュレーション時刻」で決める（フレームの数や待ちの積み重ねで数えないので、ずれない）。一時停止中は残りが減らない
+# Role: counts DurationSeconds seconds and notifies the descendants each time the remaining seconds (whole number) change and when the count ends
+# Placement: attach to an entity in the editor. Also usable outside the game flow
+# When it starts: when StartOnActivated is true, restarts from the beginning on the activation signal (activated_event) (even while counting) and stops on the deactivation signal (deactivated_event) (in a game sequence, from entering the node to leaving it). When StartOnBegin is true, starts at the start of the simulation. Both may be false, with Start / Restart / Stop called from code
+# Children: things that use the remaining seconds (countdown_finished_condition, etc.) go on this entity or its descendants
+# Notifies: sends countdown_remaining_changed_event / countdown_finished_event downward (also upward with AlsoSendUp) and fires RemainingChangedEvent / FinishedEvent
+# From outside: Start / Restart / Stop / Pause / Resume / AddSeconds. Query the current state with IsRunning / IsPaused / GetRemainingSeconds (fraction) / GetRemainingWholeSeconds (rounded up)
+# Requirements / notes: the remaining time is "end time minus the current simulation time" (not counted by frames or accumulated waits, so it does not drift). It does not decrease while paused
 countdown_component<public> := class<final_super>(component):
 
-    # 数える秒数（0.1〜3600 秒。小数可）。0 になると数え終わる。既定 5.0（今回だけ違う長さは Restart(?Seconds := …) で）
+    # Seconds to count (0.1-3600 seconds, fractions allowed). The count ends at 0. Default 5.0 (for a different length this once, Restart(?Seconds := ...))
     @editable_number(float):
         ToolTip := CountdownDurationToolTip
         Categories := array{CountdownCategory}
@@ -36,19 +36,19 @@ countdown_component<public> := class<final_super>(component):
         MaxValue := option{3600.0}
     DurationSeconds<public>:float = 5.0
 
-    # true なら起動の合図で最初から数え直し（数えている途中でもやり直す）、停止の合図で止める。false なら合図を無視する。既定 true
+    # true restarts from the beginning on the activation signal (even while counting) and stops on the deactivation signal. false ignores the signals. Default true
     @editable:
         ToolTip := CountdownStartOnActivatedToolTip
         Categories := array{CountdownCategory}
     StartOnActivated<public>:logic = true
 
-    # true ならシミュレーション開始と同時に数え始める（ゲームの流れを使わないとき）。既定 false
+    # true starts counting at the start of the simulation (when the game flow is not used). Default false
     @editable:
         ToolTip := CountdownStartOnBeginToolTip
         Categories := array{CountdownCategory}
     StartOnBegin<public>:logic = false
 
-    # true なら知らせ（countdown_remaining_changed_event / countdown_finished_event）を、子孫へ（SendDown）に加えて、親から祖先へ（SendUp）も送る（ノードの外の HUD・祖先の部品が受けるとき）。自分の entity には SendDown の 1 回だけ届く。既定 false
+    # true sends the notifications (countdown_remaining_changed_event / countdown_finished_event) upward from the parent to the ancestors (SendUp) in addition to the descendants (SendDown) (for a HUD outside the node or ancestor parts). Its own entity receives them only once, through SendDown. Default false
     @editable:
         ToolTip := CountdownAlsoSendUpToolTip
         Categories := array{CountdownCategory}
@@ -56,24 +56,24 @@ countdown_component<public> := class<final_super>(component):
 
     var<private> Running:logic = false
     var<private> Paused:logic = false
-    # 数えている途中（一時停止していない）ときの、終わるシミュレーション時刻（秒）
+    # Simulation time (seconds) at which the count ends, while counting (not paused)
     var<private> EndTimeSeconds:float = 0.0
-    # 一時停止しているときの残り（秒）
+    # Remaining time (seconds) while paused
     var<private> PausedRemainingSeconds:float = 0.0
-    # 最後に知らせた残り秒数（切り上げ）。まだ知らせていなければ -1
+    # Last notified remaining seconds (rounded up). -1 if nothing was notified yet
     var<private> LastNotifiedSeconds:int = -1
 
     RemainingChangedEventInternal<private><final>:event(int) = event(int){}
 
-    # 残り秒数（切り上げた整数）が変わるたび（数え始め・1 秒ごと・AddSeconds）に、その値で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires with the value each time the remaining seconds (rounded up) change (at the start, every second, on AddSeconds) (Await / Subscribe; cannot be signaled from outside)
     RemainingChangedEvent<public><final>:listenable(int) = MakeProxyListenable(RemainingChangedEventInternal)
 
     FinishedEventInternal<private><final>:event() = event(){}
 
-    # 数え終わったときに届く（Stop・停止の合図で止めたときは届かない）（Await / Subscribe する。外から Signal はできない）
+    # Fires when the count ends (not when stopped by Stop or the deactivation signal) (Await / Subscribe; cannot be signaled from outside)
     FinishedEvent<public><final>:listenable(tuple()) = MakeProxyListenable(FinishedEventInternal)
 
-    # 状態が変わった（始めた・止めた・一時停止・再開・増減）ことを数えるループに伝える
+    # Tells the counting loop that the state changed (started, stopped, paused, resumed, adjusted)
     WakeEvent<private>:event() = event(){}
 
     OnBeginSimulation<override>():void =
@@ -99,7 +99,7 @@ countdown_component<public> := class<final_super>(component):
             if (Running? and not Paused?):
                 Refresh()
             if (Running? and not Paused?):
-                # 残り秒数（切り上げ）が次に変わるまで待つ。途中で状態が変われば計算し直す
+                # Wait until the remaining seconds (rounded up) next change. Recompute if the state changes meanwhile
                 Remaining := GetRemainingSeconds()
                 Whole := CeilWholeSeconds(Remaining)
                 WaitSeconds := Max(Remaining - (Whole - 1) * 1.0, 0.0)
@@ -109,12 +109,12 @@ countdown_component<public> := class<final_super>(component):
             else:
                 WakeEvent.Await()
 
-    # 数えていなければ DurationSeconds 秒から数え始める。数えている途中（一時停止中も含む）なら何もしない（やり直すなら Restart）
+    # Starts counting from DurationSeconds if not counting. Does nothing while counting (including paused) (use Restart to restart)
     Start<public>():void =
         if (not Running?):
             Restart()
 
-    # 最初から数え直す（数えている途中・一時停止中・数え終わったあとでも）。Seconds を渡すと今回だけその秒数（小数可。0 以下ならその場で数え終わる）、渡さなければ DurationSeconds。始めた時点の残り秒数を知らせる
+    # Restarts from the beginning (even while counting, paused or after the end). With Seconds, counts that many seconds this once (fractions allowed; 0 or less ends on the spot); otherwise DurationSeconds. Notifies the remaining seconds at the start
     Restart<public>(?Seconds:?float = false):void =
         Duration := if (Override := Seconds?) then Override else DurationSeconds
         set Running = true
@@ -124,7 +124,7 @@ countdown_component<public> := class<final_super>(component):
         Refresh()
         WakeEvent.Signal()
 
-    # 数えるのをやめる（FinishedEvent は届かない）。数えていなければ何もしない
+    # Stops counting (FinishedEvent does not fire). Does nothing if not counting
     Stop<public>():void =
         if (not Running?):
             return
@@ -132,17 +132,17 @@ countdown_component<public> := class<final_super>(component):
         set Paused = false
         WakeEvent.Signal()
 
-    # 数えている途中（一時停止中を除く）なら成功する。始める前・止めたあと・数え終わったあと・一時停止中は失敗する
+    # Succeeds while counting (not paused). Fails before the start, after a stop, after the end and while paused
     IsRunning<public>()<decides><transacts>:void =
         Running?
         not Paused?
 
-    # 数えている途中で一時停止しているなら成功する
+    # Succeeds while counting and paused
     IsPaused<public>()<decides><transacts>:void =
         Running?
         Paused?
 
-    # 数えている途中なら一時停止する（残りはそのまま止まる）。数えていない・もう一時停止しているなら何もしない
+    # Pauses while counting (the remaining time stays as it is). Does nothing if not counting or already paused
     Pause<public>():void =
         if (not Running? or Paused?):
             return
@@ -150,7 +150,7 @@ countdown_component<public> := class<final_super>(component):
         set Paused = true
         WakeEvent.Signal()
 
-    # 一時停止しているなら、止めたときの残りから再開する。一時停止していないなら何もしない
+    # If paused, resumes from the remaining time at the pause. Does nothing if not paused
     Resume<public>():void =
         if (not Running? or not Paused?):
             return
@@ -159,7 +159,7 @@ countdown_component<public> := class<final_super>(component):
         Refresh()
         WakeEvent.Signal()
 
-    # 数えている途中（一時停止中も含む）なら、残りを DeltaSeconds 秒増やす（マイナスなら減らす）。残りが 0 以下になると、その場で数え終わる（一時停止中なら再開したとき）。残り秒数が変われば知らせる。数えていないときは何もしない
+    # While counting (including paused), adds DeltaSeconds seconds to the remaining time (subtracts when negative). At 0 or less the count ends on the spot (on resume if paused). Notifies if the remaining seconds changed. Does nothing if not counting
     AddSeconds<public>(DeltaSeconds:float):void =
         if (not Running?):
             return
@@ -171,7 +171,7 @@ countdown_component<public> := class<final_super>(component):
             Refresh()
         WakeEvent.Signal()
 
-    # 残りの秒数（小数）。数えていない・数え終わったあとは 0.0。一時停止中は止めたときの残り
+    # Remaining seconds (fraction). 0.0 if not counting or after the end. While paused, the remaining time at the pause
     GetRemainingSeconds<public>()<transacts>:float =
         if (not Running?):
             0.0
@@ -180,11 +180,11 @@ countdown_component<public> := class<final_super>(component):
         else:
             Max(EndTimeSeconds - GetSimulationElapsedTime(), 0.0)
 
-    # 残りの秒数を整数に切り上げた値（画面に出す値。RemainingChangedEvent と同じ）。数えていない・数え終わったあとは 0
+    # Remaining seconds rounded up to a whole number (the value shown on screen; same as RemainingChangedEvent). 0 if not counting or after the end
     GetRemainingWholeSeconds<public>()<transacts>:int =
         CeilWholeSeconds(GetRemainingSeconds())
 
-    # 残りが 0 なら数え終わり、そうでなければ残り秒数（切り上げ）が変わったときだけ知らせる
+    # Ends the count if the remaining time is 0; otherwise notifies only when the remaining seconds (rounded up) changed
     Refresh<private>():void =
         if (not Running? or Paused?):
             return
@@ -208,13 +208,13 @@ countdown_component<public> := class<final_super>(component):
         Send(countdown_finished_event{Countdown := Self})
         FinishedEventInternal.Signal()
 
-    # 自分と子孫へ送る。AlsoSendUp なら親から祖先へも送る（自分の entity に 2 回届かないよう、上へは親から）
+    # Sends to itself and the descendants. With AlsoSendUp, also from the parent to the ancestors (upward from the parent so that its own entity does not receive it twice)
     Send<private>(SceneEvent:scene_event):void =
         Entity.SendDown(SceneEvent)
         if (AlsoSendUp?, Parent := Entity.GetParent[]):
             Parent.SendUp(SceneEvent)
 
-# 秒（小数）を切り上げた整数にする。ほぼ整数の値（誤差 0.001 秒未満）はその整数にする。0 以下は 0
+# Rounds seconds (fraction) up to a whole number. Values that are nearly whole (error under 0.001 seconds) become that whole number. 0 or less becomes 0
 CeilWholeSeconds<internal>(TimeSeconds:float)<transacts>:int =
     if (TimeSeconds <= 0.001):
         0

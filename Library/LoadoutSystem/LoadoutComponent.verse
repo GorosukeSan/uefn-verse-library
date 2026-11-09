@@ -5,46 +5,46 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { LoadoutSystem.TooltipKit }
 
-# ロードアウトを付けた・外した知らせ
-# 方向：区画全体（SendScoped。区画が無ければ世界全体）
-# 送り手：loadout_component（Loadout）。受け手：ロードアウトの選択を数える部品、利用者の component。消費しない
+# Notification that a loadout was applied or removed
+# Direction: the whole scope (SendScoped; the whole world when there is no scope)
+# Sender: loadout_component (Loadout). Receivers: parts that count loadout choices, your components. Not consumed
 loadout_changed_event<public> := class(scene_event):
-    # 送った部品
+    # The component that sent it
     Loadout<public>:loadout_component
-    # 付けた・外した人
+    # The agent it was applied to / removed from
     Agent<public>:agent
-    # true なら付けた、false なら外した
+    # true when applied, false when removed
     Applied<public>:logic
 
-# 役割：プレイヤー 1 人分のロードアウト（能力・エネルギー・HUD・付ける物・動きへの反応などの部品を入れたプレハブ）を、人ごとに作ってその人の slot の下に置く。外すと消す
-#   プレハブの中の部品は持ち主（その人）だけに効く（能力の付与・widget・player_attach_component・item_grant_component・hud_hide_component が FindOwningPlayer で持ち主に絞る）。コードを書かずに、部品の組み合わせでプレイヤーの能力・見た目・HUD をまとめて付けられる（CharacterSystem の独自ロードアウトもプレハブに入れて付ける）
-#   作った次のフレームで、ロードアウトの entity とその子孫へ起動の合図（activated_event）を送る（起動を待つ部品が動き出す）。外すときは停止の合図を送ってから消す
-#   同じ人には 1 つだけ作る（ApplyTo を何度呼んでも 1 つ）。Group が空でなければ、同じ Group のほかのロードアウトをその人から外してから付ける（職業・クラスの切り替え）
-# 置き方：エディターで entity に付ける（区画の中ならどこでも）
-# いつ：ApplyToEveryone なら起動で全員（途中参加も）。オフなら ApplyTo / RemoveFrom で決める（choice_menu_component の Targets や、ボリュームの入り口などから）
-#   起動：ActiveOnBegin なら開始から、そうでなければ起動の合図（activated_event）か Activate から。停止の合図（deactivated_event）か Deactivate で全員から外す
-#   ApplyToEveryone がオフのとき、だれが起こしたかの分かる起動の合図（activated_by_agent_event。ボリュームの入り口・インタラクト・選択メニューの Targets など）が届いたら、その人に付ける（コードなしで「入った人・押した人に付ける」ができる）
-# 知らせ：付けた・外したとき loadout_changed_event を区画全体へ、AppliedEvent / RemovedEvent に届ける
-# 外から：Activate / Deactivate / ApplyTo / RemoveFrom / RemoveFromAll / IsAppliedTo / FindInstance / GetAppliedAgents
-# 前提：区画（または世界）に player_manager_component が 1 つ（slot の下に置くため）
+# Role: builds one player's loadout (a prefab holding abilities, energy, HUD, attachments, motion reactions, ...) per player and places it under that player's slot. Removing it deletes the instance
+#   The parts inside the prefab affect only the owner (ability grants, widgets, player_attach_component, item_grant_component and hud_hide_component narrow to the owner through FindOwningPlayer). Lets you attach abilities, looks and HUD to a player as a bundle of parts, with no code (a CharacterSystem custom loadout can go in the prefab as well)
+#   On the frame after creation, the activate signal (activated_event) is sent to the loadout entity and its descendants (parts that wait for activation start). On removal the deactivate signal is sent before deletion
+#   Only one instance per player (calling ApplyTo repeatedly still gives one). When Group is not empty, other loadouts of the same Group are removed from that player before applying (job / class switching)
+# Placement: attach to an entity in the editor (anywhere inside the scope)
+# When: with ApplyToEveryone, everyone on activation (late joiners too). When off, decided by ApplyTo / RemoveFrom (from choice_menu_component Targets, a volume entrance, ...)
+#   Activation: from the start with ActiveOnBegin, otherwise from the activate signal (activated_event) or Activate. The deactivate signal (deactivated_event) or Deactivate removes it from everyone
+#   When ApplyToEveryone is off and an activate signal that knows who triggered it arrives (activated_by_agent_event: volume entrance, interact, choice menu Targets, ...), it is applied to that agent ("apply to whoever enters / presses" with no code)
+# Notifies: on apply / remove, loadout_changed_event to the whole scope and AppliedEvent / RemovedEvent
+# From outside: Activate / Deactivate / ApplyTo / RemoveFrom / RemoveFromAll / IsAppliedTo / FindInstance / GetAppliedAgents
+# Requirements: one player_manager_component in the scope (or the world), because the instance is placed under the slot
 loadout_component<public> := class<final_super>(component):
 
-    # 1 人分のロードアウトのプレハブ。中に能力・エネルギー・HUD などの部品を入れておく
+    # Prefab of one player's loadout. Put parts such as abilities, energy and HUD inside it
     @editable:
         ToolTip := LoadoutPrefabToolTip
         Categories := array{LoadoutCategory}
     Prefab<public>:concrete_subtype(entity) = entity
-    # オンなら、起動したら全員に付ける（途中参加の人にも）。既定オン
+    # When on, applied to everyone on activation (late joiners too). Default on
     @editable:
         ToolTip := LoadoutEveryoneToolTip
         Categories := array{LoadoutCategory}
     ApplyToEveryone<public>:logic = true
-    # オンなら、ゲームの開始から付ける。既定オフ
+    # When on, applied from the start of the game. Default off
     @editable:
         ToolTip := LoadoutActiveOnBeginToolTip
         Categories := array{LoadoutCategory}
     ActiveOnBegin<public>:logic = false
-    # 入れ替えのグループ。空でなければ、同じグループのほかのロードアウトをその人から外してから付ける（1 人 1 つの職業など）。既定は空
+    # Exclusive group. When not empty, other loadouts of the same group are removed from the player before applying (one job per player, ...). Default empty
     @editable:
         ToolTip := LoadoutGroupToolTip
         Categories := array{LoadoutCategory}
@@ -53,10 +53,10 @@ loadout_component<public> := class<final_super>(component):
     AppliedEventInternal<private><final>:event(tuple(agent, entity)) = event(tuple(agent, entity)){}
     RemovedEventInternal<private><final>:event(agent) = event(agent){}
 
-    # 付けたときに、（その人, ロードアウトの entity）で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires with (the agent, the loadout entity) when applied (Await / Subscribe; cannot be Signaled from outside)
     AppliedEvent<public><final>:listenable(tuple(agent, entity)) = MakeProxyListenable(AppliedEventInternal)
 
-    # 外したときに、その人で届く
+    # Fires with the agent when removed
     RemovedEvent<public><final>:listenable(agent) = MakeProxyListenable(RemovedEventInternal)
 
     var<private> Active:logic = false
@@ -71,7 +71,7 @@ loadout_component<public> := class<final_super>(component):
 
     OnReceive<override>(SceneEvent:scene_event):logic =
         if (activated_event[SceneEvent]):
-            # 全員に付けない設定で、だれが起こしたかの分かる合図（ボリュームに入った人・ボタンを押した人など）なら、その人に付ける
+            # Not applying to everyone, and the signal knows who triggered it (entered a volume, pressed a button, ...): apply to that agent
             if (not ApplyToEveryone?, Agent := SceneEvent.FindActivatingAgent[]):
                 ApplyTo(Agent)
             else:
@@ -84,7 +84,7 @@ loadout_component<public> := class<final_super>(component):
         Deactivate()
         (super:)OnEndSimulation()
 
-    # 付け始める（ApplyToEveryone なら今いる全員と、これから参加する人）。もう起動していれば何もしない
+    # Start applying (with ApplyToEveryone: everyone present now and everyone who joins later). Does nothing when already active
     Activate<public>():void =
         if (Active?):
             return
@@ -97,9 +97,9 @@ loadout_component<public> := class<final_super>(component):
                 for (Slot : Found.GetSlots()):
                     ApplyTo(Slot.Player)
         else:
-            Print("[loadout_component] player_manager_component が見つからないので、ロードアウトを付けられません")
+            Print("[loadout_component] player_manager_component not found; the loadout cannot be applied")
 
-    # 全員から外し、付けるのをやめる。起動していなければ何もしない
+    # Remove from everyone and stop applying. Does nothing when not active
     Deactivate<public>():void =
         if (not Active?):
             return
@@ -110,7 +110,7 @@ loadout_component<public> := class<final_super>(component):
         RemoveFromAll()
         set Manager = false
 
-    # Agent にロードアウトを付ける（もう付いていれば何もしない）。起動していなければ起動する。Group が同じほかのロードアウトは外す。付けられなかった（参加していない）ときは false
+    # Apply the loadout to Agent (does nothing when already applied). Activates first when not active. Removes other loadouts of the same Group. false when it could not be applied (agent not joined)
     ApplyTo<public>(Agent:agent):logic =
         if (not Active?):
             Activate()
@@ -127,7 +127,7 @@ loadout_component<public> := class<final_super>(component):
             return true
         false
 
-    # Agent からロードアウトを外す（停止の合図を送ってから消す）。付いていなければ何もしない
+    # Remove the loadout from Agent (sends the deactivate signal, then deletes). Does nothing when not applied
     RemoveFrom<public>(Agent:agent):void =
         if (Instance := Instances[Agent]):
             set Instances = Instances.RemoveKey(Agent)
@@ -136,20 +136,20 @@ loadout_component<public> := class<final_super>(component):
             Entity.SendScoped(loadout_changed_event{Loadout := Self, Agent := Agent, Applied := false})
             RemovedEventInternal.Signal(Agent)
 
-    # 全員から外す
+    # Remove from everyone
     RemoveFromAll<public>():void =
         for (Agent -> Instance : Instances):
             RemoveFrom(Agent)
 
-    # Agent に付いていれば成功する
+    # Succeeds when applied to Agent
     IsAppliedTo<public>(Agent:agent)<decides><transacts>:void =
         Instances[Agent]
 
-    # Agent に付けたロードアウトの entity。付いていなければ失敗する
+    # The loadout entity applied to Agent. Fails when not applied
     FindInstance<public>(Agent:agent)<decides><transacts>:entity =
         Instances[Agent]
 
-    # 今ロードアウトが付いている人（並び順は決まっていない）
+    # The agents the loadout is currently applied to (order unspecified)
     GetAppliedAgents<public>()<transacts>:[]agent =
         for (Agent -> Instance : Instances):
             Agent
@@ -161,26 +161,26 @@ loadout_component<public> := class<final_super>(component):
     OnPlayerRemoved<private>(Player:player):void =
         RemoveFrom(Player)
 
-    # 同じ人の slot の下にある、同じ Group のほかのロードアウトを外す
+    # Remove other loadouts of the same Group that sit under the same player's slot
     RemoveSameGroup<private>(Slot:player_slot_component, Agent:agent):void =
         if (Group <> ""):
             for (Child : Slot.Entity.GetEntities(), Other := Child.GetComponent[loadout_instance_component], Other.Source <> Self, Other.Source.Group = Group):
                 Other.Source.RemoveFrom(Agent)
 
-# 役割：ロードアウト（loadout_component が作ったプレハブ）の根に付く印。だれのロードアウトか・どの loadout_component が作ったかを持ち、作った次のフレームで起動の合図を配下へ送る
-# 置き方：実行時に loadout_component が付ける（エディターでは置かない）
+# Role: marker on the root of a loadout (the prefab created by loadout_component). Holds whose loadout it is and which loadout_component created it, and sends the activate signal to its descendants on the frame after creation
+# Placement: attached at runtime by loadout_component (never placed in the editor)
 loadout_instance_component<public> := class<final_super><internal>(component):
-    # 作った loadout_component
+    # The loadout_component that created it
     Source<public>:loadout_component
-    # 持ち主
+    # The owner
     Player<public>:player
 
     OnSimulate<override>()<suspends>:void =
-        # 同じプレハブの部品がみな OnBeginSimulation を終えてから届くように、1 フレーム待つ
+        # Wait one frame so that every part of the prefab has finished OnBeginSimulation before the signal arrives
         TickEvents.PrePhysics.Await()
         Entity.SendActivated()
 
-# InEntity か、その祖先のロードアウト（loadout_instance_component）。ロードアウトの中でなければ失敗する
+# The loadout (loadout_instance_component) of InEntity or one of its ancestors. Fails when not inside a loadout
 (InEntity:entity).FindLoadoutInstance<public>()<decides><transacts>:loadout_instance_component =
     var Current:entity = InEntity
     var Found:?loadout_instance_component = false

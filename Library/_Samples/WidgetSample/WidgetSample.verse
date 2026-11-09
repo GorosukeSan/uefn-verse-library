@@ -13,52 +13,52 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { WidgetSystem }
 
-# 画面の文言
-WidgetSampleTitle<localizes>:message = "画面サンプル（HUD。入力モード None：移動もカメラも使える）"
-WidgetSamplePlayerMessage<localizes>(Agent:agent):message = "プレイヤー: {Agent}"
-WidgetSampleElapsedMessage<localizes>(Seconds:int):message = "経過: {Seconds} 秒（1 秒ごとに SendToWidgets で更新）"
-WidgetSampleLastEventMessage<localizes>(Label:string):message = "最後に受けた知らせ: {Label}"
-WidgetSampleHint<localizes>:message = "C（RT）でメニューを開く（widget_sample_opener_component）"
-MenuSampleTitle<localizes>:message = "メニュー（入力モード Menu = All）"
-MenuSampleBody<localizes>:message = "表示中は移動やカメラの操作が止まり、フォーカスがこの画面に移ります。ボタンを押すと閉じます（Esc でも閉じます）"
-MenuSampleClose<localizes>:message = "閉じる"
+# Screen texts
+WidgetSampleTitle<localizes>:message = "Screen sample (HUD. Input mode None: movement and camera still work)"
+WidgetSamplePlayerMessage<localizes>(Agent:agent):message = "Player: {Agent}"
+WidgetSampleElapsedMessage<localizes>(Seconds:int):message = "Elapsed: {Seconds} s (updated every second with SendToWidgets)"
+WidgetSampleLastEventMessage<localizes>(Label:string):message = "Last notification received: {Label}"
+WidgetSampleHint<localizes>:message = "C (RT) opens the menu (widget_sample_opener_component)"
+MenuSampleTitle<localizes>:message = "Menu (input mode Menu = All)"
+MenuSampleBody<localizes>:message = "While shown, movement and camera control stop and focus moves to this screen. Press the button to close (Esc also closes)"
+MenuSampleClose<localizes>:message = "Close"
 
-# HUD の経過時間の更新。widget_sample_component が 1 秒ごとに SendToWidgets する
-# 方向：widget_sample_component から自分の表示すべてへ（SendToWidgets → widget_view.ReceivedEvent）。消費しない
+# HUD elapsed-time update. widget_sample_component SendToWidgets it every second
+# Direction: from widget_sample_component to all of its own views (SendToWidgets -> widget_view.ReceivedEvent). Not consumed
 widget_sample_tick_event<public> := class(scene_event):
     ElapsedSeconds<public>:int
 
-# メニューを開いた知らせ。開いた人の slot の下へ player_event として送られ、同じ人の HUD（widget_sample_component の表示）の widget_view.ReceivedEvent に届く
-# 方向：widget_sample_opener の view から同じ人の slot へ（SendToPlayer）。消費しない
+# Notification that the menu was opened. Sent as a player_event under the opener's slot, and reaches widget_view.ReceivedEvent of the same player's HUD (the widget_sample_component view)
+# Direction: from the widget_sample_opener view to the same player's slot (SendToPlayer). Not consumed
 widget_sample_menu_opened_event<public> := class(scene_event):
     Agent<public>:agent
 
-# 役割：1 人分の HUD の表示を、届いた知らせで変える（widget_sample_component が窓口ごとに作り、ReceivedEvent に Subscribe する）
+# Role: changes one player's HUD view according to the notifications received (widget_sample_component creates one per view and Subscribes it to ReceivedEvent)
 widget_sample_hud_updater<public> := class:
     ElapsedText<public>:text_block
     LastEventText<public>:text_block
 
-    # Forward された知らせ（tick）と、同じ人のほかの view からの player_event の中身が届く
+    # Receives Forwarded notifications (tick) and the contents of player_events from the same player's other views
     OnReceived<public>(SceneEvent:scene_event):void =
         if (Tick := widget_sample_tick_event[SceneEvent]):
             ElapsedText.SetText(WidgetSampleElapsedMessage(Tick.ElapsedSeconds))
         else if (widget_sample_menu_opened_event[SceneEvent]):
-            LastEventText.SetText(WidgetSampleLastEventMessage("widget_sample_menu_opened_event（player_event で届いた）"))
+            LastEventText.SetText(WidgetSampleLastEventMessage("widget_sample_menu_opened_event (arrived as a player_event)"))
         else:
-            LastEventText.SetText(WidgetSampleLastEventMessage("その他の scene_event"))
+            LastEventText.SetText(WidgetSampleLastEventMessage("other scene_event"))
 
     OnHidden<public>(Unused:tuple()):void =
-        Print("[widget_sample] HUD を外しました（HiddenEvent）", ?Duration := 3.0)
+        Print("[widget_sample] HUD removed (HiddenEvent)", ?Duration := 3.0)
 
-# 役割：HUD の見本（player_widget_component の派生。Mode = Hud）。起動の合図で全員に名前・経過時間・最後に受けた知らせを出し、1 秒ごとに経過時間を SendToWidgets で全員の表示に渡す（表示ごとに毎フレーム数えない）。同じ人のほかの view から player_event で届いた知らせも表示する
-# 置き方：エディターで entity に付け、同じ entity に activate_on_begin_component も付ける（起動の合図で表示が始まる）。区画（または世界）に player_manager_component を 1 つ置く
-# 試し方：セッションを始めると左上に名前・経過時間が出る。widget_sample_opener_component を置いて C（RT）を押すと「最後に受けた知らせ」が変わり、MenuEntity に入れた menu_sample_component のメニューがその人にだけ開く
-# 知らせ：widget_sample_tick_event を 1 秒ごとに自分の表示へ SendToWidgets する
+# Role: HUD sample (player_widget_component subclass; Mode = Hud). On the activate signal, shows everyone their name, the elapsed time and the last notification received, and passes the elapsed time to every view with SendToWidgets every second (no per-frame counting per view). Also shows notifications that arrive as player_events from the same player's other views
+# Placement: attach to an entity in the editor, together with activate_on_begin_component on the same entity (the display starts on the activate signal). Place one player_manager_component in the scope (or the world)
+# Try it: when the session starts, the name and elapsed time appear at the top left. With a widget_sample_opener_component placed, pressing C (RT) changes "Last notification received" and opens the menu of the menu_sample_component set in MenuEntity for that player only
+# Notifies: SendToWidgets widget_sample_tick_event to its own views every second
 widget_sample_component<public> := class<final_super>(player_widget_component):
 
     CreateWidget<override>(View:widget_view):widget =
         ElapsedText := text_block{DefaultText := WidgetSampleElapsedMessage(0), DefaultTextColor := NamedColors.White}
-        LastEventText := text_block{DefaultText := WidgetSampleLastEventMessage("（まだ無し）"), DefaultTextColor := NamedColors.White}
+        LastEventText := text_block{DefaultText := WidgetSampleLastEventMessage("(none yet)"), DefaultTextColor := NamedColors.White}
         Updater := widget_sample_hud_updater{ElapsedText := ElapsedText, LastEventText := LastEventText}
         View.ReceivedEvent.Subscribe(Updater.OnReceived)
         View.HiddenEvent.Subscribe(Updater.OnHidden)
@@ -83,18 +83,18 @@ widget_sample_component<public> := class<final_super>(player_widget_component):
                 Seconds := if (Whole := Floor[Elapsed]) then Whole else 0
                 SendToWidgets(widget_sample_tick_event{ElapsedSeconds := Seconds})
 
-# 役割：メニューの見本（player_widget_component の派生。Mode = Menu、Audience = Chosen）。OpenFor で開いた人にだけメニューを出し、閉じるボタン（button_loud。Back = Esc でも押せる）を押した人のメニューだけを閉じる。Hud との違い（表示中は移動できない・フォーカスが移る）を見る
-# ボタン待ちは View.AwaitClick（閉じると false が返って終わるので、待ちが残らない）
-# 置き方：エディターで entity に付ける（widget_sample_opener_component の MenuEntity に入れる）。区画（または世界）に player_manager_component を 1 つ置く
-# 試し方：開いているあいだは移動できない。ボタンか Esc（Back。MenuNavigationMapping が有効なとき）で閉じる。閉じると出力ログに出る
+# Role: menu sample (player_widget_component subclass; Mode = Menu, Audience = Chosen). Shows the menu only to the player opened with OpenFor, and closes only the menu of the player who pressed the close button (button_loud; Back = Esc also presses it). Shows the difference from Hud (no movement while shown; focus moves)
+# The button is awaited with View.AwaitClick (returns false and ends when closed, so no wait is left behind)
+# Placement: attach to an entity in the editor (set it in MenuEntity of widget_sample_opener_component). Place one player_manager_component in the scope (or the world)
+# Try it: no movement while open. Close with the button or Esc (Back, when MenuNavigationMapping is enabled). Closing prints to the output log
 menu_sample_component<public> := class<final_super>(player_widget_component):
 
-    # 既定を Menu・Chosen にする（@editable なので変えて比べてもよい）
+    # Defaults set to Menu and Chosen (they are @editable, so feel free to change and compare)
     Mode<override>:player_widget_mode = player_widget_mode.Menu
     Audience<override>:player_widget_audience = player_widget_audience.Chosen
     ZOrder<override>:int = 1000
 
-    # Agent にだけメニューを開く
+    # Open the menu for Agent only
     OpenFor<public>(Agent:agent):void =
         ShowFor(Agent)
 
@@ -117,27 +117,27 @@ menu_sample_component<public> := class<final_super>(player_widget_component):
         OnClick := CloseButton.OnClick()
         Clicked := View.AwaitClick(OnClick)
         if (Clicked?):
-            Print("[menu_sample] 閉じます（View.Close）", ?Duration := 3.0)
+            Print("[menu_sample] Closing (View.Close)", ?Duration := 3.0)
             View.Close()
 
-# 役割：メニューを開く入力の見本（player_view_set で 1 人ずつ）。OpenAction（既定 C / RT）が押されたら、MenuEntity の player_widget_component を押した人にだけ開き（ShowFor）、同じ人の slot の下へ widget_sample_menu_opened_event を player_event として送る（同じ人の HUD に届く）
-# 置き方：エディターで entity に付け、MenuEntity に menu_sample_component を付けた entity を入れる。区画（または世界）に player_manager_component を 1 つ置く
-# 前提・注意：OpenMapping は停止時に外すので、キャラクター操作の Mapping は選ばない
+# Role: sample of an input that opens the menu (one player at a time with player_view_set). When OpenAction (default C / RT) is pressed, opens the player_widget_component of MenuEntity for the presser only (ShowFor) and sends widget_sample_menu_opened_event as a player_event under the same player's slot (reaches the same player's HUD)
+# Placement: attach to an entity in the editor and set the entity carrying menu_sample_component in MenuEntity. Place one player_manager_component in the scope (or the world)
+# Requirements / notes: OpenMapping is removed on stop, so do not choose a character-control Mapping
 widget_sample_opener_component<public> := class<final_super>(component):
 
-    # オンなら、シミュレーション開始から受け付ける。オフなら起動の合図を待つ
+    # When on, accepts input from the start of the simulation. When off, waits for the activate signal
     @editable
     StartOnBegin<public>:logic = true
 
-    # メニューを開く入力（OpenMapping に含まれているものを選ぶ）
+    # Input that opens the menu (choose one contained in OpenMapping)
     @editable
     OpenAction<public>:input_action(logic) = NextPage
 
-    # 動いているあいだ各プレイヤーに足すキー割り当て（停止時に外す）
+    # Key mapping added to each player while running (removed on stop)
     @editable
     OpenMapping<public>:input_mapping = MenuNavigationMapping
 
-    # menu_sample_component を付けた entity
+    # The entity carrying menu_sample_component
     @editable
     MenuEntity<public>:?entity = false
 
@@ -156,19 +156,19 @@ widget_sample_opener_component<public> := class<final_super>(component):
         Views.Deactivate()
         (super:)OnEndSimulation()
 
-    # view から呼ばれる。Agent にだけメニューを開く
+    # Called from the view. Opens the menu for Agent only
     OpenMenu<internal>(Agent:agent):void =
         if (Target := MenuEntity?):
             for (Widget : Target.GetPlayerWidgets()):
                 Widget.ShowFor(Agent)
         else:
-            Print("[widget_sample_opener] MenuEntity が未設定です", ?Duration := 4.0)
+            Print("[widget_sample_opener] MenuEntity is not set", ?Duration := 4.0)
 
     CreateView<private>(ViewEntity:entity, Slot:player_slot_component):component =
         widget_sample_opener_view_component{Entity := ViewEntity, Source := Self, Player := Slot.Player}
 
-# 役割：1 人分の開く入力。OpenMapping を足し、OpenAction が押されるたびにメニューを開き、同じ人の HUD へ知らせる
-# 置き方：実行時に widget_sample_opener_component が作る（エディターでは置かない）
+# Role: one player's open input. Adds OpenMapping, opens the menu every time OpenAction is pressed, and notifies the same player's HUD
+# Placement: created at runtime by widget_sample_opener_component (never placed in the editor)
 widget_sample_opener_view_component<public> := class<final_super>(component):
 
     Source<public>:widget_sample_opener_component
@@ -181,8 +181,8 @@ widget_sample_opener_view_component<public> := class<final_super>(component):
                 PlayerInput.HoldInputMapping(Source.OpenMapping, true)
                 loop:
                     PlayerInput.AwaitPressed(Source.OpenAction)
-                    Print("[widget_sample_opener] メニューを開きます", ?Duration := 3.0)
+                    Print("[widget_sample_opener] Opening the menu", ?Duration := 3.0)
                     Self.SendToPlayer(widget_sample_menu_opened_event{Agent := Player})
                     Source.OpenMenu(Player)
         else:
-            Print("[widget_sample_opener] この人の入力（player_input）が取れません")
+            Print("[widget_sample_opener] Cannot get this player's input (player_input)")

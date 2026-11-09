@@ -4,14 +4,14 @@ using { MoverSystem }
 using { MCPSystem }
 using { MCPSystem.TooltipKit }
 
-# 役割：Mover ツールセット（宛先 "mover"）。動く物（MoverSystem の mover_component）の一覧・状態、動かす・止める・やり直す・速さ
-#   動く物は entity の番号か名前で指す
-# 置き方：受け箱と同じ entity に付けるとよい
-# タグ：自分の entity に mcp_controllable_tag
-# 前提・注意：動く物の途中の位置へは戻せない（MoverSystem に途中から始める API が無い）ので、状態の書き出し・復元には入れていない
+# Role: Mover toolset (destination "mover"). Lists movers (MoverSystem's mover_component) and their state; play, pause, restart, speed
+#   A mover is addressed by entity id or name
+# Placement: best attached to the same entity as the inbox
+# Tags: mcp_controllable_tag on its own entity
+# Requirements, caveats: a mover cannot be restored to a mid-path position (MoverSystem has no API to start part-way), so it is not part of state snapshot / restore
 mcp_mover_toolset_component<public> := class<final_super>(component, mcp_controllable):
 
-    # 同じツールセットを複数置くときの名前（空なら "mover" だけで届く）
+    # Name used when the same toolset is placed more than once (when empty, "mover" alone reaches it)
     @editable:
         ToolTip := McpToolsetIdToolTip
         Categories := array{McpCategory}
@@ -33,12 +33,12 @@ mcp_mover_toolset_component<public> := class<final_super>(component, mcp_control
 
     McpTools<override>()<transacts>:[]mcp_tool =
         array:
-            McpTool("list", "動く物の一覧。data に [\{id,name,moving,finished,speed,pos,target\}]", array{})
-            McpTool("state", "動く物 1 つの状態", array{McpArg("mover", "entity", "動く物")})
-            McpTool("play", "動き出す・止まった位置から続ける", array{McpArg("mover", "entity", "動く物")})
-            McpTool("pause", "その場で一時停止", array{McpArg("mover", "entity", "動く物")})
-            McpTool("restart", "道のりの最初からやり直す", array{McpArg("mover", "entity", "動く物"), McpOptArg("return_to_start", "bool", "開始の位置へ戻してから（既定 true）")})
-            McpTool("set_speed", "速さ（cm/s。1 未満は 1）", array{McpArg("mover", "entity", "動く物"), McpArg("speed", "float", "cm/s")})
+            McpTool("list", "List of movers. data: [\{id,name,moving,finished,speed,pos,target\}]", array{})
+            McpTool("state", "State of one mover", array{McpArg("mover", "entity", "mover")})
+            McpTool("play", "Starts moving, or resumes from where it stopped", array{McpArg("mover", "entity", "mover")})
+            McpTool("pause", "Pauses in place", array{McpArg("mover", "entity", "mover")})
+            McpTool("restart", "Restarts the path from the beginning", array{McpArg("mover", "entity", "mover"), McpOptArg("return_to_start", "bool", "return to the start position first (default true)")})
+            McpTool("set_speed", "Speed (cm/s; below 1 becomes 1)", array{McpArg("mover", "entity", "mover"), McpArg("speed", "float", "cm/s")})
 
     McpHandle<override>(Call:mcp_call):mcp_reply =
         Tool := Call.Tool
@@ -67,7 +67,7 @@ mcp_mover_toolset_component<public> := class<final_super>(component, mcp_control
             else:
                 McpFail("unknown_tool", Tool)
         else:
-            McpFail("no_entity", "mover（mover_component の entity）")
+            McpFail("no_entity", "mover (an entity with mover_component)")
 
     FindMovers<private>()<transacts>:[]mover_component =
         if (World := Entity.GetSimulationEntity[]):

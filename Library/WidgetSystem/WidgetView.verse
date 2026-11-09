@@ -3,61 +3,61 @@ using { /Verse.org/Simulation }
 using { /UnrealEngine.com/Temporary/UI }
 using { /Fortnite.com/UI }
 
-# 役割：1 人の画面に出した widget の窓口。player_widget_component が出すたびに作り、CreateWidget に渡す（利用者は作らない）
-#   閉じた知らせ（HiddenEvent）、作った component から転送された知らせ（ReceivedEvent）、ボタン待ち（AwaitClick / AwaitChoice / AwaitButtonChoice）、Close / Focus を持つ
-#   待っているボタンの一覧（GetWaitingButtons）と、コードから押す入口（PressButton。本物のクリックと同じく AwaitClick / AwaitChoice に届く。MCPSystem の WidgetKit が使う）
-# 前提・注意：閉じたあと（IsShown が失敗したあと）の待ちはすぐ false で戻る。ボタン待ちは必ずこの窓口を通す（閉じたのに待ちが残らない）
+# Role: the view of a widget shown on one person's screen. player_widget_component creates one each time it shows and passes it to CreateWidget (your code does not create it)
+#   Has the closed notification (HiddenEvent), notifications forwarded by the creating component (ReceivedEvent), button waits (AwaitClick / AwaitChoice / AwaitButtonChoice) and Close / Focus
+#   Also the list of buttons being waited on (GetWaitingButtons) and an entry point to press from code (PressButton: reaches AwaitClick / AwaitChoice exactly like a real click. Used by MCPSystem's WidgetKit)
+# Requirements: after closing (after IsShown fails), waits return false immediately. Button waits always go through this view (no wait is left behind after closing)
 widget_view<public> := class<internal>:
-    # この表示を出している人
+    # The person this display is shown to
     Player<public>:player
-    # この表示を出した component
+    # The component that showed this display
     Owner<public>:player_widget_component
 
     var<private> Shown:logic = true
     var<private> DefaultFocus:?widget = false
-    # 今 AwaitClick / AwaitChoice で待っているボタン（コードから押す PressButton の行き先）
+    # Buttons currently waited on by AwaitClick / AwaitChoice (the destination of PressButton from code)
     var<private> Waits:[]widget_wait = array{}
 
     HiddenEventInternal<private><final>:event() = event(){}
     PointerFedInternal<private><final>:event(tuple(float, float, logic)) = event(tuple(float, float, logic)){}
 
-    # コードから差し込んだポインター（画面の割合 X, Y（左上 0,0 〜 右下 1,1）、押しているか）。InjectPointer で届く。
-    #   PointerKit の RunCardPointerPress は、Virtual Pointer の押下と同じに扱う（MCPSystem の widget.pointer で、マウス無しに押し込みを試せる）
+    # A pointer injected from code (screen ratio X, Y (top-left 0,0 to bottom-right 1,1), whether pressed). Delivered by InjectPointer.
+    #   PointerKit's RunCardPointerPress treats it the same as a Virtual Pointer press (MCPSystem's widget.pointer lets you try pressing without a mouse)
     PointerFed<public><final>:listenable(tuple(float, float, logic)) = MakeProxyListenable(PointerFedInternal)
 
-    # ポインターを差し込む（X, Y は画面の割合、Down が true なら押している・false なら離した）。画面に出ていなければ何もしない
+    # Inject a pointer (X, Y are screen ratios; Down true = pressed, false = released). Does nothing if not on screen
     InjectPointer<public>(X:float, Y:float, Down:logic):void =
         if (Shown?):
             PointerFedInternal.Signal((X, Y, Down))
     ReceivedEventInternal<private><final>:event(scene_event) = event(scene_event){}
 
-    # 画面から消えたときに 1 回届く（Close・HideFor・Deactivate・退出・メニューの入れ替え・停止）（Await / Subscribe する。外から Signal はできない）
+    # Delivered once when it disappears from the screen (Close, HideFor, Deactivate, leaving, menu swap, deactivation) (Await / Subscribe; cannot be Signaled from outside)
     HiddenEvent<public><final>:listenable(tuple()) = MakeProxyListenable(HiddenEventInternal)
 
-    # Owner が SendToWidgets / SendToWidgetFor で渡した知らせと、同じ人のほかの view からの player_event の中身が届く
+    # Delivers notifications the Owner passed with SendToWidgets / SendToWidgetFor, and the contents of player_events from the same person's other views
     ReceivedEvent<public><final>:listenable(scene_event) = MakeProxyListenable(ReceivedEventInternal)
 
-    # まだ画面に出ているあいだ成功する
+    # Succeeds while still on screen
     IsShown<public>()<decides><transacts>:void =
         Shown?
 
-    # この人の画面からこの表示を閉じる（Owner.HideFor と同じ）
+    # Close this display on this person's screen (same as Owner.HideFor)
     Close<public>():void =
         Owner.HideFor(Player)
 
-    # Target にフォーカスを移す（パッドで操作するメニューのボタンなど。canvas ではなく中のボタンを渡す）。画面に出ていなければ何もしない
+    # Move focus to Target (a menu button operated with a gamepad, etc. Pass the inner button, not the canvas). Does nothing if not on screen
     Focus<public>(Target:widget):void =
         if (Shown?, PlayerUI := GetPlayerUI[Player]):
             PlayerUI.SetFocus(Target)
 
-    # 表示した直後にフォーカスを移す先を決める（CreateWidget の中で呼ぶ。Mode = Menu のとき、出した次のフレームで Focus する）
+    # Decide where focus goes right after showing (call inside CreateWidget. With Mode = Menu, Focus is called on the frame after showing)
     SetDefaultFocus<public>(Target:widget):void =
         set DefaultFocus = option{Target}
 
-    # この人が OnClick を押すまで待つ。押されたら true、先に閉じたら false（閉じていればすぐ false）
-    # 使い方：Clicked := View.AwaitClick(Button.OnClick())
-    #   待っているあいだ、このボタンは GetWaitingButtons に出て、コードから PressButton で押せる（MCPSystem の WidgetKit など。本物のクリックと同じく true で返る）
-    #   ButtonId はコードから押すときの ID（空なら "0"）、Label は一覧に出す文字（ボタンの文字。空でもよい）
+    # Wait until this person presses OnClick. true if pressed, false if closed first (false immediately if already closed)
+    # Usage: Clicked := View.AwaitClick(Button.OnClick())
+    #   While waiting, this button appears in GetWaitingButtons and can be pressed from code with PressButton (MCPSystem's WidgetKit, etc. Returns true exactly like a real click)
+    #   ButtonId is the ID used when pressing from code (empty means "0"); Label is the text shown in the list (the button's text; may be empty)
     AwaitClick<public>(OnClick:listenable(widget_message), ?ButtonId:string = "", ?Label:string = "")<suspends>:logic =
         if (not Shown?):
             return false
@@ -80,21 +80,21 @@ widget_view<public> := class<internal>:
                 HiddenEventInternal.Await()
                 false
 
-    # Buttons のどれかをこの人が押すまで待ち、押されたボタンの番号（0 から）を返す。先に閉じたら false
-    #   待っているあいだ、ボタンは GetWaitingButtons に出て、コードから PressButton で押せる（本物のクリックと同じ番号が返る）
-    #   ButtonIds はコードから押すときの ID（Buttons と同じ並び。足りない番号は "0"・"1" … の番号の文字）
+    # Wait until this person presses one of Buttons and return the index of the pressed button (from 0). false if closed first
+    #   While waiting, the buttons appear in GetWaitingButtons and can be pressed from code with PressButton (returns the same index as a real click)
+    #   ButtonIds are the IDs used when pressing from code (same order as Buttons. Missing entries become the index as text: "0", "1", ...)
     AwaitChoice<public>(Buttons:[]text_button_base, ?ButtonIds:[]string = array{})<suspends>:?int =
         Clicks := for (Button : Buttons) { array{Button.OnClick()} }
         AwaitChoiceOf(Clicks, Buttons, Buttons, ButtonIds, array{})
 
-    # 中身を自由に入れられる button（カードなど）のどれかをこの人が押すまで待ち、押されたボタンの番号（0 から）を返す。先に閉じたら false
-    #   AwaitChoice と同じく、GetWaitingButtons に出て PressButton で押せる。Labels は一覧に出す文字（button には文字が無いので渡す。足りない番号は空）
+    # Wait until this person presses one of the buttons with free content (cards, etc.) and return the index of the pressed button (from 0). false if closed first
+    #   Like AwaitChoice, they appear in GetWaitingButtons and can be pressed with PressButton. Labels are the text shown in the list (a button has no text, so pass it. Missing entries are empty)
     AwaitButtonChoice<public>(Buttons:[]button, ?ButtonIds:[]string = array{}, ?Labels:[]string = array{})<suspends>:?int =
         Clicks := for (Button : Buttons) { array{Button.OnClick()} }
         AwaitChoiceOf(Clicks, Buttons, array{}, ButtonIds, Labels)
 
-    # 1 つの選択肢が複数の button でできているとき（カードの上に敷いたホバーのマスなど）、どれかが押されたら、その選択肢の番号（Groups の番号）を返す。先に閉じたら false
-    #   GetWaitingButtons・PressButton では選択肢 1 つにつき 1 つ（押せるかは、その選択肢の最初の button で見る）
+    # When one choice is made of several buttons (hover cells laid over a card, etc.), return the index of that choice (the index in Groups) when any of them is pressed. false if closed first
+    #   GetWaitingButtons / PressButton see one entry per choice (whether it can be pressed is read from the first button of that choice)
     AwaitButtonGroupChoice<public>(Groups:[][]button, ?ButtonIds:[]string = array{}, ?Labels:[]string = array{})<suspends>:?int =
         Clicks := for (Group : Groups) { for (Button : Group) { Button.OnClick() } }
         Firsts := for (Group : Groups, First := Group[0]) { First }
@@ -124,16 +124,16 @@ widget_view<public> := class<internal>:
                 HiddenEventInternal.Await()
                 false
 
-    # 今 AwaitClick / AwaitChoice で待っているボタン（待ちが重なっていれば、始めた順に並べる）。待っていなければ空
+    # Buttons currently waited on by AwaitClick / AwaitChoice (overlapping waits are listed in the order they started). Empty if not waiting
     GetWaitingButtons<public>():[]widget_button_info =
         var Out:[]widget_button_info = array{}
         for (Wait : Waits):
             set Out += Wait.GetInfos()
         Out
 
-    # コードからボタンを押す（本物のクリックと同じく、待っている AwaitClick / AwaitChoice に届く）
-    #   Key はボタンの ID（AwaitClick の ButtonId・AwaitChoice の ButtonIds）か、ボタンの文字か、番号の文字（"0" から）。最初に合ったボタンを押す
-    #   結果：Pressed（押した）/ NotShown（もう閉じた）/ NotWaiting（ボタンを待っていない）/ NoButton（合うボタンが無い）/ Disabled（ボタンが無効）
+    # Press a button from code (reaches the waiting AwaitClick / AwaitChoice exactly like a real click)
+    #   Key is the button ID (AwaitClick's ButtonId / AwaitChoice's ButtonIds), the button's text, or the index as text (from "0"). Presses the first matching button
+    #   Result: Pressed (pressed) / NotShown (already closed) / NotWaiting (no button is being waited on) / NoButton (no matching button) / Disabled (the button is disabled)
     PressButton<public>(Key:string):widget_press_result =
         if (not Shown?):
             return widget_press_result.NotShown
@@ -160,7 +160,7 @@ widget_view<public> := class<internal>:
     RemoveWait<private>(Wait:widget_wait):void =
         set Waits = for (Other : Waits, Other <> Wait) { Other }
 
-    # player_widget_view_component から呼ばれる
+    # Called from player_widget_view_component
     NotifyShown<internal>()<suspends>:void =
         if (Target := DefaultFocus?):
             Sleep(0.0)
@@ -174,7 +174,7 @@ widget_view<public> := class<internal>:
     NotifyReceived<internal>(SceneEvent:scene_event):void =
         ReceivedEventInternal.Signal(SceneEvent)
 
-# AwaitChoice の中で、ボタンごとに番号を覚えておく
+# Remembers the index of each button inside AwaitChoice
 widget_choice_handler<internal> := class<internal>:
     Index<internal>:int
     Player<internal>:player
@@ -184,45 +184,45 @@ widget_choice_handler<internal> := class<internal>:
         if (Message.Player = Player):
             Target.Signal(Index)
 
-# PressButton の結果
+# Result of PressButton
 widget_press_result<public> := enum:
-    # 押した（待っている AwaitClick / AwaitChoice に届いた）
+    # Pressed (reached the waiting AwaitClick / AwaitChoice)
     Pressed
-    # もう画面から消えている
+    # Already gone from the screen
     NotShown
-    # 出ているが、ボタンを待っていない（AwaitClick / AwaitChoice の外）
+    # Shown, but no button is being waited on (outside AwaitClick / AwaitChoice)
     NotWaiting
-    # Key に合うボタンが無い
+    # No button matches Key
     NoButton
-    # ボタンが無効（SetEnabled(false)）
+    # The button is disabled (SetEnabled(false))
     Disabled
 
-# 待っているボタン 1 つの情報（GetWaitingButtons）
+# Info about one button being waited on (GetWaitingButtons)
 widget_button_info<public> := struct:
-    # コードから押すときの ID
+    # ID used when pressing from code
     Id<public>:string = ""
-    # 待ちの中の番号（AwaitChoice なら返る番号。AwaitClick は 0）
+    # Index within the wait (the index AwaitChoice returns. 0 for AwaitClick)
     Index<public>:int = 0
-    # ボタンの文字（取れなければ空）
+    # The button's text (empty if it cannot be read)
     Label<public>:string = ""
-    # 押せるか（SetEnabled(false) なら false）
+    # Whether it can be pressed (false if SetEnabled(false))
     Enabled<public>:logic = true
 
-# AwaitClick / AwaitChoice の 1 回の待ち（コードから押すときの行き先）
+# One wait of AwaitClick / AwaitChoice (the destination when pressing from code)
 widget_wait<internal> := class<unique><internal>:
     Ids<internal>:[]string
-    # AwaitClick / AwaitButtonChoice で渡された文字（AwaitChoice は文字のボタンから読む）
+    # Text passed to AwaitClick / AwaitButtonChoice (AwaitChoice reads it from the text buttons)
     Labels<internal>:[]string
-    # 文字のボタン（AwaitChoice。文字を一覧に出す）
+    # Text buttons (AwaitChoice. Their text is shown in the list)
     Buttons<internal>:[]text_button_base
-    # 押せるかを見るボタン（AwaitChoice・AwaitButtonChoice。AwaitClick は空）
+    # Buttons checked for whether they can be pressed (AwaitChoice / AwaitButtonChoice. Empty for AwaitClick)
     Widgets<internal>:[]widget = array{}
     Target<internal>:event(int)
 
     GetLabel<internal>(Index:int):string =
         if (Button := Buttons[Index]) then Button.GetText() else if (Label := Labels[Index]) then Label else ""
 
-    # Index のボタンが無効なら true（AwaitClick のボタンは分からないので false）
+    # true if the button at Index is disabled (unknown for AwaitClick buttons, so false)
     IsDisabledAt<internal>(Index:int):logic =
         if (Widget := Widgets[Index]):
             Enabled := Widget.IsEnabled()
@@ -236,7 +236,7 @@ widget_wait<internal> := class<unique><internal>:
             Enabled := if (Disabled?) then false else true
             widget_button_info{Id := Id, Index := Index, Label := GetLabel(Index), Enabled := Enabled}
 
-    # Key に合うボタンの番号（ID → 文字 → 番号の文字の順に見る）。無ければ -1
+    # Index of the button matching Key (checked in the order ID -> text -> index as text). -1 if none
     FindButton<internal>(Key:string):int =
         var Found:int = -1
         for (Index -> Id : Ids, Found < 0, Id = Key):
@@ -251,7 +251,7 @@ widget_wait<internal> := class<unique><internal>:
             set Found = Number
         Found
 
-# "0"〜"999" の番号の文字を int にする。番号でなければ失敗する
+# Turn an index string "0" to "999" into an int. Fails if it is not a number
 WidgetParseIndex<internal>(Key:string)<decides><transacts>:int =
     Key.Length > 0
     Key.Length <= 3

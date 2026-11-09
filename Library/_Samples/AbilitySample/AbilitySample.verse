@@ -14,26 +14,26 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { SwingSystem }
 
-# 役割：AbilitySystem の見本。自分で能力は置かず、同じ entity にある能力（ability_component の派生）と付与の component を開始時に Print で一覧し、各能力の GrantedEvent / RevokedEvent を Print する。動いているあいだ、各プレイヤーは ToggleAction（既定 E / RB）を押すと、この entity の能力すべてについて自分への付与を切り替えられる（付与されていれば Revoke、されていなければ Grant）
-# 置き方：エディターで、能力の component（swing_ability_component・jetpack_ability_component・hover_ability_component・gravity_point_ability_component など）を 1 つ以上付けた entity に付ける。付与の component（ability_grant_players_component など）は付けても付けなくてもよい。区画（または世界）に player_manager_component を 1 つ置く
-# 試し方：セッションを始めると出力ログに「能力: n 個」「付与: …」と出る。ToggleAction を押すと「Grant」「Revoke」と、能力の GrantedEvent / RevokedEvent の Print が交互に出る。ability_grant_players_component（GrantOnBegin）を一緒に置くと、最初から付与されているので 1 回目の押下で Revoke になる（付与の回数が 1 → 0）
-# いつ：StartOnBegin が true ならシミュレーション開始から。false なら起動の合図（activated_event）から停止の合図（deactivated_event）まで
-# 前提・注意：Revoke は付与の回数を 1 減らすだけなので、複数の付与元から付与されているときは 1 回では止まらない（ability_component の説明）。ToggleMapping は停止時に外す（RemoveMappingOnStop）。キャラクター操作の Mapping を ToggleMapping に選ぶなら RemoveMappingOnStop をオフにする（外すと動けなくなる）
+# Role: AbilitySystem sample. Places no abilities itself; at start it Prints a list of the abilities (ability_component subclasses) and grant components on the same entity, and Prints each ability's GrantedEvent / RevokedEvent. While running, each player can press ToggleAction (default E / RB) to toggle their own grant of every ability on this entity (Revoke when granted, Grant otherwise)
+# Placement: attach in the editor to an entity with at least one ability component (swing_ability_component, jetpack_ability_component, hover_ability_component, gravity_point_ability_component, ...). A grant component (ability_grant_players_component etc.) is optional. Place one player_manager_component in the scope (or the world)
+# Try it: when the session starts, the output log shows "Abilities: n" and "Grant: ...". Pressing ToggleAction alternates "Grant" / "Revoke" together with the abilities' GrantedEvent / RevokedEvent Prints. With an ability_grant_players_component (GrantOnBegin) placed alongside, the ability is granted from the start, so the first press is a Revoke (grant count 1 -> 0)
+# When: with StartOnBegin true, from the start of the simulation. With false, from the activate signal (activated_event) to the deactivate signal (deactivated_event)
+# Requirements / notes: Revoke only decrements the grant count by 1, so when granted by several sources it does not stop after one press (see ability_component). ToggleMapping is removed on stop (RemoveMappingOnStop). If you choose a character-control Mapping as ToggleMapping, turn RemoveMappingOnStop off (removing it makes the player unable to move)
 ability_sample_component<public> := class<final_super>(component):
 
-    # オンなら、シミュレーション開始から始める。オフなら起動の合図を待つ
+    # When on, starts from the start of the simulation. When off, waits for the activate signal
     @editable
     StartOnBegin<public>:logic = true
 
-    # 付与を切り替える入力（ToggleMapping に含まれているものを選ぶ）
+    # Input that toggles the grant (choose one contained in ToggleMapping)
     @editable
     ToggleAction<public>:input_action(logic) = NextTab
 
-    # 動いているあいだ各プレイヤーに足すキー割り当て
+    # Key mapping added to each player while running
     @editable
     ToggleMapping<public>:input_mapping = MenuNavigationMapping
 
-    # オンなら、止まるときに ToggleMapping を外す。キャラクター操作の Mapping を選んだときはオフにする
+    # When on, ToggleMapping is removed on stop. Turn off when a character-control Mapping is chosen
     @editable
     RemoveMappingOnStop<public>:logic = true
 
@@ -61,23 +61,23 @@ ability_sample_component<public> := class<final_super>(component):
         set Subscriptions = array{}
         (super:)OnEndSimulation()
 
-    # 全員（途中参加も）の切り替え入力を受け付ける。もう受け付けていれば何もしない
+    # Accept the toggle input from everyone (late joiners too). Does nothing when already accepting
     Activate<public>():void =
         Views.Activate(Entity, CreateView)
 
-    # 受け付けをやめる
+    # Stop accepting
     Deactivate<public>():void =
         Views.Deactivate()
 
-    # 動いているあいだ成功する
+    # Succeeds while running
     IsActive<public>()<decides><transacts>:void =
         Views.IsActive[]
 
-    # Agent について、この entity の能力すべての付与を切り替える（view から呼ばれる）
+    # Toggle the grant of every ability on this entity for Agent (called from the view)
     Toggle<internal>(Agent:agent):void =
         Abilities := Entity.GetAbilities()
         if (Abilities.Length = 0):
-            Print("[ability_sample] この entity に能力（ability_component の派生）がありません", ?Duration := 4.0)
+            Print("[ability_sample] This entity has no ability (ability_component subclass)", ?Duration := 4.0)
             return
         for (Ability : Abilities):
             Label := DescribeAbility(Ability)
@@ -88,54 +88,54 @@ ability_sample_component<public> := class<final_super>(component):
                 Print("[ability_sample] Grant: {Label}", ?Duration := 4.0)
                 Ability.Grant(Agent)
 
-    # 同じ entity の能力と付与の component を Print する
+    # Print the abilities and grant components on the same entity
     Describe<private>():void =
         Abilities := Entity.GetAbilities()
-        Print("[ability_sample] 能力: {Abilities.Length} 個", ?Duration := 8.0)
+        Print("[ability_sample] Abilities: {Abilities.Length}", ?Duration := 8.0)
         for (Ability : Abilities):
             Print("[ability_sample]   - {DescribeAbility(Ability)}", ?Duration := 8.0)
         var GrantCount:int = 0
         if (Grant := Entity.GetComponent[ability_grant_players_component]):
             set GrantCount += 1
-            OnBegin := if (Grant.GrantOnBegin?) then "オン" else "オフ"
-            Print("[ability_sample] 付与: ability_grant_players_component（全員に。GrantOnBegin は {OnBegin}）", ?Duration := 8.0)
+            OnBegin := if (Grant.GrantOnBegin?) then "on" else "off"
+            Print("[ability_sample] Grant: ability_grant_players_component (to everyone. GrantOnBegin is {OnBegin})", ?Duration := 8.0)
         if (Entity.GetComponent[ability_grant_item_component]):
             set GrantCount += 1
-            Print("[ability_sample] 付与: ability_grant_item_component（アイテムの持ち手に）", ?Duration := 8.0)
+            Print("[ability_sample] Grant: ability_grant_item_component (to the item holder)", ?Duration := 8.0)
         if (Entity.GetComponent[ability_grant_condition_component]):
             set GrantCount += 1
-            Print("[ability_sample] 付与: ability_grant_condition_component（子の条件を満たすあいだ）", ?Duration := 8.0)
+            Print("[ability_sample] Grant: ability_grant_condition_component (while the child conditions are satisfied)", ?Duration := 8.0)
         if (GrantCount = 0):
-            Print("[ability_sample] 付与: なし（ToggleAction を押すとコードから Grant / Revoke します）", ?Duration := 8.0)
+            Print("[ability_sample] Grant: none (press ToggleAction to Grant / Revoke from code)", ?Duration := 8.0)
 
-    # 能力の種類を人が読める名前にする（Library の能力は名前で、ほかは「その他」）
+    # Human-readable name of the ability kind (Library abilities by name, others as "other")
     DescribeAbility<private>(Ability:ability_component)<transacts>:string =
         if (swing_ability_component[Ability]):
-            "swing_ability_component（スイング）"
+            "swing_ability_component (swing)"
         else if (jetpack_ability_component[Ability]):
-            "jetpack_ability_component（ジェットパック）"
+            "jetpack_ability_component (jetpack)"
         else if (hover_ability_component[Ability]):
-            "hover_ability_component（ホバー）"
+            "hover_ability_component (hover)"
         else if (gravity_point_ability_component[Ability]):
-            "gravity_point_ability_component（重力点）"
+            "gravity_point_ability_component (gravity point)"
         else:
-            "ability_component の派生（その他）"
+            "ability_component subclass (other)"
 
     OnGranted<private>(Agent:agent):void =
-        Print("[ability_sample] GrantedEvent: 付与されました（付与中 {GrantedCount()} 人）", ?Duration := 4.0)
+        Print("[ability_sample] GrantedEvent: granted ({GrantedCount()} player(s) granted)", ?Duration := 4.0)
 
     OnRevoked<private>(Agent:agent):void =
-        Print("[ability_sample] RevokedEvent: 剥奪されました（付与中 {GrantedCount()} 人）", ?Duration := 4.0)
+        Print("[ability_sample] RevokedEvent: revoked ({GrantedCount()} player(s) granted)", ?Duration := 4.0)
 
-    # いずれかの能力が付与されている人数（能力ごとの合計ではなく、最初の能力の人数）
+    # Number of players granted any ability (the count of the first ability, not the sum over abilities)
     GrantedCount<private>()<transacts>:int =
         if (First := Entity.GetAbilities()[0]) then First.GetGrantedAgents().Length else 0
 
     CreateView<private>(ViewEntity:entity, Slot:player_slot_component):component =
         ability_sample_view_component{Entity := ViewEntity, Source := Self, Player := Slot.Player}
 
-# 役割：1 人分の切り替え入力。ToggleMapping を足し、ToggleAction が押されるたびに Source.Toggle を呼ぶ
-# 置き方：実行時に ability_sample_component が作る（エディターでは置かない）
+# Role: one player's toggle input. Adds ToggleMapping and calls Source.Toggle every time ToggleAction is pressed
+# Placement: created at runtime by ability_sample_component (never placed in the editor)
 ability_sample_view_component<public> := class<final_super>(component):
 
     Source<public>:ability_sample_component
@@ -143,11 +143,11 @@ ability_sample_view_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =
         if (PlayerInput := Player.FindPlayerInput[]):
-            Print("[ability_sample] 付与を切り替えるキー（既定 E / RB）を押してください", ?Duration := 6.0)
+            Print("[ability_sample] Press the key that toggles the grant (default E / RB)", ?Duration := 6.0)
             race:
                 PlayerInput.HoldInputMapping(Source.ToggleMapping, Source.RemoveMappingOnStop)
                 loop:
                     PlayerInput.AwaitPressed(Source.ToggleAction)
                     Source.Toggle(Player)
         else:
-            Print("[ability_sample] この人の入力（player_input）が取れません")
+            Print("[ability_sample] Cannot get this player's input (player_input)")

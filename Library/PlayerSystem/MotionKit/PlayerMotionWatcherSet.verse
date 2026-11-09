@@ -2,14 +2,14 @@ using { /Verse.org/SceneGraph }
 using { /Verse.org/Simulation }
 using { SceneGraphSystem }
 
-# 役割：部品が使う、見張る人の組（実行時のクラス）。Owner が持ち主のいる entity なら持ち主 1 人、いなければ区画の全員（途中参加も）を見張り、毎フレーム（Tick）全員の player_motion_watcher を Update する
+# Role: the set of watched players used by the parts (runtime class). If Owner is an owned entity, watches the one owner; otherwise everyone in the scope (including later joins), and Updates every player_motion_watcher every frame (Tick)
 player_motion_watcher_set<internal> := class<internal>:
 
     var<private> Watchers:[agent]player_motion_watcher = map{}
     var<private> Notify:?type{_(:agent, :player_motion):void} = false
     var<private> Subscriptions:[]cancelable = array{}
 
-    # 見張り始める。Notify に動きを渡す。Tick は持ち主の component の TickEvents.PrePhysics
+    # Start watching. Motions are passed to Notify. Tick is the owning component's TickEvents.PrePhysics
     Start<internal>(Owner:entity, InNotify:type{_(:agent, :player_motion):void}, Tick:listenable(float)):void =
         Stop()
         set Notify = option{InNotify}
@@ -23,7 +23,7 @@ player_motion_watcher_set<internal> := class<internal>:
             for (Slot : Manager.GetSlots()):
                 Add(Slot.Player)
 
-    # 見張るのをやめる
+    # Stop watching
     Stop<internal>():void =
         for (Subscription : Subscriptions):
             Subscription.Cancel()
@@ -33,12 +33,12 @@ player_motion_watcher_set<internal> := class<internal>:
         set Watchers = map{}
         set Notify = false
 
-    # 見張っている人（並び順は決まっていない）
+    # The watched players (order is undefined)
     GetAgents<internal>()<transacts>:[]agent =
         for (Agent -> Watcher : Watchers):
             Agent
 
-    # Agent が State なら成功する。見張っていない・キャラクターがいなければ失敗する
+    # Succeeds if Agent is in State. Fails if Agent is not watched or has no character
     IsInState<internal>(Agent:agent, State:player_motion_state)<decides><transacts>:void =
         Watchers[Agent].IsInState[State]
 

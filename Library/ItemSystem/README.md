@@ -1,64 +1,64 @@
 # ItemSystem
 
-Fortnite のアイテム（`item_component` を付けた entity）を、ライブラリの部品とつなぐ System です。だれがアイテムを持っているか（持ち手）の見張り、プレイヤーの inventory の探し方、アイテムの配布・1 人 1 つまで・装備のロックを受け持ちます。アイテムで能力を付ける（AbilitySystem の `ability_grant_item_component`）・持ち手にだけ画面を出す（WidgetSystem の `widget_show_item_holder_component`）ときの土台になります。
+A System that connects Fortnite items (entities with `item_component`) to the parts of the library. It covers watching who holds an item (the holder), finding a player's inventories, granting items, limiting items to one per player, and locking equipment. It is the foundation for granting abilities through items (AbilitySystem's `ability_grant_item_component`) and showing a screen only to the holder (WidgetSystem's `widget_show_item_holder_component`).
 
-## 置き方
+## Placement
 
-| component | 置く場所 | すること |
+| component | Where to place | What it does |
 |---|---|---|
-| `item_holder_component` | アイテムの entity（`item_component` と同じ entity） | 持ち手（`Rule` で決める人）が付いた・外れたを知らせる。装備や inventory が変わるたびに調べ直す |
-| `item_holder_friend_component` | `item_holder_component` を付けたアイテムの entity の直下（見た目の無い entity。種類ごとに 1 つ） | 持ち主がこの種類のアイテムを装備しているあいだも、親のアイテムの持ち手とみなす（親の `Rule` が `Equipped` のとき） |
-| `item_grant_component`（GrantKit） | 起動の合図が届く場所（ゲームの流れなら、ノードの entity かその子孫） | 起動したとき、子のアイテムを全プレイヤーに配る（持ち主のいる場所なら持ち主にだけ）。`RevokeOnDeactivate` なら停止の合図で回収する |
-| `item_grant_entry_component`（GrantKit） | `item_grant_component` の entity の直下（1 種類ずつ） | 配るアイテム 1 種類と個数 |
-| `exclusive_item_component`（ExclusiveKit） | アイテムの entity（`item_component` と同じ entity） | 同じ種類のアイテムを 1 人 1 つまでにする |
-| `item_equip_lock_component`（RuleKit） | アイテムの entity（`item_component` と同じ entity） | ロックしているあいだ、装備を外させない |
+| `item_holder_component` | the item's entity (the same entity as `item_component`) | notifies when the holder (whoever `Rule` selects) is attached or removed. Re-checks whenever the equip state or the inventory changes |
+| `item_holder_friend_component` | directly under the item entity carrying `item_holder_component` (an entity with no look; one per type) | while the owner has an item of this type equipped, they also count as the holder of the parent item (when the parent's `Rule` is `Equipped`) |
+| `item_grant_component` (GrantKit) | wherever the activation signal arrives (for the game flow, the node's entity or a descendant) | on activation, grants the child items to every player (only to the owner when placed under one). With `RevokeOnDeactivate`, takes them back on the deactivation signal |
+| `item_grant_entry_component` (GrantKit) | directly under the entity of `item_grant_component` (one per kind) | one kind of item to grant and its count |
+| `exclusive_item_component` (ExclusiveKit) | the item's entity (the same entity as `item_component`) | limits items of the same type to one per player |
+| `item_equip_lock_component` (RuleKit) | the item's entity (the same entity as `item_component`) | prevents unequipping while locked |
 
-例：「ノードに入ったら全員にジェットパックを 1 つ配り、出たら回収する」
+Example: "when the node is entered, give everyone one jetpack; take it back when the node is left"
 ```
-ノード（game_node_component）
-└ 配る（item_grant_component、RevokeOnDeactivate オン）
-  └ ジェットパック（item_grant_entry_component、Item = ジェットパックのアイテムの prefab）
+Node (game_node_component)
+└ Grant (item_grant_component, RevokeOnDeactivate on)
+  └ Jetpack (item_grant_entry_component, Item = the jetpack item prefab)
 ```
-アイテムの prefab の側には `item_component` + `item_holder_component`（`Equipped`）+ `exclusive_item_component` + `item_equip_lock_component` と、能力（`jetpack_ability_component` など）+ `ability_grant_item_component` を付けます。
+On the item prefab side, attach `item_component` + `item_holder_component` (`Equipped`) + `exclusive_item_component` + `item_equip_lock_component`, plus the ability (`jetpack_ability_component`, etc.) + `ability_grant_item_component`.
 
-## 設定（@editable）
-- `item_holder_component.Rule : item_holder_rule = item_holder_rule.Equipped` — だれを持ち手とみなすか。`Owned` は手持ちにあるあいだ（ほかのアイテムを装備していても）、`Equipped` は装備しているあいだ。
-- `item_holder_friend_component.ItemType : castable_concrete_subtype(entity) = entity` — 一緒に数えるアイテムの prefab の型。既定の entity のままだと、どのアイテムでも数えるので必ず選ぶ。
-- `item_grant_component.PickMode : item_grant_pick_mode = item_grant_pick_mode.All` — `All` は子のアイテムをすべて、`Random` は `RandomCount` 個を配る人ごとに選び直して配る。
-- `item_grant_component.RandomCount : int = 1` — `Random` のときに配る数（1〜100）。子の数より多ければ全部配る。
-- `item_grant_component.Destination : item_grant_destination = item_grant_destination.Root` — `Root` はプレイヤーの根の inventory（`FindRootInventory`。種類に合った場所へ振り分け）、`WeaponHotbar` は武器のホットバー（`FindWeaponHotbar`。手に持てる場所）。
-- `item_grant_component.RevokeOnDeactivate : logic = false` — オンなら停止の合図で配った物を回収する（回収できるよう、既にあるスタックとまとめずに入れる）。
-- `item_grant_entry_component.Item : concrete_subtype(entity) = entity` — 配るアイテムの prefab。既定の entity のままだと何も配らない。
-- `item_grant_entry_component.Count : int = 1` — 配る個数（1〜100）。同じものはまとめられることがある。
-- `exclusive_item_component.ItemType : castable_concrete_subtype(entity) = entity` — 1 人 1 つまでにするアイテムの prefab の型。ふつうはこのアイテム自身の prefab。既定の entity のままだと、どのアイテムを持っていても入らなくなる。
+## Settings (@editable)
+- `item_holder_component.Rule : item_holder_rule = item_holder_rule.Equipped` — who counts as the holder. `Owned`: while the item is in the inventory (even while another item is equipped); `Equipped`: while it is equipped.
+- `item_holder_friend_component.ItemType : castable_concrete_subtype(entity) = entity` — the prefab type of the item counted together. Left at the default entity it counts any item, so always choose one.
+- `item_grant_component.PickMode : item_grant_pick_mode = item_grant_pick_mode.All` — `All` grants every child item; `Random` grants `RandomCount` items, re-picked for each recipient.
+- `item_grant_component.RandomCount : int = 1` — how many to grant with `Random` (1-100). If more than the number of children, all are granted.
+- `item_grant_component.Destination : item_grant_destination = item_grant_destination.Root` — `Root`: the player's root inventory (`FindRootInventory`; distributed to the place matching the kind); `WeaponHotbar`: the weapon hotbar (`FindWeaponHotbar`; where it can be held).
+- `item_grant_component.RevokeOnDeactivate : logic = false` — when on, takes the granted items back on the deactivation signal (they are added without merging into existing stacks so they can be taken back).
+- `item_grant_entry_component.Item : concrete_subtype(entity) = entity` — the prefab of the item to grant. Left at the default entity, nothing is granted.
+- `item_grant_entry_component.Count : int = 1` — how many to grant (1-100). Identical items may be merged.
+- `exclusive_item_component.ItemType : castable_concrete_subtype(entity) = entity` — the prefab type of the item limited to one per player. Usually this item's own prefab. Left at the default entity, nothing enters while any item is held.
 
-## イベント
-この System は scene_event を送りません。
-- listenable（外から Signal はできない）
-  - `item_holder_component.HolderAddedEvent : listenable(agent)` — 持ち手が付いたとき、その人で届く。
-  - `item_holder_component.HolderRemovedEvent : listenable(agent)` — 持ち手が外れたとき（手放した・消えた・シミュレーションの終わりも）、外れた人で届く。
-  - `item_equip_lock_component.ChangedEvent : listenable(logic)` — ロックの状態が変わったとき（回数が 0 と 1 のあいだで変わったとき）、新しい状態（true = ロック中）で届く。
-- 受けるもの
-  - `item_grant_component` は `activated_event`（全員に配る）と `deactivated_event`（`RevokeOnDeactivate` なら回収）。
-  - `exclusive_item_component` は `add_item_query_event`（同じ種類をもう持っている人の inventory に入るのを、`item_exclusive_error` で断る）。
-  - `item_equip_lock_component` は `unequip_item_query_event`（ロック中に装備を外すのを、`item_unequip_locked_error` で断る）。
+## Events
+This System sends no scene_event.
+- listenable (cannot be Signaled from outside)
+  - `item_holder_component.HolderAddedEvent : listenable(agent)` — fires with the agent when a holder is attached.
+  - `item_holder_component.HolderRemovedEvent : listenable(agent)` — fires with the removed agent when the holder is removed (dropped, destroyed, or the end of the simulation).
+  - `item_equip_lock_component.ChangedEvent : listenable(logic)` — fires with the new state (true = locked) when the lock state changes (the count crosses between 0 and 1).
+- Received
+  - `item_grant_component` receives `activated_event` (grants to everyone) and `deactivated_event` (takes back with `RevokeOnDeactivate`).
+  - `exclusive_item_component` receives `add_item_query_event` (refuses entering the inventory of someone who already has the same type, with `item_exclusive_error`).
+  - `item_equip_lock_component` receives `unequip_item_query_event` (refuses unequipping while locked, with `item_unequip_locked_error`).
 
-## 持ち主
-プレイヤーの slot の下（LoadoutSystem のロードアウトの中、CharacterSystem のキャラクターの中など。`Entity.FindOwningPlayer[]` が成功する場所）に置くと、全員ではなく持ち主に効きます。
-- `item_grant_component`：起動の合図で、持ち主にだけ配る（ほかのプレイヤーには配らない）。`GrantToAgent` をコードから呼んだときは、渡した人に配る。
+## Owner
+Placed under a player's slot (inside a LoadoutSystem loadout, inside a CharacterSystem character, etc.; anywhere `Entity.FindOwningPlayer[]` succeeds), it affects the owner instead of everyone.
+- `item_grant_component`: on the activation signal, grants only to the owner (not to other players). When `GrantToAgent` is called from code, grants to the agent passed in.
 
-なお、アイテムの「持ち手」（`item_holder_component`）や `FindOwnerAgent` は、アイテムの entity から親をたどって最初の agent を探すもので、slot の持ち主（PlayerSystem の `FindOwningPlayer`）とは別です。
+Note that the item "holder" (`item_holder_component`) and `FindOwnerAgent` look for the first agent walking up the parents from the item's entity, which is different from the slot owner (PlayerSystem's `FindOwningPlayer`).
 
-## 公開 API
+## Public API
 ```verse
-# 持ち手
+# Holder
 item_holder_rule<public> := enum:
     Owned
     Equipped
 
 item_holder_component<public> := class<final_super>(component):
     Rule<public>:item_holder_rule
-    var<private> Holder<public>:?agent                     # 今の持ち手。いなければ false
+    var<private> Holder<public>:?agent                     # the current holder. false when there is none
     HolderAddedEvent<public><final>:listenable(agent)
     HolderRemovedEvent<public><final>:listenable(agent)
     FindHolder<public>()<decides><transacts>:agent
@@ -66,19 +66,19 @@ item_holder_component<public> := class<final_super>(component):
 item_holder_friend_component<public> := class<final_super>(component):
     ItemType<public>:castable_concrete_subtype(entity)
 
-# inventory とアイテムの補助
-(Agent:agent).GetRootInventories<public>()<transacts>:[]inventory_component   # 入れ子でない inventory すべて（並び順は決まっていない）
-(Agent:agent).FindRootInventory<public>()<decides><transacts>:inventory_component   # 根の 1 つ目
+# Inventory and item helpers
+(Agent:agent).GetRootInventories<public>()<transacts>:[]inventory_component   # every non-nested inventory (order unspecified)
+(Agent:agent).FindRootInventory<public>()<decides><transacts>:inventory_component   # the first root
 (Agent:agent).GetAgentItems<public>()<transacts>:[]entity
-(Agent:agent).GetAgentEquippedItems<public>():[]entity          # <decides> / <transacts> の中では呼べない
+(Agent:agent).GetAgentEquippedItems<public>():[]entity          # cannot be called inside <decides> / <transacts>
 (Agent:agent).FindWeaponHotbar<public>()<decides><transacts>:inventory_component
-(InEntity:entity).FindOwnerAgent<public>()<decides><reads>:agent # 親をたどって最初の agent
+(InEntity:entity).FindOwnerAgent<public>()<decides><reads>:agent # the first agent walking up the parents
 (Item:item_component).FindEquippedOwner<public>()<decides><reads>:agent
-(Item:item_component).AwaitHolderChange<public>()<suspends>:void # 装備か inventory が変わるまで待つ
-(Agent:agent).AwaitAnyEquipChange<public>()<suspends>:void       # inventory が無いとずっと戻らない
-(Item:entity).RemoveFromInventory<public>():void                 # inventory から外して消す
-(Item:entity).ConsumeOne<public>():void                          # スタックを 1 減らす。最後の 1 つなら外して消す
-(InEntity:entity).BeginItemAbilities<public>(Agent:agent):[]ability_effect   # fort_item_ability_component の能力を使う
+(Item:item_component).AwaitHolderChange<public>()<suspends>:void # waits until the equip state or the inventory changes
+(Agent:agent).AwaitAnyEquipChange<public>()<suspends>:void       # never returns without an inventory
+(Item:entity).RemoveFromInventory<public>():void                 # removes from the inventory and destroys
+(Item:entity).ConsumeOne<public>():void                          # decrements the stack by 1. The last one is removed and destroyed
+(InEntity:entity).BeginItemAbilities<public>(Agent:agent):[]ability_effect   # uses the abilities of fort_item_ability_component
 EndItemAbilities<public>(Effects:[]ability_effect):void
 
 # GrantKit
@@ -95,8 +95,8 @@ item_grant_component<public> := class<final_super>(component):
     RandomCount<public>:int
     Destination<public>:item_grant_destination
     RevokeOnDeactivate<public>:logic
-    GrantToAgent<public>(Agent:agent)<transacts>:void           # 1 人に配る（起動の合図は要らない。呼ぶたびに選び直す）
-    RevokeAll<public>()<transacts>:void                         # RevokeOnDeactivate で配って覚えている物を全員から回収
+    GrantToAgent<public>(Agent:agent)<transacts>:void           # grants to one agent (no activation signal needed; re-picked on every call)
+    RevokeAll<public>()<transacts>:void                         # takes back from everyone the items granted and remembered under RevokeOnDeactivate
     RevokeFrom<public>(Agent:agent)<transacts>:void
 
 item_grant_entry_component<public> := class<final_super>(component):
@@ -114,25 +114,25 @@ item_unequip_locked_error<public> := class<computes>(unequip_item_error):
 
 item_equip_lock_component<public> := class<final_super>(component):
     ChangedEvent<public><final>:listenable(logic)
-    Lock<public>():void                                         # 回数を 1 増やす
-    Unlock<public>():void                                       # 回数を 1 減らす。0 で外せるようになる
+    Lock<public>():void                                         # increments the count by 1
+    Unlock<public>():void                                       # decrements the count by 1. At 0 the item can be unequipped again
     IsLocked<public>()<decides><transacts>:void
 ```
 
-## 前提・注意
-- プレイヤーには inventory が複数あります（武器のホットバー・建築・素材・弾薬など）。`FindRootInventory` は根の 1 つ目を返し、根が複数あるときはどれが返るかは決まりません。特定の inventory が要るときは `GetRootInventories` から型で選ぶか、`FindWeaponHotbar` を使います。
-- `FindOwnerAgent` は、inventory に入っているアイテムの entity が持ち主の子孫になる前提です。地面に落ちている・まだ配られていないアイテムでは失敗します。
-- `AwaitAnyEquipChange` は `FindRootInventory` が返す 1 つの inventory だけを見ます。根が複数あると、別の根での装備の変化は届きません。
-- `item_holder_component` は変化の知らせのあと 1 フレーム待ってから調べ直します（同じフレームに続けて来た変化の取りこぼし対策）。
-- `item_grant_component` は区画ではなく、playspace のプレイヤー全員（`GetPlayers`）に配ります。途中参加の人には自動では配りません。配りたいときは参加の知らせ（`player_manager_component` の `PlayerAddedEvent` など）を受けて `GrantToAgent` を呼びます。入れ先が見つからない人には何もせず、`exclusive_item_component` などで入らなかったアイテムも失敗は返しません。
-- `item_grant_component` が回収できるのは、`RevokeOnDeactivate` がオンのときに配った物だけです（もう持っていない物は飛ばします）。
-- `item_equip_lock_component` は `Lock` / `Unlock` を対で呼びます。inventory から取り除く（`RemoveItem`・アイテムが消える）のは止めません。シミュレーションが終わるとロックは解けます。`jetpack_ability_component`（JetpackSystem）は、これが同じ entity にあればチャージと飛び出しのあいだロックします。
+## Requirements, caveats and limits
+- A player has several inventories (weapon hotbar, building, materials, ammo, ...). `FindRootInventory` returns the first root; with several roots, which one is returned is unspecified. When you need a specific inventory, pick it by type from `GetRootInventories` or use `FindWeaponHotbar`.
+- `FindOwnerAgent` assumes the entity of an item inside an inventory is a descendant of its owner. It fails for items lying on the ground or not yet granted.
+- `AwaitAnyEquipChange` watches only the single inventory returned by `FindRootInventory`. With several roots, equip changes in another root do not arrive.
+- `item_holder_component` waits one frame after a change notification before checking again (so changes arriving back to back in the same frame are not missed).
+- `item_grant_component` grants to every player of the playspace (`GetPlayers`), not of a zone. Late joiners are not granted automatically; to do so, call `GrantToAgent` on the join notification (`PlayerAddedEvent` of `player_manager_component`, etc.). Nothing happens for players without a destination, and items that did not enter (`exclusive_item_component` etc.) do not report failure either.
+- `item_grant_component` can only take back items granted while `RevokeOnDeactivate` was on (items no longer held are skipped).
+- Call `Lock` / `Unlock` of `item_equip_lock_component` in pairs. It does not stop removal from the inventory (`RemoveItem`; the item disappearing). The lock is released when the simulation ends. `jetpack_ability_component` (JetpackSystem) locks through it during charge and launch when it is on the same entity.
 
-## 確かめ方
-- テスト：`_Test/ItemSystemTest/` の `item_system_test_component`。置き方：
-  - `player_manager_component` を付けた entity を 1 つ
-  - テスト用の entity に `item_system_test_component` を付け、`TestItem` にテスト用のアイテムの prefab を選ぶ
-  - テスト用のアイテムの prefab には `item_component`、`item_holder_component`（`Rule` = `Owned`）、`item_equip_lock_component` を付ける。重ねて持てない（stackable でない）もの（`TestItem` が既定の entity のままなら、アイテムを使う項目は飛ばす）
+## Verifying
+- Test: `item_system_test_component` in `_Test/ItemSystemTest/`. Placement:
+  - one entity with `player_manager_component`
+  - attach `item_system_test_component` to a test entity and choose a test item prefab in `TestItem`
+  - the test item prefab carries `item_component`, `item_holder_component` (`Rule` = `Owned`) and `item_equip_lock_component`. It must be non-stackable (when `TestItem` is left at the default entity, the steps that use an item are skipped)
 
-  `item_equip_lock_component` の回数の数え方と `ChangedEvent`、inventory の探し方（`GetRootInventories` / `FindRootInventory` / `GetAgentEquippedItems`）と入力の取り出し（InputSystem の `FindPlayerInput`）、`item_grant_component`（実行時に作って `GrantToAgent`）、`item_holder_component`（`Owned`）、ロック中に装備を外せないこと、`ConsumeOne` / `RemoveFromInventory` を確かめます。人の操作は要りません。数秒で終わります。結果は出力ログの `[TEST] ItemSystem`。
-- 見本（`_Samples/`）は無い。
+  Checks the counting of `item_equip_lock_component` and its `ChangedEvent`, finding inventories (`GetRootInventories` / `FindRootInventory` / `GetAgentEquippedItems`) and getting the input (InputSystem's `FindPlayerInput`), `item_grant_component` (created at runtime, then `GrantToAgent`), `item_holder_component` (`Owned`), that a locked item cannot be unequipped, and `ConsumeOne` / `RemoveFromInventory`. No human input needed. Finishes in a few seconds. The result is `[TEST] ItemSystem` in the output log.
+- No sample (`_Samples/`).

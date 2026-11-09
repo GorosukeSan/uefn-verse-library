@@ -1,36 +1,36 @@
 # ActivationSystem
 
-部品を「動かす・止める」ための共通の合図（起動 `activated_event`・停止 `deactivated_event`）を決める System です。だれが起こしたかの分かる起動の合図（`activated_by_agent_event`）も持ちます。カウントダウン・画面・付与・デバイスの橋渡しなど、起動を待つ部品はこの合図で動き出し、止まります。ゲームの流れ（GameSequenceSystem）のノードに入る・出るときにも、この合図が配下へ届きます。
+A System that defines the shared signals for "running and stopping" parts: activation `activated_event` and deactivation `deactivated_event`. It also has an activation signal that tells who triggered it (`activated_by_agent_event`). Parts that wait for activation (countdowns, screens, grants, device bridges, etc.) start and stop on these signals. Entering and leaving a node of the game flow (GameSequenceSystem) also delivers these signals to everything under the node.
 
-## 置き方
+## Placement
 
-| component | 置く場所 | すること |
+| component | Where to place | What it does |
 |---|---|---|
-| `activate_on_begin_component` | 起動したい部品の entity か、その祖先 | シミュレーション開始の次のフレームで、この entity と子孫へ起動の合図を 1 回送る |
-| `enable_on_activation_component` | 合図が届く場所（起動したい部品の entity か、その子孫） | 起動の合図で有効に、停止の合図で無効にする（`Invert` なら逆）。切り替えるのは `Targets`（空ならこの entity）に付いた、有効・無効を持つ component（`enableable`：メッシュ・ライト・インタラクト・パーティクルなど） |
+| `activate_on_begin_component` | the entity of the part to activate, or an ancestor | sends the activation signal once to this entity and its descendants on the frame after the simulation starts |
+| `enable_on_activation_component` | where the signal arrives (the entity of the part to activate, or a descendant) | enables on the activation signal and disables on the deactivation signal (reversed with `Invert`). It toggles the components with an enabled state (`enableable`: meshes, lights, interactables, particles, etc.) on `Targets` (this entity when empty) |
 
-例：「ゲームの流れを使わずに、開始と同時にカウントダウンを始め、扉を出す」
+Example: "start a countdown and show a door at start, without the game flow"
 ```
-部屋（activate_on_begin_component）
-├ タイマー（countdown_component）
-└ 扉（メッシュ + enable_on_activation_component）
+Room (activate_on_begin_component)
+├ Timer (countdown_component)
+└ Door (mesh + enable_on_activation_component)
 ```
-扉は `ApplyOnBegin` で開始時にいったん無効になり、開始の次のフレームに届く起動の合図で有効（表示）になります。タイマーも同じ合図で数え始めます。
+With `ApplyOnBegin` the door is disabled at start, then enabled (shown) by the activation signal that arrives on the frame after start. The timer starts counting on the same signal.
 
-## 設定（@editable）
-- `enable_on_activation_component.Targets : []entity = array{}` — 有効・無効を切り替える entity。空なら、この entity に付いている component を切り替える。
-- `enable_on_activation_component.Invert : logic = false` — オンなら逆にする（起動の合図で無効、停止の合図で有効）。
-- `enable_on_activation_component.ApplyOnBegin : logic = true` — オンなら、シミュレーション開始で「停止しているとき」の状態にする（起動されるまで隠しておく、など）。
+## Settings (@editable)
+- `enable_on_activation_component.Targets : []entity = array{}` — the entities to enable / disable. When empty, toggles the components attached to this entity.
+- `enable_on_activation_component.Invert : logic = false` — when on, reverses it (disable on activation, enable on deactivation).
+- `enable_on_activation_component.ApplyOnBegin : logic = true` — when on, applies the "deactivated" state at the start of the simulation (e.g. keep hidden until activated).
 
-`activate_on_begin_component` に設定はありません。
+`activate_on_begin_component` has no settings.
 
-## イベント
-- `activated_event`（scene_event、SendDown）: 項目なし。送った entity とその子孫に届く。消費しない。主な送り手：ゲームの流れ（`game_node_entered_event` はこの派生）、`activate_on_begin_component`、`interact_trigger_component`、`volume_activation_component`、`schedule_component`、`player_state_trigger_component`、`device_event_component`、ロードアウトの根（`loadout_instance_component`）、利用者のコード（`SendActivated`）。
-- `activated_by_agent_event`（`activated_event` の派生、SendDown）: `Agent : agent`（起こした人）。`activated_event` の派生なので、起動を待つ部品はそのまま動く。消費しない。送り手：だれが起こしたか分かる部品（`interact_trigger_component`（Toggle オフのとき）、`choice_menu_component`、`volume_activation_component`、`player_motion_trigger_component`、`character_action_trigger_component`（持ち主がいるとき）、`device_event_component`（鳴らした人が分かるとき））。人が要る受け手（FNDeviceSystem の `device_trigger_component`・`device_audio_component`・`device_sequence_component` など）は `FindActivatingAgent[]` で読む。
-- `deactivated_event`（scene_event、SendDown）: 項目なし。送った entity とその子孫に届く。消費しない。ゲームの流れでは `game_node_exited_event` がこの派生。ほかに `interact_trigger_component`（Toggle）、`volume_activation_component`、`schedule_component`、`player_state_trigger_component`、ロードアウトを外すとき、利用者のコード（`SendDeactivated`）。
-- 受けるもの: `enable_on_activation_component` は `activated_event`（派生も）/ `deactivated_event`。消費しない。
+## Events
+- `activated_event` (scene_event, SendDown): no fields. Reaches the sending entity and its descendants. Not consumed. Main senders: the game flow (`game_node_entered_event` is a subclass), `activate_on_begin_component`, `interact_trigger_component`, `volume_activation_component`, `schedule_component`, `player_state_trigger_component`, `device_event_component`, the loadout root (`loadout_instance_component`), your code (`SendActivated`).
+- `activated_by_agent_event` (a subclass of `activated_event`, SendDown): `Agent : agent` (who triggered it). Being a subclass of `activated_event`, parts waiting for activation run as usual. Not consumed. Senders: parts that know who triggered them (`interact_trigger_component` (with Toggle off), `choice_menu_component`, `volume_activation_component`, `player_motion_trigger_component`, `character_action_trigger_component` (when it has an owner), `device_event_component` (when the triggering player is known)). Receivers that need a player (FNDeviceSystem's `device_trigger_component`, `device_audio_component`, `device_sequence_component`, etc.) read it with `FindActivatingAgent[]`.
+- `deactivated_event` (scene_event, SendDown): no fields. Reaches the sending entity and its descendants. Not consumed. In the game flow, `game_node_exited_event` is a subclass. Also sent by `interact_trigger_component` (Toggle), `volume_activation_component`, `schedule_component`, `player_state_trigger_component`, when a loadout is removed, and your code (`SendDeactivated`).
+- Received: `enable_on_activation_component` takes `activated_event` (subclasses too) / `deactivated_event`. Not consumed.
 
-## 公開 API
+## Public API
 ```verse
 activated_event<public> := class(scene_event):
 deactivated_event<public> := class(scene_event):
@@ -38,10 +38,10 @@ deactivated_event<public> := class(scene_event):
 activated_by_agent_event<public> := class(activated_event):
     Agent<public>:agent
 
-(InEntity:entity).SendActivated<public>():void                 # InEntity とその子孫へ activated_event を送る
-(InEntity:entity).SendDeactivated<public>():void               # InEntity とその子孫へ deactivated_event を送る
-(InEntity:entity).SendActivatedBy<public>(Agent:agent):void    # InEntity とその子孫へ activated_by_agent_event を送る
-(SceneEvent:scene_event).FindActivatingAgent<public>()<decides><transacts>:agent   # activated_by_agent_event なら Agent。そうでなければ失敗
+(InEntity:entity).SendActivated<public>():void                 # sends activated_event to InEntity and its descendants
+(InEntity:entity).SendDeactivated<public>():void               # sends deactivated_event to InEntity and its descendants
+(InEntity:entity).SendActivatedBy<public>(Agent:agent):void    # sends activated_by_agent_event to InEntity and its descendants
+(SceneEvent:scene_event).FindActivatingAgent<public>()<decides><transacts>:agent   # Agent if it is an activated_by_agent_event, else fails
 
 activate_on_begin_component<public> := class<final_super>(component):
 
@@ -49,24 +49,24 @@ enable_on_activation_component<public> := class<final_super>(component):
     Targets<public>:[]entity
     Invert<public>:logic
     ApplyOnBegin<public>:logic
-    Apply<public>(Active:logic):void                # 起動した状態（true）か停止した状態（false）にする。Invert なら有効・無効は逆
-    SetEnabled<public>(Enabled:logic):void          # Targets の component を直接切り替える（IsOn は変えない）
-    IsOn<public>()<decides><transacts>:void         # 最後に起動の合図を受けた（Apply(true)）なら成功
+    Apply<public>(Active:logic):void                # puts it in the activated (true) or deactivated (false) state. Enabled / disabled are reversed with Invert
+    SetEnabled<public>(Enabled:logic):void          # toggles the Targets' components directly (does not change IsOn)
+    IsOn<public>()<decides><transacts>:void         # succeeds if the last signal received was activation (Apply(true))
 ```
 
-## 前提・注意
-- 起動の合図を送る部品は、だれが起こしたかが分かるなら `SendActivatedBy(Agent)` を使います（受け手は `activated_event` として受けられるので、送り分けは要りません）。人が要る受け手は `FindActivatingAgent[]` で読み、失敗したとき（ふつうの `activated_event`）の振る舞いを決めておきます。
-- `activate_on_begin_component` は停止の合図を送りません。止めたいときは `SendDeactivated` か、各部品の `Stop` / `Deactivate` を呼びます。
-- `activate_on_begin_component` は 1 フレーム待ってから送ります（`TickEvents.PrePhysics.Await()`。同じ木の component がみな `OnBeginSimulation` を終えてから届くように）。
-- `enable_on_activation_component` は自分自身は切り替えません。`Targets` の entity は子孫まで見ず、その entity に付いた component だけを切り替えます。
-- この System のコードに `⚠ 未検証` の項目と `@experimental` の API はありません。
+## Requirements, caveats and limits
+- A part that sends the activation signal uses `SendActivatedBy(Agent)` when it knows who triggered it (receivers can take it as an `activated_event`, so no separate sending is needed). Receivers that need a player read it with `FindActivatingAgent[]` and decide what to do when it fails (a plain `activated_event`).
+- `activate_on_begin_component` does not send the deactivation signal. To stop, call `SendDeactivated` or each part's `Stop` / `Deactivate`.
+- `activate_on_begin_component` waits one frame before sending (`TickEvents.PrePhysics.Await()`, so that every component in the same tree has finished `OnBeginSimulation` first).
+- `enable_on_activation_component` does not toggle itself. It does not look at the descendants of the `Targets` entities; it toggles only the components attached to those entities.
+- The code of this System has no `⚠ Unverified` items and no `@experimental` API.
 
-## 確かめ方
-- テスト：`_Test/ActivationSystemTest/` の `activation_system_test_component`。この component を付けた entity を 1 つ置くだけ（プレイヤーは要らない）。`SendActivated` / `SendDeactivated` が子に届くこと、`activate_on_begin_component` が同じフレームでは送らず、開始のあと 1 回だけ起動の合図を送ることを確かめます。1 秒かかりません。結果は出力ログの `[TEST] ActivationSystem`。`activated_by_agent_event` / `SendActivatedBy` / `FindActivatingAgent` と `enable_on_activation_component` はテストしていません。
-- 見本：`_Samples/` の `AbilitySample`・`InputSampleExperimentalKit`・`VirtualPointerSampleExperimentalKit`・`WidgetSample` は、`StartOnBegin` をオフにすると起動の合図（`activated_event`）で動き出します。
+## Verifying
+- Test: `activation_system_test_component` in `_Test/ActivationSystemTest/`. Just place one entity with this component (no player needed). It checks that `SendActivated` / `SendDeactivated` reach the children and that `activate_on_begin_component` does not send on the same frame but sends the activation signal exactly once after start. It takes under 1 second. Results go to the output log as `[TEST] ActivationSystem`. `activated_by_agent_event` / `SendActivatedBy` / `FindActivatingAgent` and `enable_on_activation_component` are not tested.
+- Samples: `AbilitySample`, `InputSampleExperimentalKit`, `VirtualPointerSampleExperimentalKit` and `WidgetSample` in `_Samples/` start on the activation signal (`activated_event`) when `StartOnBegin` is off.
 
-## ラウンド（fort_round_manager）
-- `activate_on_round_component`：Fortnite のラウンドが始まったら `Targets`（空ならこの entity とその子孫）へ `round_started_event`（`activated_event` の派生。`RoundNumber`）、終わったら `round_ended_event`（`deactivated_event` の派生）を送る。`FirstRound` / `LastRound` で送るラウンドを絞れる（0 なら絞らない）。`RoundStartedEvent` / `RoundEndedEvent`（listenable(int)）、`IsInRound[]`、`GetRoundNumber()`。
-- 合図で動く部品（カウントダウン・スポナー・widget・メニュー・ボリューム・ロードアウトなど）をこの配下に置くと、ラウンドのあいだだけ動き、ラウンドごとにやり直す（その部品の ActiveOnBegin / StartOnBegin はオフにする）。
-- `round_watcher`：コードからラウンドを受け取る補助（フィールドに持ち、`Start(Entity, OnStarted, OnEnded)` / `Stop()`）。`OnStarted<suspends>` はラウンドが終わると止められる。もうラウンドの途中なら `Start` の中ですぐ動く。round manager が取れなければ `Start` は false。
-- ⚠ 未検証：ラウンドの切り替えで、Scene Graph の entity と component がそのまま残るか（残る前提で、ラウンドごとのやり直しを合図で行っている）。
+## Rounds (fort_round_manager)
+- `activate_on_round_component`: when a Fortnite round starts, sends `round_started_event` (a subclass of `activated_event`, with `RoundNumber`) to `Targets` (this entity and its descendants when empty), and `round_ended_event` (a subclass of `deactivated_event`) when it ends. `FirstRound` / `LastRound` limit which rounds send (0 means no limit). `RoundStartedEvent` / `RoundEndedEvent` (listenable(int)), `IsInRound[]`, `GetRoundNumber()`.
+- Place signal-driven parts (countdowns, spawners, widgets, menus, volumes, loadouts, etc.) under it and they run only during the round and restart every round (turn off their ActiveOnBegin / StartOnBegin).
+- `round_watcher`: a helper for receiving rounds from code (hold it in a field; `Start(Entity, OnStarted, OnEnded)` / `Stop()`). `OnStarted<suspends>` is canceled when the round ends. If a round is already in progress, it runs right away inside `Start`. `Start` returns false when the round manager is not available.
+- ⚠ Unverified: whether Scene Graph entities and components persist across a round change (the per-round restart via signals assumes they do).

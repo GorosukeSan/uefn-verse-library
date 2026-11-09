@@ -6,136 +6,151 @@ using { /UnrealEngine.com/Temporary/SpatialMath }
 using { /Fortnite.com/UI }
 using { WidgetSystem }
 
-# カード 1 枚分のデータ（画面に出す中身）。card_info_component の GetCard で作るか、コードで直接作る
-#   人ごとに変わる文字（その人の記録など）は、GetCard で作ったあと WithSubtitle / WithBadge で差し替える
+# Data for one card (the content shown on screen). Built with card_info_component's GetCard or directly in code
+#   Per-person text (that person's record, etc.) is swapped in with WithSubtitle / WithBadge after building with GetCard
 widget_card<public> := struct:
-    # コードから押すときの ID（AwaitButtonChoice の ButtonIds に使う。MCPSystem の widget.press でも使える）
+    # ID used when pressing from code (used in AwaitButtonChoice's ButtonIds. Also usable with MCPSystem's widget.press)
     Id<public>:string = ""
-    # 名前（大きい文字）
+    # Name (large text)
     Title<public>:string = ""
-    # 名前の下の 1 行（空なら出さない）
+    # One line under the name (not shown if empty)
     Subtitle<public>:string = ""
-    # 説明（折り返す。空なら出さない）
+    # Description (wrapped. Not shown if empty)
     Description<public>:string = ""
-    # 右上の小さい札（難しさ・新着など。空なら出さない）
+    # Small badge at the top right (difficulty, new, etc. Not shown if empty)
     Badge<public>:string = ""
-    # 上の画像（無ければ AccentColor の帯）
+    # Image at the top (an AccentColor band if none)
     Image<public>:?texture = false
-    # カードの色（画像が無いときの帯・札の色）
+    # Card color (the band when there is no image, and the badge color)
     AccentColor<public>:color = NamedColors.SkyBlue
-    # 押せるか（false なら薄くして押せない）
+    # Whether it can be pressed (false dims it and makes it unpressable)
     Enabled<public>:logic = true
 
-# Card の Subtitle を Text にしたカード
+# A card with Card's Subtitle set to Text
 (Card:widget_card).WithSubtitle<public>(Text:string)<transacts>:widget_card =
-    widget_card{Id := Card.Id, Title := Card.Title, Subtitle := Text, Description := Card.Description, Badge := Card.Badge, Image := Card.Image, AccentColor := Card.AccentColor, Enabled := Card.Enabled}
+    CopyWidgetCard(Card, ?Subtitle := option{Text})
 
-# Card の Badge を Text にしたカード
+# A card with Card's Badge set to Text
 (Card:widget_card).WithBadge<public>(Text:string)<transacts>:widget_card =
-    widget_card{Id := Card.Id, Title := Card.Title, Subtitle := Card.Subtitle, Description := Card.Description, Badge := Text, Image := Card.Image, AccentColor := Card.AccentColor, Enabled := Card.Enabled}
+    CopyWidgetCard(Card, ?Badge := option{Text})
 
-# Card の Enabled を Value にしたカード
+# A card with Card's Enabled set to Value
 (Card:widget_card).WithEnabled<public>(Value:logic)<transacts>:widget_card =
-    widget_card{Id := Card.Id, Title := Card.Title, Subtitle := Card.Subtitle, Description := Card.Description, Badge := Card.Badge, Image := Card.Image, AccentColor := Card.AccentColor, Enabled := Value}
+    CopyWidgetCard(Card, ?Enabled := option{Value})
 
-# カードの見た目の決まり（大きさ・色・文字の大きさ）。ゲームごとに 1 つ作り、同じ画面のカードはすべて同じものを使う
+# A copy of Card. Only the fields passed are replaced (every With* goes through this)
+#   When adding a field to widget_card, add it only here (so fields do not silently vanish from a card that went through With*, the fields are listed in this one place)
+CopyWidgetCard<internal>(Card:widget_card, ?Subtitle:?string = false, ?Badge:?string = false, ?Enabled:?logic = false)<transacts>:widget_card =
+    widget_card:
+        Id := Card.Id
+        Title := Card.Title
+        Subtitle := if (Value := Subtitle?) then Value else Card.Subtitle
+        Description := Card.Description
+        Badge := if (Value := Badge?) then Value else Card.Badge
+        Image := Card.Image
+        AccentColor := Card.AccentColor
+        Enabled := if (Value := Enabled?) then Value else Card.Enabled
+
+# Card look rules (size, colors, text sizes). Make one per game; every card on the same screen uses the same one
 widget_card_style<public> := struct:
-    # カードの幅（1080p のピクセル。枠を含む）
+    # Card width (pixels at 1080p, including the border)
     WidthPx<public>:float = 320.0
-    # カードの高さ（1080p のピクセル。枠を含む）。中身がこれより短くても、この高さにそろえる（ポインターの当たりを決めるため）
+    # Card height (pixels at 1080p, including the border). Even if the content is shorter, cards are padded to this height (to decide the pointer hit area)
     HeightPx<public>:float = 420.0
-    # 画像（無ければ色の帯）の高さ
+    # Height of the image (or the color band if none)
     ImageHeightPx<public>:float = 180.0
-    # 中の余白
+    # Inner padding
     PaddingPx<public>:float = 12.0
-    # 枠の太さ（0 なら枠なし）
+    # Border thickness (0 for no border)
     BorderPx<public>:float = 4.0
-    # ふだんの枠の色・不透明度
+    # Normal border color and opacity
     BorderColor<public>:color = NamedColors.White
     BorderOpacity<public>:float = 0.0
-    # 選ばれている（マウスが乗っている・パッドのフォーカスがある）ときの枠の色
+    # Border color while selected (mouse over, or gamepad focus)
     HighlightColor<public>:color = NamedColors.Gold
-    # 選ばれているときの地の不透明度（ふだんより少し濃くして浮かせる）
+    # Background opacity while selected (a little stronger than normal, to lift it)
     HighlightBackgroundOpacity<public>:float = 1.0
-    # 押し込み（Virtual Pointer で押しているあいだ）：押した側がどれだけ奥へ沈むか（px）と、影の濃さ
+    # Press-in (while pressed with the Virtual Pointer): how far the pressed side sinks (px) and the shadow strength
     PressDepthPx<public>:float = 10.0
     PressShadeOpacity<public>:float = 0.18
-    # 地（Skin）があるとき、暗くする板をカードの縁からこれだけ内側に収める（px。マテリアルの角丸の本体の内側。外へはみ出さない）
+    # With a Skin, keep the darkening panel this far inside the card edge (px; inside the rounded body of the material, never sticking out)
     SkinInsetPx<public>:float = 9.0
-    # カードの地の色
+    # Card background color
     BackgroundColor<public>:color = NamedColors.White
-    # 地の不透明度（0.0〜1.0）
+    # Background opacity (0.0-1.0)
     BackgroundOpacity<public>:float = 0.92
-    # 名前の色・大きさ
+    # Name color and size
     TitleColor<public>:color = NamedColors.Black
     TitleSize<public>:float = 26.0
-    # 名前の下の 1 行の色・大きさ
+    # Color and size of the line under the name
     SubtitleColor<public>:color = NamedColors.DimGray
     SubtitleSize<public>:float = 18.0
-    # 説明の色・大きさ
+    # Description color and size
     DescriptionColor<public>:color = NamedColors.DimGray
     DescriptionSize<public>:float = 16.0
-    # 札の文字の色・大きさ（札の地はカードの AccentColor）
+    # Badge text color and size (the badge background is the card's AccentColor)
     BadgeTextColor<public>:color = NamedColors.White
     BadgeSize<public>:float = 16.0
-    # 押せないカードの不透明度
+    # Opacity of a card that cannot be pressed
     DisabledOpacity<public>:float = 0.45
+    # Strength of the black laid over a card that cannot be pressed (also works on a card with a replaced background (Skin). 0 lays nothing)
+    DisabledShadeOpacity<public>:float = 0.5
 
-# カードの地の見た目を差し替える（マテリアルのラメ・ホロなど）。MakeCardView の ?Skin に渡すと、カード 1 枚ごとに MakeSkin が呼ばれる
-#   ゲームの側で実装する（マテリアルのパラメータの名前はゲームのアセットごとに違うので、Library は知らない）
+# Replaces the look of the card background (material glitter, holo, etc.). Pass it as ?Skin of MakeCardView and MakeSkin is called once per card
+#   Implemented on the game side (material parameter names differ per game asset, so the Library does not know them)
 widget_card_skin<public> := interface:
-    # Card 1 枚分の地を作る
+    # Build the background for one Card
     MakeSkin<public>(Card:widget_card, Style:widget_card_style):widget_card_skin_view
 
-# カード 1 枚分の地（widget_card_skin が作る）。カードの状態が変わるたびに呼ばれる
+# The background of one card (built by widget_card_skin). Called each time the card's state changes
 widget_card_skin_view<public> := interface:
-    # カードの地として重ねる widget（カードの大きさいっぱいに広げる）
+    # The widget layered as the card background (stretched to the full card size)
     GetWidget<public>():widget
-    # 選ばれている表示（マウスが乗る・パッドのフォーカス）になった / 外れた
+    # Entered / left the selected look (mouse over, gamepad focus)
     SetHighlight<public>(Value:logic):void
-    # 押し込み。Local はカードの中の位置（左上 0,0 〜 右下 1,1）、Amount は 0（離した）〜 1（押している）
+    # Press-in. Local is the position inside the card (top-left 0,0 to bottom-right 1,1), Amount is 0 (released) to 1 (pressed)
     SetPress<public>(Local:vector2, Amount:float):void
-    # 傾き。Local（カードの中の位置）へ向かって傾く。Amount は 0（傾かない）〜 1
+    # Tilt. Tilts toward Local (position inside the card). Amount is 0 (no tilt) to 1
     SetTilt<public>(Local:vector2, Amount:float):void
-    # 擬似ライト。ライトの位置（このカードの中の位置。外なら 0〜1 の外）と強さ（0 で消す）
+    # Fake light. Light position (inside this card; outside 0-1 when off the card) and strength (0 turns it off)
     SetLight<public>(Local:vector2, Strength:float):void
-    # 消えていく度合い（0 = ふつう、1 = 見えない）
+    # Fade-out amount (0 = normal, 1 = invisible)
     SetFade<public>(Value:float):void
-    # 地がカードの画像（widget_card.Image）も描くなら true（そのときカードは texture_block を置かず、場所だけ空ける）。地は輪郭（選ばれている表示）も描く
+    # true if the background also draws the card image (widget_card.Image) (the card then places no texture_block and only reserves the space). The background also draws the outline (selected look)
     DrawsImage<public>():logic
 
-# 押せるカード 1 枚（button・枠・押し込みの影）。MakeCardView で作る。待つときは Button を View.AwaitButtonChoice に渡す
-#   見た目の状態は 2 つ：選ばれている（SetHighlighted。マウスが乗る・パッドのフォーカス）と、押し込み（SetPressed。Virtual Pointer で押しているあいだ）
-#   押し込みのあいだは選ばれている表示より押し込みを優先する（マウスの位置とハイライトが食い違っても、押し込みの見た目だけを出す）
+# One pressable card (button, border, press-in shadow). Built with MakeCardView. To wait, pass Button to View.AwaitButtonChoice
+#   Two visual states: selected (SetHighlighted: mouse over, gamepad focus) and pressed-in (SetPressed: while pressed with the Virtual Pointer)
+#   While pressed-in, the press-in takes priority over the selected look (even if the mouse position and the highlight disagree, only the pressed look is shown)
 widget_card_button<public> := class<internal>:
-    # 中身のデータ
+    # Content data
     Card<public>:widget_card
-    # 見た目の決まり
+    # Look rules
     Style<public>:widget_card_style
-    # 押せる部分（AwaitButtonChoice に渡す）
+    # The pressable part (pass to AwaitButtonChoice)
     Button<public>:button
     Frame<internal>:color_block
     Back<internal>:color_block
     Shade<internal>:color_block
     Content<internal>:widget
     Layers<internal>:overlay
-    # 地を差し替えたとき（MakeCardView の ?Skin）の、カード 1 枚分の地
+    # The background of this card when replaced (?Skin of MakeCardView)
     SkinView<internal>:?widget_card_skin_view = false
 
     var<private> Highlighted:logic = false
     var<private> Pressed:logic = false
 
-    # 選ばれている表示にする / 戻す（押し込みのあいだは見た目を変えず、覚えておくだけ）
+    # Enter / leave the selected look (while pressed-in, only remember it without changing the look)
     SetHighlighted<public>(Value:logic):void =
         set Highlighted = Value
         if (not Pressed?):
             ApplyFrame()
 
-    # 選ばれている表示なら成功する
+    # Succeeds if in the selected look
     IsHighlighted<public>()<decides><transacts>:void =
         Highlighted?
 
-    # Local（カードの中の位置。左上 0,0 〜 右下 1,1）を押し込む。押した側ほど奥へ沈み（中身がずれ）、影が濃くなる
+    # Press in at Local (position inside the card. Top-left 0,0 to bottom-right 1,1). The pressed side sinks deeper (the content shifts) and the shadow grows stronger
     SetPressed<public>(Local:vector2):void =
         set Pressed = true
         LX := Clamp01(Local.X)
@@ -147,7 +162,7 @@ widget_card_button<public> := class<internal>:
             Top := Style.BorderPx + Depth * (1.0 - LY)
             Bottom := Style.BorderPx + Depth * LY
         PlaceContent(Inset)
-        # 地（マテリアル）があれば押し込みの暗さは地が出す（四角い板は使わない）
+        # With a background (material), the background shows the press-in darkening (no square panel is used)
         Shade.SetOpacity(ToOpacity(if (SkinView?) then 0.0 else Style.PressShadeOpacity))
         if (Skin := SkinView?):
             Skin.SetPress(vector2{X := LX, Y := LY}, 1.0)
@@ -156,21 +171,21 @@ widget_card_button<public> := class<internal>:
             Frame.SetColor(Style.HighlightColor)
             Frame.SetOpacity(ToOpacity(1.0))
 
-    # 押し込みをやめる（選ばれている表示に戻す）
+    # Stop the press-in (return to the selected look)
     ClearPressed<public>():void =
         if (Pressed?):
             set Pressed = false
             PlaceContent(BaseInset())
-            Shade.SetOpacity(ToOpacity(0.0))
+            Shade.SetOpacity(ToOpacity(RestShadeOpacity()))
             if (Skin := SkinView?):
                 Skin.SetPress(vector2{X := 0.5, Y := 0.5}, 0.0)
             ApplyFrame()
 
-    # 押し込んでいるなら成功する
+    # Succeeds if pressed in
     IsPressed<public>()<decides><transacts>:void =
         Pressed?
 
-    # この人の画面に出ているあいだ、マウスが乗る・フォーカスが来るのに合わせて選ばれている表示を変える（閉じたら終わる。spawn で呼ぶ）
+    # While shown on this person's screen, change the selected look as the mouse enters or focus arrives (ends when closed. Call with spawn)
     TrackHighlight<public>(View:widget_view)<suspends>:void =
         race:
             View.HiddenEvent.Await()
@@ -181,11 +196,15 @@ widget_card_button<public> := class<internal>:
                 Button.UnhighlightEvent().Await()
                 SetHighlighted(false)
 
-    # 暗くする（ほかのカードが選ばれたときなど。0 で戻す）。押し込みの影と同じ板を使う
+    # Normal darkness (Style.DisabledShadeOpacity for a card that cannot be pressed, 0 if it can)
+    RestShadeOpacity<internal>()<transacts>:float =
+        if (Card.Enabled?) then 0.0 else Style.DisabledShadeOpacity
+
+    # Darken (when another card was chosen, etc. 0 restores). Uses the same panel as the press-in shadow
     SetDimmed<public>(Amount:float):void =
         Shade.SetOpacity(ToOpacity(Amount))
 
-    # 選ばれた演出：Seconds かけて、ライトが左上の外から右下の外へ斜めに走り、傾きがライトを追う（地（Skin）が無ければ枠が光るだけ）。毎フレーム進める
+    # Chosen effect: over Seconds, a light sweeps diagonally from outside the top-left to outside the bottom-right and the tilt follows the light (without a background (Skin), only the border lights up). Advances every frame
     PlayShine<public>(Seconds:float)<suspends>:void =
         SetHighlighted(true)
         Start := GetSimulationElapsedTime()
@@ -205,7 +224,7 @@ widget_card_button<public> := class<internal>:
 
     ApplyFrame<private>():void =
         if (Skin := SkinView?):
-            # 地（マテリアルなど）が輪郭を描くので、四角い枠は出さない
+            # The background (material, etc.) draws the outline, so no square border is shown
             Skin.SetHighlight(Highlighted)
             Frame.SetOpacity(ToOpacity(0.0))
             Back.SetOpacity(ToOpacity(0.0))
@@ -218,7 +237,7 @@ widget_card_button<public> := class<internal>:
             Frame.SetOpacity(ToOpacity(Style.BorderOpacity))
             Back.SetOpacity(ToOpacity(if (SkinView?) then 0.0 else if (Card.Enabled?) then Style.BackgroundOpacity else Style.BackgroundOpacity * Style.DisabledOpacity))
 
-    # 中身と影をふだんの位置に置く（MakeCardView から）
+    # Put the content and the shadow at their normal position (from MakeCardView)
     PlaceBase<internal>():void =
         PlaceContent(BaseInset())
 
@@ -226,22 +245,22 @@ widget_card_button<public> := class<internal>:
         margin{Left := Style.BorderPx, Top := Style.BorderPx, Right := Style.BorderPx, Bottom := Style.BorderPx}
 
     PlaceContent<private>(Inset:margin):void =
-        # 地（マテリアル）があるとき、暗くする板は角丸の本体の内側に収める
+        # With a background (material), keep the darkening panel inside the rounded body
         ShadeInset := if (SkinView?) then margin{Left := Max(Inset.Left, Style.SkinInsetPx), Top := Max(Inset.Top, Style.SkinInsetPx), Right := Max(Inset.Right, Style.SkinInsetPx), Bottom := Max(Inset.Bottom, Style.SkinInsetPx)} else Inset
         Layers.RemoveWidget(Content)
         Layers.RemoveWidget(Shade)
         Layers.AddWidget(overlay_slot{Widget := Content, HorizontalAlignment := horizontal_alignment.Fill, VerticalAlignment := vertical_alignment.Fill, Padding := Inset})
         Layers.AddWidget(overlay_slot{Widget := Shade, HorizontalAlignment := horizontal_alignment.Fill, VerticalAlignment := vertical_alignment.Fill, Padding := ShadeInset})
 
-# 押せるカード 1 枚を作る（枠・地・画像・名前・札・説明・押し込みの影）。大きさは Style の WidthPx × HeightPx
-#   ?Skin を渡すと、地（色の板）の代わりに Skin が作る widget（マテリアルなど）を敷き、選ばれている表示・押し込みを Skin にも知らせる
+# Build one pressable card (border, background, image, name, badge, description, press-in shadow). Size is Style's WidthPx x HeightPx
+#   Passing ?Skin lays the widget built by Skin (material, etc.) instead of the background (color panel), and tells Skin about the selected look and press-in too
 MakeCardView<public>(Card:widget_card, Style:widget_card_style, ?Skin:?widget_card_skin = false):widget_card_button =
     Frame := color_block{DefaultColor := Style.BorderColor, DefaultOpacity := ToOpacity(Style.BorderOpacity), DefaultDesiredSize := vector2{X := Style.WidthPx, Y := Style.HeightPx}}
     Back := color_block:
         DefaultColor := Style.BackgroundColor
         DefaultOpacity := ToOpacity(if (Card.Enabled?) then Style.BackgroundOpacity else Style.BackgroundOpacity * Style.DisabledOpacity)
     Shade := color_block{DefaultColor := NamedColors.Black, DefaultOpacity := ToOpacity(0.0)}
-    # option{...} の中は失敗しうる文脈なので、MakeSkin（no_rollback）は外で呼んでから包む
+    # The inside of option{...} is a failable context, so MakeSkin (no_rollback) is called outside and then wrapped
     var SkinView:?widget_card_skin_view = false
     if (Found := Skin?):
         Made := Found.MakeSkin(Card, Style)
@@ -261,14 +280,16 @@ MakeCardView<public>(Card:widget_card, Style:widget_card_style, ?Skin:?widget_ca
     View := widget_card_button{Card := Card, Style := Style, Button := ButtonMade, Frame := Frame, Back := Back, Shade := Shade, Content := Inner, Layers := Layers, SkinView := SkinView}
     View.ClearPressed()
     View.PlaceBase()
+    # Keep a card that cannot be pressed darkened (on a card with a replaced background, Back is transparent, so DisabledOpacity alone does not distinguish it)
+    View.SetDimmed(View.RestShadeOpacity())
     View
 
-# 押せるカード（button だけ）を作る。選ばれている表示・押し込みが要るなら MakeCardView を使う
+# Build a pressable card (button only). Use MakeCardView if you need the selected look and press-in
 MakeCardButton<public>(Card:widget_card, Style:widget_card_style):button =
     MakeCardView(Card, Style).Button
 
-# カードの見た目だけ（押せない・枠なし。一覧の表示やリザルトなど）
-#   ?ImageSpaceOnly なら画像の代わりに同じ大きさの透明な場所を置く（地が画像を描くとき）
+# Only the look of a card (not pressable, no border. For list displays, results, etc.)
+#   With ?ImageSpaceOnly, a transparent space of the same size is placed instead of the image (when the background draws the image)
 MakeCardContent<public>(Card:widget_card, Style:widget_card_style, ?ImageSpaceOnly:logic = false):widget =
     Inner := Style.WidthPx - Style.BorderPx * 2.0 - Style.PaddingPx * 2.0
     var Rows:[]widget = array{}
@@ -290,7 +311,7 @@ MakeCardContent<public>(Card:widget_card, Style:widget_card_style, ?ImageSpaceOn
         Layers.AddWidget(overlay_slot{Widget := MakeCardBadge(Card, Style), HorizontalAlignment := horizontal_alignment.Right, VerticalAlignment := vertical_alignment.Top, Padding := margin{Top := Style.PaddingPx * 1.5, Right := Style.PaddingPx * 1.5}})
     Layers
 
-# Buttons を Columns 列ずつの行に並べる（行も列も GapPx あける）。Columns が 1 未満なら 1 列
+# Lay Buttons out in rows of Columns each (GapPx between rows and between columns). Columns below 1 means 1 column
 MakeCardGrid<public>(Buttons:[]widget, Columns:int, GapPx:float):widget =
     PerRow := Max(Columns, 1)
     Grid := stack_box{Orientation := orientation.Vertical}
@@ -307,8 +328,8 @@ MakeCardGrid<public>(Buttons:[]widget, Columns:int, GapPx:float):widget =
         Grid.AddWidget(stack_box_slot{Widget := Row, HorizontalAlignment := horizontal_alignment.Center, Padding := margin{Top := GapPx * 0.5, Bottom := GapPx * 0.5}})
     Grid
 
-# MakeCardGrid で Count 枚を並べ、その真ん中を画面の割合 (CenterX, CenterY) に置いたときの、Index 枚目のカードの範囲（画面の割合。左上 X,Y・右下 X,Y）
-#   1080p（16:9）を基準にした計算。画面の比が違うと少しずれる
+# The rectangle of the Index-th card (screen ratios: top-left X,Y and bottom-right X,Y) when Count cards are laid out with MakeCardGrid and their center is placed at screen ratio (CenterX, CenterY)
+#   Computed for 1080p (16:9). It drifts slightly when the screen aspect differs
 CardGridRect<public>(Index:int, Count:int, Columns:int, GapPx:float, Style:widget_card_style, CenterX:float, CenterY:float)<transacts>:widget_screen_rect =
     PerRow := Max(Columns, 1)
     Rows := CardIntDiv(Count + PerRow - 1, PerRow)
@@ -323,14 +344,14 @@ CardGridRect<public>(Index:int, Count:int, Columns:int, GapPx:float, Style:widge
     Top := CenterY * 1080.0 - GridH * 0.5 + CellH * (RowIndex * 1.0) + GapPx * 0.5
     widget_screen_rect{MinX := Left / 1920.0, MinY := Top / 1080.0, MaxX := (Left + Style.WidthPx) / 1920.0, MaxY := (Top + Style.HeightPx) / 1080.0}
 
-# 画面の中の長方形（画面の割合。左上 0,0 〜 右下 1,1）
+# A rectangle on the screen (screen ratios. Top-left 0,0 to bottom-right 1,1)
 widget_screen_rect<public> := struct:
     MinX<public>:float = 0.0
     MinY<public>:float = 0.0
     MaxX<public>:float = 0.0
     MaxY<public>:float = 0.0
 
-# 点 (X, Y)（画面の割合）が Rect の中なら、Rect の中の位置（左上 0,0 〜 右下 1,1）を返す。外なら失敗する
+# If point (X, Y) (screen ratios) is inside Rect, return the position inside Rect (top-left 0,0 to bottom-right 1,1). Fails if outside
 (Rect:widget_screen_rect).LocalOf<public>(X:float, Y:float)<decides><transacts>:vector2 =
     X >= Rect.MinX
     X <= Rect.MaxX
@@ -342,7 +363,7 @@ widget_screen_rect<public> := struct:
     H > 0.0
     vector2{X := (X - Rect.MinX) / W, Y := (Y - Rect.MinY) / H}
 
-# 選ばれたカードの演出（Library の決まった流れ）：ほかのカードを暗くし、選ばれたカードにライトを走らせる。終わるまで待つ
+# Chosen-card effect (the Library's fixed sequence): darken the other cards and sweep a light over the chosen card. Waits until it ends
 PlayCardChosen<public>(Cards:[]widget_card_button, Chosen:int, ShineSeconds:float, ?DimAmount:float = 0.55)<suspends>:void =
     for (Index -> Card : Cards, Index <> Chosen):
         Card.ClearPressed()
@@ -352,8 +373,8 @@ PlayCardChosen<public>(Cards:[]widget_card_button, Chosen:int, ShineSeconds:floa
         Card.ClearPressed()
         Card.PlayShine(ShineSeconds)
 
-# 選ばれたカードを画面の真ん中へ寄せながら拡大して消す（Root の canvas の上に写しを作る）。Rect は元のカードの範囲（画面の割合）。終わるまで待つ
-#   写しは、Skin があれば Skin の地（新しく作る）＋画像＋名前。Seconds かけて TargetScale 倍・画面の真ん中へ、後半で消える
+# Enlarge the chosen card while moving it to the center of the screen, then fade it out (a copy is made on top of the Root canvas). Rect is the original card's rectangle (screen ratios). Waits until it ends
+#   The copy is: the Skin's background (newly built) if there is a Skin, plus the image and the name. Over Seconds it grows to TargetScale and moves to the screen center, fading out in the second half
 PlayCardZoom<public>(Root:canvas, Card:widget_card, Style:widget_card_style, Rect:widget_screen_rect, Seconds:float, TargetScale:float, ?Skin:?widget_card_skin = false)<suspends>:void =
     var SkinView:?widget_card_skin_view = false
     if (Found := Skin?):
@@ -393,7 +414,7 @@ PlayCardZoom<public>(Root:canvas, Card:widget_card, Style:widget_card_style, Rec
             Found.SetLight(vector2{X := 0.5, Y := 0.35}, 1.0)
         else:
             Spacer.SetOpacity(ToOpacity(Style.BackgroundOpacity * (1.0 - Fade)))
-        # 画面の真ん中へ寄せる（置き直す）
+        # Move toward the screen center (re-place)
         Root.RemoveWidget(Layers)
         set Slot = MakeScreenSlot(Layers, StartX + (0.5 - StartX) * Eased, StartY + (0.5 - StartY) * Eased, ?ZOrder := 1000)
         Root.AddWidget(Slot)
@@ -402,18 +423,18 @@ PlayCardZoom<public>(Root:canvas, Card:widget_card, Style:widget_card_style, Rec
         Sleep(0.0)
     Root.RemoveWidget(Layers)
 
-# Value を切り上げた int（0 以下なら 0）
+# Value rounded up to an int (0 if 0 or less)
 CardRoundUp<internal>(Value:float)<transacts>:int =
     if (Value <= 0.0) then 0 else if (Up := Ceil[Value]) then Up else 0
 
-# A を B で割った商（切り捨て。B が 0 以下なら 0）
+# Quotient of A divided by B (rounded down. 0 if B is 0 or less)
 CardIntDiv<internal>(A:int, B:int)<transacts>:int =
     if (B > 0, Q := Floor[(A * 1.0) / (B * 1.0)]) then Q else 0
 
 Clamp01<internal>(Value:float)<transacts>:float =
     if (Value < 0.0) then 0.0 else if (Value > 1.0) then 1.0 else Value
 
-# 画像（無ければ AccentColor の帯）
+# Image (an AccentColor band if none)
 MakeCardImage<internal>(Card:widget_card, Style:widget_card_style, WidthPx:float):widget =
     Size := vector2{X := WidthPx, Y := Style.ImageHeightPx}
     if (Image := Card.Image?):

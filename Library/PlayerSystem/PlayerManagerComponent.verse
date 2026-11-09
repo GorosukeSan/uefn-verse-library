@@ -2,39 +2,39 @@ using { /Verse.org/SceneGraph }
 using { /Verse.org/Simulation }
 using { SceneGraphSystem }
 
-# プレイヤーが参加して slot ができた知らせ
-# 方向：区画全体（SendScoped。区画が無ければ世界全体）
-# 送り手：player_manager_component。受け手：参加者数・slot を見る component（人数の条件など）。消費しない
-# 前提：slot はこの知らせより前に作られている（受けた側で FindSlot が成功する）
+# Notification that a player joined and a slot was created
+# Direction: the whole scope (SendScoped; the whole world if there is no scope)
+# Sender: player_manager_component. Receivers: components that look at the player count or slots (player count conditions etc.). Not consumed
+# Requirements: the slot is created before this notification (FindSlot succeeds on the receiving side)
 player_added_event<public> := class(scene_event):
-    # 送った player_manager_component
+    # The player_manager_component that sent it
     Manager<public>:player_manager_component
-    # 参加した人（player。slot を探すときは player[Agent] で戻す）
+    # The player who joined (a player; cast back with player[Agent] to look up the slot)
     Agent<public>:agent
 
-# プレイヤーが退出して slot が消えた知らせ
-# 方向：区画全体（SendScoped。区画が無ければ世界全体）
-# 送り手：player_manager_component。受け手：参加者数・slot を見る component。消費しない
-# 前提：slot はこの知らせより前に消されている（受けた側で FindSlot は失敗する）
+# Notification that a player left and the slot was removed
+# Direction: the whole scope (SendScoped; the whole world if there is no scope)
+# Sender: player_manager_component. Receivers: components that look at the player count or slots. Not consumed
+# Requirements: the slot is removed before this notification (FindSlot fails on the receiving side)
 player_removed_event<public> := class(scene_event):
-    # 送った player_manager_component
+    # The player_manager_component that sent it
     Manager<public>:player_manager_component
-    # 退出した人
+    # The player who left
     Agent<public>:agent
 
-# 役割：参加したプレイヤーごとに slot の entity を子に作り、退出で消す。参加と退出を全体へ知らせる
-# 置き方：エディターで entity に付ける。区画（または世界）に 1 つ（ほかの部品から FindScopedComponent で探される）
-# 知らせ：参加は player_added_event、退出は player_removed_event を区画全体へ送る。実行時に作った entity のコードは、同じタイミングで Signal される PlayerAddedEvent / PlayerRemovedEvent を Await / Subscribe できる
-# 前提・注意：シミュレーション開始の時点ですでにいるプレイヤーの slot は、この component の OnBeginSimulation の中で作られ、そのときの知らせ（scene event・event とも）は、まだ購読していない相手には届かない。あとから購読するコードは、先に GetSlots で今いる人を見てから、PlayerAddedEvent を待つ
+# Role: creates a slot entity as a child for every player who joins and removes it when they leave. Notifies everyone of joins and leaves
+# Placement: attach to an entity in the editor. One per scope (or world) (other parts find it with FindScopedComponent)
+# Notifies: sends player_added_event on join and player_removed_event on leave to the whole scope. Code of entities created at runtime can Await / Subscribe PlayerAddedEvent / PlayerRemovedEvent, which are Signaled at the same time
+# Requirements / Notes: slots of players already present when the simulation starts are created inside this component's OnBeginSimulation, and the notifications at that time (both scene event and event) do not reach anyone not yet subscribed. Code that subscribes later should first look at who is present with GetSlots, then wait for PlayerAddedEvent
 player_manager_component<public> := class<final_super>(component):
 
     PlayerAddedEventInternal<private><final>:event(player) = event(player){}
     PlayerRemovedEventInternal<private><final>:event(player) = event(player){}
 
-    # 参加して slot ができたあとに、その人で届く（Await / Subscribe する。外から Signal はできない）
+    # Delivered with the player after they join and the slot is created (Await / Subscribe to it; it cannot be Signaled from outside)
     PlayerAddedEvent<public><final>:listenable(player) = MakeProxyListenable(PlayerAddedEventInternal)
 
-    # 退出して slot が消えたあとに、その人で届く（Await / Subscribe する。外から Signal はできない）
+    # Delivered with the player after they leave and the slot is removed (Await / Subscribe to it; it cannot be Signaled from outside)
     PlayerRemovedEvent<public><final>:listenable(player) = MakeProxyListenable(PlayerRemovedEventInternal)
 
     var PlayerSubscription<private>:?cancelable = false
@@ -48,15 +48,15 @@ player_manager_component<public> := class<final_super>(component):
         set PlayerSubscription = false
         (super:)OnEndSimulation()
 
-    # 今いる slot の数（直下の player_slot_component の数）。参加の処理より前（OnBeginSimulation の前）は 0
+    # Number of current slots (the number of direct-child player_slot_components). 0 before joins are processed (before OnBeginSimulation)
     GetPlayerCount<public>()<reads>:int =
         Entity.GetChildComponents(player_slot_component).Length
 
-    # 今いる全員の slot（直下の player_slot_component。並び順は決まっていない）。参加の処理より前は空
+    # Slots of everyone present (direct-child player_slot_components; order is undefined). Empty before joins are processed
     GetSlots<public>()<reads>:[]player_slot_component =
         Entity.GetChildComponents(player_slot_component)
 
-    # Player の slot を探す。slot は実行時に作られるので、その人の参加の処理より前（player_added_event / PlayerAddedEvent より前）と、退出のあとは失敗する
+    # Finds Player's slot. Slots are created at runtime, so this fails before that player's join is processed (before player_added_event / PlayerAddedEvent) and after they leave
     FindSlot<public>(Player:player)<decides><reads>:player_slot_component =
         first:
             Slot : Entity.GetChildComponents(player_slot_component)

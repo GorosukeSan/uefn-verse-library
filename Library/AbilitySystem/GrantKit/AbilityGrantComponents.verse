@@ -8,13 +8,13 @@ using { SceneGraphSystem }
 using { AbilitySystem }
 using { AbilitySystem.TooltipKit }
 
-# 役割：区画の全プレイヤー（途中参加も）に、同じ entity の能力すべてを付与する。退出した人からは剥奪する。持ち主のいる entity（CharacterSystem のキャラクターの中など）なら、持ち主にだけ付与する
-# いつ：GrantOnBegin が true ならシミュレーション開始から（参加したらすぐ）。false なら起動の合図（activated_event）から停止の合図（deactivated_event）まで
-# 置き方：エディターで、能力（ability_component の派生）と同じ entity に付ける
-# 前提：区画（または世界）に player_manager_component が 1 つ
+# Role: grants every ability on the same entity to every player in the scope (including late joiners). Revokes from players who leave. On an entity with an owner (inside a CharacterSystem character, etc.), grants only to the owner
+# When: from the start of the simulation (as soon as a player joins) when GrantOnBegin is true. When false, from the activation signal (activated_event) until the deactivation signal (deactivated_event)
+# Placement: attach in the editor to the same entity as the ability (an ability_component subclass)
+# Requirements: one player_manager_component in the scope (or the world)
 ability_grant_players_component<public> := class<final_super>(component):
 
-    # true（既定）ならシミュレーション開始から全員に付与する。false なら起動の合図から停止の合図まで
+    # true (default) grants to everyone from the start of the simulation. false grants from the activation signal until the deactivation signal
     @editable:
         ToolTip := AbilityGrantOnBeginToolTip
         Categories := array{AbilityGrantCategory}
@@ -38,12 +38,12 @@ ability_grant_players_component<public> := class<final_super>(component):
         Feed.Stop()
         (super:)OnEndSimulation()
 
-    # 付与しているあいだ成功する
+    # Succeeds while granting
     IsGranting<public>()<decides><transacts>:void =
         Feed.IsRunning[]
 
-# 役割：アイテムの持ち手（同じ entity の item_holder_component が決める。装備しているあいだ／持っているあいだ）に、同じ entity の能力すべてを付与し、外れたら剥奪する
-# 置き方：エディターで、アイテムの entity（item_component・item_holder_component・能力と同じ entity）に付ける
+# Role: grants every ability on the same entity to the item's holder (decided by the item_holder_component on the same entity: while equipped / while held) and revokes when it is dropped
+# Placement: attach in the editor to the item's entity (the same entity as item_component, item_holder_component and the ability)
 ability_grant_item_component<public> := class<final_super>(component):
 
     Set<private>:ability_grant_set = ability_grant_set{}
@@ -71,10 +71,10 @@ ability_grant_item_component<public> := class<final_super>(component):
     OnHolderRemoved<private>(Agent:agent):void =
         Set.RevokeFrom(Entity, Agent)
 
-# 役割：条件（直下の子の condition_component の派生）を満たしているあいだ、区画の全プレイヤー（途中参加も）に、同じ entity の能力すべてを付与する。満たさなくなったら剥奪する。持ち主のいる entity なら、持ち主にだけ付与する（キャラクターの中で「しゃがんでいるあいだだけ使える」能力など）
-# 置き方：エディターで、能力と同じ entity に付ける
-# 子：condition_component の派生を付けた entity を直下に 1 つ（複数の条件は condition_all / condition_any でまとめる）
-# 前提：区画（または世界）に player_manager_component が 1 つ
+# Role: while the condition (a condition_component subclass directly under it) holds, grants every ability on the same entity to every player in the scope (including late joiners). Revokes when it no longer holds. On an entity with an owner, grants only to the owner (e.g. an ability inside a character "usable only while crouching")
+# Placement: attach in the editor to the same entity as the ability
+# Children: one entity with a condition_component subclass directly under it (combine several conditions with condition_all / condition_any)
+# Requirements: one player_manager_component in the scope (or the world)
 ability_grant_condition_component<public> := class<final_super>(component):
 
     Feed<private>:ability_player_feed = ability_player_feed{}
@@ -98,6 +98,6 @@ ability_grant_condition_component<public> := class<final_super>(component):
         else:
             Feed.Stop()
 
-    # 付与しているあいだ（条件を満たしているあいだ）成功する
+    # Succeeds while granting (while the condition holds)
     IsGranting<public>()<decides><transacts>:void =
         Feed.IsRunning[]

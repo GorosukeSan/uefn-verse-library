@@ -6,13 +6,13 @@ using { PickupSystem }
 using { MCPSystem }
 using { MCPSystem.TooltipKit }
 
-# 役割：Pickup ツールセット（宛先 "pickup"）。拾える物（PickupSystem の pickup_component）の一覧・拾わせる・戻す・隠す、効果を与える（拾った物はそのまま）・プレイヤーの効果の一覧・終える
-#   拾える物は entity の番号か名前で指す。プレイヤーは番号
-# 置き方：受け箱と同じ entity に付けるとよい
-# タグ：自分の entity に mcp_controllable_tag と mcp_session_restorable_tag（キー "pickups"：拾える物の出ている / 消えている）。タグの名前 pickup_effect_tag を知らせる
+# Role: Pickup toolset (destination "pickup"). Lists pickups (PickupSystem's pickup_component); pick, restore, hide, grant the effect (the pickup stays), list and end a player's effects
+#   A pickup is addressed by entity id or name. Players by index
+# Placement: best attached to the same entity as the inbox
+# Tags: mcp_controllable_tag and mcp_session_restorable_tag on its own entity (key "pickups": whether each pickup is shown / hidden). Reports the tag name pickup_effect_tag
 mcp_pickup_toolset_component<public> := class<final_super>(component, mcp_controllable, mcp_tag_provider, mcp_session_restorable):
 
-    # 同じツールセットを複数置くときの名前（空なら "pickup" だけで届く）
+    # Name used when the same toolset is placed more than once (when empty, "pickup" alone reaches it)
     @editable:
         ToolTip := McpToolsetIdToolTip
         Categories := array{McpCategory}
@@ -38,13 +38,13 @@ mcp_pickup_toolset_component<public> := class<final_super>(component, mcp_contro
 
     McpTools<override>()<transacts>:[]mcp_tool =
         array:
-            McpTool("list", "拾える物の一覧。data に [\{id,name,display_name,available,pos\}]", array{})
-            McpTool("pick", "拾わせる（拾ったときと同じ。効果を与えて隠す）", array{McpArg("pickup", "entity", "拾える物"), McpArg("player", "player", "番号")})
-            McpTool("grant", "拾える物の効果だけを与える（拾える物はそのまま）", array{McpArg("pickup", "entity", "拾える物"), McpArg("player", "player", "番号")})
-            McpTool("restore", "戻す（また拾えるようにする）", array{McpArg("pickup", "entity", "拾える物")})
-            McpTool("hide", "隠す（拾えなくする）", array{McpArg("pickup", "entity", "拾える物")})
-            McpTool("effects", "プレイヤーが受けている効果。data に [\{id,effect_id,remaining\}]", array{McpArg("player", "player", "番号")})
-            McpTool("end_effects", "プレイヤーの効果をすべて終える", array{McpArg("player", "player", "番号")})
+            McpTool("list", "List of pickups. data: [\{id,name,display_name,available,pos\}]", array{})
+            McpTool("pick", "Makes the player pick it up (same as a real pickup: grants the effect and hides it)", array{McpArg("pickup", "entity", "pickup"), McpArg("player", "player", "player index")})
+            McpTool("grant", "Grants only the pickup's effect (the pickup stays)", array{McpArg("pickup", "entity", "pickup"), McpArg("player", "player", "player index")})
+            McpTool("restore", "Restores it (can be picked up again)", array{McpArg("pickup", "entity", "pickup")})
+            McpTool("hide", "Hides it (cannot be picked up)", array{McpArg("pickup", "entity", "pickup")})
+            McpTool("effects", "Effects the player currently has. data: [\{id,effect_id,remaining\}]", array{McpArg("player", "player", "player index")})
+            McpTool("end_effects", "Ends all of the player's effects", array{McpArg("player", "player", "player index")})
 
     McpHandle<override>(Call:mcp_call):mcp_reply =
         Tool := Call.Tool
@@ -74,19 +74,19 @@ mcp_pickup_toolset_component<public> := class<final_super>(component, mcp_contro
             else if (Player := Call.FindPlayer["player"]):
                 if (Tool = "pick"):
                     Picked := Pickup.TryPickup(Player)
-                    if (Picked?) then McpOk("picked") else McpFail("failed", "cannot pick（出ていない・組の外・絞り込み）")
+                    if (Picked?) then McpOk("picked") else McpFail("failed", "cannot pick (hidden, outside the group, or filtered out)")
                 else if (Tool = "grant"):
                     Granted := Entity.GrantPickupEffect(Player, Pickup.Effect, Pickup.Entity.GetGlobalTransform(), option{Pickup.Entity})
                     if (Effect := Granted?):
                         McpOkData("granted", McpObject(array{McpField("id", "{Inbox.GetHandle(Effect)}")}))
                     else:
-                        McpFail("failed", "effect not granted（Ignore の重ねがけなど）")
+                        McpFail("failed", "effect not granted (e.g. stacking with Ignore)")
                 else:
                     McpFail("unknown_tool", Tool)
             else:
                 McpFail("no_player", Call.GetStringOr("player", ""))
         else:
-            McpFail("no_entity", "pickup（pickup_component の entity）")
+            McpFail("no_entity", "pickup (an entity with pickup_component)")
 
     FindPickups<private>()<transacts>:[]pickup_component =
         if (World := Entity.GetSimulationEntity[]):
@@ -94,7 +94,7 @@ mcp_pickup_toolset_component<public> := class<final_super>(component, mcp_contro
         else:
             array{}
 
-    # ---- 状態（キー "pickups"：{"<キー>":true/false}。キーは名前か置いた位置） ----
+    # ---- State (key "pickups": {"<key>":true/false}; the key is the name or the placed position) ----
 
     McpSessionKey<override>()<transacts>:string = "pickups"
 

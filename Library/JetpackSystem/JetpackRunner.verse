@@ -11,9 +11,9 @@ using { ItemSystem.RuleKit }
 using { MovementSystem }
 using { PlayerSystem }
 
-# 役割：jetpack_ability_component が、付与された 1 人ごとに作って動かす実行時のクラス。チャージ・飛び出し・落下の軽減・着地の見張りを持つ（動きの詳しいことは jetpack_ability_component の説明）
-# タグ：チャージから飛び終わるまで（速度を操っているあいだ）、その人（agent）に jetpack_boosting_tag を付ける（SetLocked と同じ区間）
-# 前提：毎フレームの待ちは、持ち主の component から渡された Tick（TickEvents.PrePhysics）で行う。経過時間は、その戻り値（前のフレームからの秒数）を足して測る
+# Role: runtime class that jetpack_ability_component creates and runs for each granted agent. Holds the charge, launch, glide and landing watch (see jetpack_ability_component for the details of the movement)
+# Tags: from charging until the flight ends (while the velocity is being controlled), attaches jetpack_boosting_tag to the agent (the same span as SetLocked)
+# Requirements: per-frame waits use the Tick (TickEvents.PrePhysics) passed in from the owning component. Elapsed time is measured by summing its return value (seconds since the previous frame)
 jetpack_runner<internal> := class<internal>:
 
     Ability<internal>:jetpack_ability_component
@@ -27,13 +27,13 @@ jetpack_runner<internal> := class<internal>:
     var Paid<private>:logic = false
     var Locked<private>:logic = false
     var ChargeElapsed<private>:float = 0.0
-    # チャージから飛び終わるまで、その人（agent）に付ける jetpack_boosting_tag
+    # The jetpack_boosting_tag attached to the agent from charging until the flight ends
     BoostingTags<private>:player_tag_holder = player_tag_holder{}
 
     LaunchEvent<private>:event(tuple(vector3, float)) = event(tuple(vector3, float)){}
     AirborneEvent<private>:event() = event(){}
 
-    # 剥奪されるまで動く。エネルギーが 0 になってアイテムごと消すとき（ShouldRemoveItemWhenEmpty）だけ true を返して終わる
+    # Runs until revoked. Returns true and ends only when energy reached 0 and the whole item should disappear (ShouldRemoveItemWhenEmpty)
     Run<internal>()<suspends>:logic =
         Ability.SetBoostRatio(Agent, 1.0)
         race:
@@ -46,7 +46,7 @@ jetpack_runner<internal> := class<internal>:
             RunInput()
             RunFlights()
 
-    # 止められたときの後片付け（ロックを外す）
+    # Cleanup when stopped (releases the lock)
     Cleanup<internal>():void =
         SetLocked(false)
 
@@ -71,7 +71,7 @@ jetpack_runner<internal> := class<internal>:
             if (IsEmpty[], Ability.ShouldRemoveItemWhenEmpty[]):
                 return true
 
-    # チャージを始めてから着地するまで、毎フレーム着地を確かめる（地上にいるあいだは何もしない）
+    # From the start of charging until landing, checks for landing every frame (does nothing while on the ground)
     WatchLanding<private>()<suspends>:void =
         loop:
             AirborneEvent.Await()
@@ -106,7 +106,7 @@ jetpack_runner<internal> := class<internal>:
             DeltaTime := Tick.Await()
             set ChargeElapsed += DeltaTime
             if (FortCharacter := Agent.GetFortCharacter[]):
-                # SetLinearVelocity はメートル毎秒
+                # SetLinearVelocity is in meters per second
                 FortCharacter.SetLinearVelocity(vector3{Up := Ability.ChargeRiseSpeedCmPerSecond / 100.0})
             Ability.SetBoostRatio(Agent, Min(ChargeElapsed / Ability.MaxChargeSeconds, 1.0))
             if (ChargeElapsed >= Ability.MaxChargeSeconds):
@@ -134,7 +134,7 @@ jetpack_runner<internal> := class<internal>:
         defer:
             EndItemAbilities(Effects)
             set Flying = false
-        # SetLinearVelocity はメートル毎秒
+        # SetLinearVelocity is in meters per second
         InitialSpeed := Ability.BoostSpeedCmPerSecond / 100.0 * Scale
         Duration := Ability.BoostDurationSeconds * Scale
         var Elapsed:float = 0.0
@@ -149,7 +149,7 @@ jetpack_runner<internal> := class<internal>:
                 break
             set Elapsed += Tick.Await()
 
-    # 離すか着地するまで、落ちる速さを抑えてエネルギーを使う。エネルギーが 0 になって止めたときは true
+    # Until released or landed, limits the fall speed and consumes energy. true when stopped because energy reached 0
     GlideUntilReleased<private>()<suspends>:logic =
         Effects := Ability.Entity.BeginItemAbilities(Agent)
         defer:
@@ -174,7 +174,7 @@ jetpack_runner<internal> := class<internal>:
 
     SlowFall<private>(FortCharacter:fort_character):void =
         Velocity := FortCharacter.GetLinearVelocity()
-        # GetLinearVelocity / SetLinearVelocity はメートル毎秒
+        # GetLinearVelocity / SetLinearVelocity are in meters per second
         MaxFall := Ability.GlideMaxFallSpeedCmPerSecond / 100.0
         if (Velocity.Up < -MaxFall):
             FortCharacter.SetLinearVelocity(vector3{Forward := Velocity.Forward, Left := Velocity.Left, Up := -MaxFall})

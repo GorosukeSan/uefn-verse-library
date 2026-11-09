@@ -4,18 +4,18 @@ using { ActivationSystem }
 using { SceneGraphSystem }
 using { PlayerSystem.TooltipKit }
 
-# 役割：持ち主のキャラクターが State（空中・しゃがみ・スプリント・水中など）に入ったら Targets へ起動の合図（activated_event）、出たら停止の合図（deactivated_event）を送る（「空中にいるあいだだけ光る」「しゃがんでいるあいだだけ HUD を出す」など）
-#   毎フレーム状態を見て、変わったときだけ送る。開始時に State に入っていれば、すぐ起動の合図を送る
-# 置き方：エディターで、ロードアウトのプレハブ（loadout_component の Prefab）の中に置く（持ち主がいないと何もしない。出力ログに出る）
-# 外から：IsActive（今 State にいるか）
+# Role: when the owner's character enters State (in air, crouching, sprinting, in water, etc.), sends the activation signal (activated_event) to Targets; when it leaves, the deactivation signal (deactivated_event) ("glow only while airborne", "show the HUD only while crouching", etc.)
+#   Looks at the state every frame and sends only when it changes. If already in State at start, sends the activation signal right away
+# Placement: in the editor, place it inside a loadout prefab (loadout_component's Prefab) (does nothing without an owner; reported in the output log)
+# From outside: IsActive (whether currently in State)
 player_state_trigger_component<public> := class<final_super>(component):
 
-    # 見張る状態。既定 InAir
+    # The state to watch. Default InAir
     @editable:
         ToolTip := PlayerStateToolTip
         Categories := array{PlayerMotionCategory}
     State<public>:player_motion_state = player_motion_state.InAir
-    # 合図を送る entity（その entity と子孫に届く）。空なら、この entity の子の entity へ送る（自分の entity へは送らない）
+    # Entities that receive the signals (reaches the entity and its descendants). If empty, sent to the child entities of this entity (not to its own entity)
     @editable:
         ToolTip := PlayerStateTargetsToolTip
         Categories := array{PlayerMotionCategory}
@@ -32,7 +32,7 @@ player_state_trigger_component<public> := class<final_super>(component):
             Watchers.Start(Entity, OnMotion, TickEvents.PrePhysics)
             set Subscription = option{TickEvents.PrePhysics.Subscribe(OnTick)}
         else:
-            Print("[player_state_trigger_component] 持ち主がいません（ロードアウトのプレハブの中など、持ち主のいる場所に置いてください）")
+            Print("[player_state_trigger_component] No owner (place it somewhere with an owner, such as inside a loadout prefab)")
 
     var<private> Subscription:?cancelable = false
 
@@ -44,7 +44,7 @@ player_state_trigger_component<public> := class<final_super>(component):
             Send(false)
         (super:)OnEndSimulation()
 
-    # 持ち主が今 State にいるなら成功する
+    # Succeeds if the owner is currently in State
     IsActive<public>()<decides><transacts>:void =
         Inside?
 

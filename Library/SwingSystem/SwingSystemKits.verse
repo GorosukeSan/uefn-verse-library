@@ -1,7 +1,7 @@
-# SwingSystem の Kit をライブラリの外（利用者のコード）から使えるように public にする。
-# フォルダから作られるモジュールは既定で internal なので、宣言しないと外から using できない。
+# Make the Kits of SwingSystem public so that code outside the library (your code) can use them.
+# A module created from a folder is internal by default, so it cannot be used from outside without this declaration.
 ModifierKit<public> := module {}
-# TargetKit：つかまれる物の振る舞い（swing_life_component・swing_lift_component）
+# TargetKit: behaviors of grabbable objects (swing_life_component / swing_lift_component)
 TargetKit<public> := module {}
-# TooltipKit：ToolTip・Categories の文言（message）
+# TooltipKit: ToolTip / Categories text (message)
 TooltipKit<public> := module {}

@@ -3,16 +3,16 @@ using { /Verse.org/Simulation }
 using { /UnrealEngine.com/Itemization }
 using { ItemSystem.TooltipKit }
 
-# exclusive_item_component が、すでに同じ種類を持っている人の inventory に入るのを断ったときの理由
+# The reason exclusive_item_component refused to enter the inventory of someone who already has the same type
 item_exclusive_error<public> := class<computes>(add_item_error):
 
-# 役割：ItemType（アイテムの prefab の型）のアイテムを 1 人 1 つまでにする。すでに持っている人の inventory には 2 つ目が入らない（拾えない・配られても入らない）
-# 置き方：エディターで entity に付ける
-# 同じ entity：item_component
-# 外から：inventory に入るとき（add_item_query_event）に、持ち主のアイテム（GetAgentItems）を調べて断る
+# Role: limits items of ItemType (the item's prefab type) to one per player. A second one does not enter the inventory of someone who already has one (cannot be picked up; not received when granted)
+# Placement: attach to an entity in the editor
+# Same entity: item_component
+# From outside: when entering an inventory (add_item_query_event), inspects the owner's items (GetAgentItems) and refuses
 exclusive_item_component<public> := class<final_super>(component):
 
-    # 1 人 1 つまでにするアイテムの prefab の型。ふつうはこのアイテム自身の prefab。既定の entity のままだと、どのアイテムを持っていても入らない
+    # The prefab type of the item limited to one per player. Usually this item's own prefab. Left at the default entity, nothing enters while any item is held
     @editable:
         ToolTip := ExclusiveItemTypeToolTip
         Categories := array{ExclusiveCategory}
@@ -27,7 +27,7 @@ exclusive_item_component<public> := class<final_super>(component):
             Query.AddError(item_exclusive_error{})
         false
 
-    # Inventory の持ち主（いれば）の持ち物すべて、いなければ Inventory の中（FindItems）から、自分以外の ItemType のアイテムを探す
+    # Looks for an ItemType item other than this one among all items of the Inventory's owner (if any), otherwise inside the Inventory (FindItems)
     HasOtherItem<private>(Inventory:inventory_component)<decides><transacts>:void =
         Items := if (Agent := Inventory.Entity.FindOwnerAgent[]) then Agent.GetAgentItems() else Inventory.FindItems(item_component)
         first:

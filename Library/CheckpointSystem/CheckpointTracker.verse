@@ -6,12 +6,12 @@ using { MovementSystem }
 using { PlayerSystem }
 using { SceneGraphSystem }
 
-# 役割：同じ区画のチェックポイント（checkpoint_component）をまとめて見る実行時のクラス。1 フレームに 1 回、区画の全プレイヤーの位置を 1 人 1 回だけ問い合わせ、登録されたチェックポイントすべてと比べる
-#   （チェックポイントごとに全員の位置を問い合わせると、数 × 人数ぶんの問い合わせになるため。比べる計算は数 × 人数のまま）
-# 作り方：作らない。checkpoint_component がシミュレーション開始時に、同じ区画で先に始まったチェックポイントが使っているものを探して登録する（無ければ自分で作る）
-# いつ：登録されたチェックポイントの 1 つ（Driver）が自分の TickEvents.PrePhysics を購読し、毎フレーム Tick を呼ぶ。Driver が止まったら残りの 1 つに引き継ぎ、1 つも無くなったら止まる
-# 前提：区画（game_scope_component。無ければ世界）に player_manager_component が 1 つ。最初に見つけたものを覚えておく（見つかるまでは 1 秒ごとに探す）
-# ⚠ 未検証：Driver のチェックポイントの entity を無効（disabled）にしたとき、その TickEvents が止まって全部の確認が止まるか（止まるなら、無効にするチェックポイントは区画から外す）
+# Role: runtime class that watches the checkpoints (checkpoint_component) of one zone together. Once per frame, queries the position of every player in the zone exactly once per player and compares it with every registered checkpoint
+#   (querying everyone's position per checkpoint would mean checkpoints x players queries. The comparison itself is still checkpoints x players)
+# Creation: not created directly. At simulation start, checkpoint_component looks for the tracker used by a checkpoint that started earlier in the same zone and registers with it (creating one when there is none)
+# When: one of the registered checkpoints (the Driver) subscribes to its own TickEvents.PrePhysics and calls Tick every frame. When the Driver stops, one of the remaining checkpoints takes over; when none is left, it stops
+# Requirements: one player_manager_component in the zone (game_scope_component; the world when there is none). The first one found is remembered (looked up every second until found)
+# ⚠ Unverified: whether disabling the Driver checkpoint's entity stops its TickEvents and thereby every check (if so, remove checkpoints to be disabled from the zone)
 checkpoint_tracker<internal> := class<internal>:
 
     LookupIntervalSeconds<private>:float = 1.0
@@ -22,14 +22,14 @@ checkpoint_tracker<internal> := class<internal>:
     var ManagerSubscription<private>:?cancelable = false
     var NextLookupSeconds<private>:float = 0.0
 
-    # Checkpoint を見る対象に加える（もう入っていれば何もしない）。Driver がいなければ Checkpoint を Driver にする
+    # Adds Checkpoint to the watched set (does nothing when already in it). Makes Checkpoint the Driver when there is none
     Register<internal>(Checkpoint:checkpoint_component):void =
         if (not Checkpoints.Find[Checkpoint]):
             set Checkpoints += array{Checkpoint}
         if (not Driver?):
             SetDriver(option{Checkpoint})
 
-    # Checkpoint を見る対象から外す。Driver だったら残りの最初の 1 つに引き継ぐ。1 つも無くなったら player_manager_component の購読もやめる
+    # Removes Checkpoint from the watched set. If it was the Driver, the first remaining one takes over. When none is left, also unsubscribes from player_manager_component
     Unregister<internal>(Checkpoint:checkpoint_component):void =
         set Checkpoints = for (Other : Checkpoints, Other <> Checkpoint):
             Other
@@ -41,7 +41,7 @@ checkpoint_tracker<internal> := class<internal>:
             set Manager = false
             set NextLookupSeconds = 0.0
 
-    # 1 フレーム分：チェックポイントの位置を 1 回ずつ読み、プレイヤーごとに位置を 1 回読んで、すべてのチェックポイントと比べる
+    # One frame: reads each checkpoint's position once, reads each player's position once, and compares with every checkpoint
     Tick<internal>():void =
         MaybeManager := GetManager()
         if (Found := MaybeManager?):
@@ -56,7 +56,7 @@ checkpoint_tracker<internal> := class<internal>:
             var Position:vector3 = Start
             for (Checkpoint : Targets):
                 Moved := Checkpoint.CheckAt(Agent, FortCharacter, Position)
-                # 上面へ移したら、残りのチェックポイントは移したあとの位置と比べる（チェックポイントごとに位置を読んでいたときと同じ結果にする）
+                # After moving the player onto a top face, compare the remaining checkpoints with the moved position (same result as when each checkpoint read the position itself)
                 if (Moved?, Lifted := FortCharacter.FindGlobalTranslation[]):
                     set Position = Lifted
 

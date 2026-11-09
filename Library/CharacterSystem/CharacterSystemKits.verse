@@ -1,18 +1,24 @@
-# CharacterSystem の Kit をライブラリの外（利用者のコード）から使えるように public にする。
-# フォルダから作られるモジュールは既定で internal なので、宣言しないと外から using できない。
-# 見た目・操作（向き・Fortnite のキャラクターとの連動・入力の割り当て）
+# Make the CharacterSystem Kits public so they can be used from outside the library (your code).
+# A module created from a folder is internal by default, so without this declaration it cannot be `using`-ed from outside.
+# Look and control (facing, syncing with the Fortnite character, input bindings)
 BodyKit<public> := module {}
-# バフ・能力の付与（起動の合図のあいだ、体に倍率・空中ジャンプ・ダッシュの許可を重ねる。PickupSystem の効果のプレハブに入れて使う）
+# Buffs / ability grants (while an activation signal is on, stack multipliers, air jumps and dash permission onto the body. Put it in a PickupSystem effect prefab)
 BuffKit<public> := module {}
-# 付いていくカメラ（@experimental のカメラ API を使う。VerseShare で「実験的を含む」のプロジェクトにだけ配る）
+# Follow camera (uses the @experimental camera API. VerseShare distributes it only to projects marked "include experimental")
 CameraExperimentalKit<public> := module {}
-# 状態の条件
+# Action cells (the shared charge used by air jump, boost and wall kick, plus grants added from effect prefabs)
+CellKit<public> := module {}
+# State conditions
 ConditionKit<public> := module {}
-# 起きたことへの反応
+# Reactions to things that happened
 EventKit<public> := module {}
-# 動き（歩く・ジャンプ・ダッシュ）
+# Visual motion (shell squash / stretch, keeping the inner core centered)
+LookKit<public> := module {}
+# Movement (walk, jump, dash)
 MoveKit<public> := module {}
-# 面に触れた・乗った（触れられる面・触れたことを決める部品・動く面に乗せる）
+# Touching / standing on surfaces (touchable surfaces, the component that decides a touch, riding moving surfaces)
 SurfaceKit<public> := module {}
-# エディターに出す説明（message）
+# Descriptions shown in the editor (message)
 TooltipKit<public> := module {}
+# Clinging to walls and ceilings (the slime ability. Picked up through GrantCling of BuffKit's character_move_grant_component)
+ClingKit<public> := module {}

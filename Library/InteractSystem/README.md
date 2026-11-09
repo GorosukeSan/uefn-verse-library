@@ -1,42 +1,42 @@
 # InteractSystem
 
-その場で「押して使う」物（ボタン・レバー・宝箱など）を、ライブラリの起動の合図（ActivationSystem）と条件（ConditionSystem）につなぐ System です。押す仕組みそのものは Epic 標準の `interactable_component`（`basic_interactable_component` など）を使い、この System は同じ entity に置いて結果を受け取ります。
+A System that connects things you "press to use" on the spot (buttons, levers, chests, etc.) to the library's activation signals (ActivationSystem) and conditions (ConditionSystem). The pressing itself is handled by Epic's standard `interactable_component` (`basic_interactable_component`, etc.); this System sits on the same entity and receives the result.
 
-## 置き方
+## Placement
 
-| component | 置く場所 | すること |
+| component | Where to place | What it does |
 |---|---|---|
-| `interact_trigger_component` | `interactable_component` と同じ entity | 押し終わるたびに `interacted_event` を上へ送り、`Targets` の entity へ起動の合図（だれが押したか付き）を送る。`Toggle` なら起動の合図と停止の合図を交互に送る（スイッチ・レバー） |
-| `interacted_condition_component`（ConditionKit） | `game_transition_component` か `condition_all` / `condition_any` の entity の直下 | 押されたら満たす。起動の合図を受ける（ノードに入り直す）と満たさなくなる |
-| `interact_gate_component`（GateKit） | `interactable_component` と同じ entity。起動の合図が届く場所（`interact_trigger_component` の `Targets` で選ばれた entity でもよい） | 開いているあいだだけ押せる。起動の合図で開き、停止の合図で閉じる（`OpenOnBegin` なら最初から開く。コードから `Open` / `Close`） |
+| `interact_trigger_component` | the same entity as `interactable_component` | each time a press completes, sends `interacted_event` upward and the activation signal (with who pressed) to the `Targets` entities. With `Toggle`, alternates the activation and deactivation signals (switch, lever) |
+| `interacted_condition_component` (ConditionKit) | directly under the entity of a `game_transition_component` or `condition_all` / `condition_any` | satisfied once pressed. Receiving the activation signal (re-entering the node) makes it unsatisfied again |
+| `interact_gate_component` (GateKit) | the same entity as `interactable_component`, where the activation signal arrives (it may also be an entity chosen in `interact_trigger_component`'s `Targets`) | pressable only while open. Opens on the activation signal and closes on the deactivation signal (open from the start with `OpenOnBegin`; `Open` / `Close` from code) |
 
-例：「ボタンを押したら次へ」
+Example: "press the button to go to the next node"
 ```
-ノード（game_node_component）
-└ 次へ（game_transition_component）
-  └ 押された（interacted_condition_component）
-    └ ボタン（basic_interactable_component + interact_trigger_component + interact_gate_component + メッシュ）
+Node (game_node_component)
+└ Next (game_transition_component)
+  └ Pressed (interacted_condition_component)
+    └ Button (basic_interactable_component + interact_trigger_component + interact_gate_component + mesh)
 ```
-ノードに入ると起動の合図がボタンまで届いてゲートが開き、ノードを出ると閉じます。ボタンを条件の下に置けないときは、条件の `Trigger` でボタンの entity を選びます。
+Entering the node delivers the activation signal down to the button and opens the gate; leaving the node closes it. When the button cannot be placed under the condition, pick the button's entity in the condition's `Trigger`.
 
-## 設定（@editable）
-- `interact_trigger_component.Targets : []entity = array{}` — 押し終わるたびに起動の合図を送る entity（その entity と子孫に届く）。空なら上へ知らせるだけ。
-- `interact_trigger_component.Toggle : logic = false` — オンなら、押すたびに `Targets` へ起動の合図と停止の合図を交互に送る。オフなら起動の合図だけ。
-- `interacted_condition_component.Trigger : ?entity = false` — 見張るボタン（`interact_trigger_component` を付けた entity）。子孫に置いたボタンは選ばなくても数える。
-- `interact_gate_component.OpenOnBegin : logic = false` — オンならシミュレーション開始から押せる（ゲームの流れを使わないとき）。オフなら起動の合図から。
+## Settings (@editable)
+- `interact_trigger_component.Targets : []entity = array{}` — entities that receive the activation signal each time a press completes (the entity and its descendants receive it). When empty, only notifies upward.
+- `interact_trigger_component.Toggle : logic = false` — when on, alternates the activation and deactivation signals to `Targets` on each press. When off, only the activation signal.
+- `interacted_condition_component.Trigger : ?entity = false` — the button to watch (an entity with `interact_trigger_component`). Buttons placed among the descendants count without being picked.
+- `interact_gate_component.OpenOnBegin : logic = false` — when on, pressable from the start of the simulation (when the game flow is not used). When off, from the activation signal.
 
-押せる回数・待ち時間・押し続ける長さは `basic_interactable_component` の設定で決めます。
+The number of presses, the cooldown and the hold duration are set on `basic_interactable_component`.
 
-## イベント
-- `interacted_event`（scene_event、SendUp）: `Trigger : interact_trigger_component`、`Agent : agent`。`interact_trigger_component` が押し終わるたびに、自分の entity から根まで送る。受け手は祖先の `interacted_condition_component` など。消費しない。
-- `interact_trigger_component` の listenable（どれも `listenable(agent)`、外から Signal はできない）
-  - `InteractedEvent` — 押し終わるたびに、押した人で届く。
-  - `StartedEvent` — 押し始めるたびに届く（長押しなら押し始めた時点。押す時間が 0 なら `InteractedEvent` と同じ時点）。
-  - `CanceledEvent` — 長押しを途中でやめるたびに届く。
-- 送るもの: `interact_trigger_component` は `Targets` へ、`Toggle` がオフなら `activated_by_agent_event`（`SendActivatedBy`。受け手は `FindActivatingAgent[]` で押した人を読める）。`Toggle` がオンなら `activated_event` / `deactivated_event`（`SendActivated` / `SendDeactivated`。押した人は付かない）。
-- 受けるもの: `interacted_condition_component` は `activated_event`（元に戻す）と `interacted_event`（満たす）。`interact_gate_component` は `activated_event`（開く）/ `deactivated_event`（閉じる）。
+## Events
+- `interacted_event` (scene_event, SendUp): `Trigger : interact_trigger_component`, `Agent : agent`. Sent by `interact_trigger_component` from its entity to the root each time a press completes. Receivers are ancestor `interacted_condition_component`s etc. Not consumed.
+- listenables of `interact_trigger_component` (all `listenable(agent)`; cannot be signaled from outside)
+  - `InteractedEvent` — fires with the presser each time a press completes.
+  - `StartedEvent` — fires each time a press starts (for a hold, when the hold starts; with a hold time of 0, at the same time as `InteractedEvent`).
+  - `CanceledEvent` — fires each time a hold is canceled mid-way.
+- Sent: `interact_trigger_component` sends to `Targets`: with `Toggle` off, `activated_by_agent_event` (`SendActivatedBy`; receivers read the presser with `FindActivatingAgent[]`). With `Toggle` on, `activated_event` / `deactivated_event` (`SendActivated` / `SendDeactivated`; no presser attached).
+- Received: `interacted_condition_component` takes `activated_event` (reset) and `interacted_event` (satisfied). `interact_gate_component` takes `activated_event` (open) / `deactivated_event` (close).
 
-## 公開 API
+## Public API
 ```verse
 interacted_event<public> := class(scene_event):
     Trigger<public>:interact_trigger_component
@@ -45,16 +45,16 @@ interacted_event<public> := class(scene_event):
 interact_trigger_component<public> := class<final_super>(component):
     Targets<public>:[]entity
     Toggle<public>:logic
-    InteractedEvent<public><final>:listenable(agent)   # 押し終わった
-    StartedEvent<public><final>:listenable(agent)      # 押し始めた
-    CanceledEvent<public><final>:listenable(agent)     # 長押しを途中でやめた
-    IsOn<public>()<decides><transacts>:void            # Toggle で今オンなら成功。Toggle でなければ失敗
-    SetOn<public>(Value:logic):void                    # オン・オフを決めて Targets へ合図を送る。変わらなければ何もしない
+    InteractedEvent<public><final>:listenable(agent)   # press completed
+    StartedEvent<public><final>:listenable(agent)      # press started
+    CanceledEvent<public><final>:listenable(agent)     # hold canceled mid-way
+    IsOn<public>()<decides><transacts>:void            # with Toggle, succeeds if on now. Fails without Toggle
+    SetOn<public>(Value:logic):void                    # sets on / off and signals Targets. Does nothing if unchanged
 
 # ConditionKit
 interacted_condition_component<public> := class<final_super>(condition_component):
     Trigger<public>:?entity
-    Reset<public>():void                               # 満たさない状態に戻す
+    Reset<public>():void                               # back to unsatisfied
 
 # GateKit
 interact_gate_component<public> := class<final_super>(component):
@@ -63,17 +63,17 @@ interact_gate_component<public> := class<final_super>(component):
     Close<public>():void
     IsOpen<public>()<decides><transacts>:void
 ```
-実行時のコードからは `Trigger.InteractedEvent.Await()` で押した人を待てます。
+From run-time code, `Trigger.InteractedEvent.Await()` waits for the presser.
 
-## 前提・注意
-- 同じ entity に `interactable_component`（`basic_interactable_component` など）が要る。無ければトリガーもゲートも何もしない。
-- `StartedEvent` は v43.00 から押し始めた時点で届く（コードのコメントによる）。
-- `IsOn` / `SetOn` のオン・オフは `Toggle` のための状態。`Toggle` でないとき `IsOn` は失敗する。`SetOn` は `Toggle` でなくても使え、`Targets` へ起動・停止の合図を送る（押した人は付かない）。
-- ゲームの流れの外で使うときは、`interact_gate_component.OpenOnBegin` をオンにする（ゲートを置かなければいつでも押せる）か、コードから `Open` / `Close` を呼ぶ。
-- `interact_gate_component` は開始時と最初のフレームの 2 回、`interactable_component` の Enable / Disable を合わせる（同じ entity の `interactable_component` の開始の処理のあとにもう一度合わせるため）。
-- `interacted_condition_component` は `Trigger` で選んだボタンの `InteractedEvent` と、子孫のボタンから上がってくる `interacted_event` の両方で満たす。
-- 実験的な API は使っていない。
+## Requirements, caveats and limits
+- An `interactable_component` (`basic_interactable_component`, etc.) is needed on the same entity. Without it, neither the trigger nor the gate does anything.
+- `StartedEvent` fires when the press starts as of v43.00 (according to the code comments).
+- The on / off of `IsOn` / `SetOn` is the state for `Toggle`. Without `Toggle`, `IsOn` fails. `SetOn` works without `Toggle` too and sends the activation / deactivation signal to `Targets` (no presser attached).
+- Outside the game flow, turn on `interact_gate_component.OpenOnBegin` (without a gate it is always pressable) or call `Open` / `Close` from code.
+- `interact_gate_component` syncs the `interactable_component`'s Enable / Disable twice: at start and on the first frame (to sync again after the start processing of the `interactable_component` on the same entity).
+- `interacted_condition_component` is satisfied both by the `InteractedEvent` of the button picked in `Trigger` and by `interacted_event`s coming up from descendant buttons.
+- No experimental API is used.
 
-## 確かめ方
-- テスト：`_Test/InteractSystemTest/` の `interact_system_test_component`。ボタンの entity（メッシュ + `basic_interactable_component` + `interact_trigger_component` + `interact_gate_component`、`OpenOnBegin` はオフ）をプレイヤーの近くに置き、テストの component を付けた entity の `Button` にボタンの entity を入れる。ゲートの `Open` / `Close` / `IsOpen`、`InteractedEvent`、`interacted_condition_component`（`Trigger` で選ぶ形）と `Reset` を確かめる。ログに「interact」と出たら 15 秒以内にボタンを押す（押さなければその項目だけ失敗）。長くて 16 秒ほど。結果は出力ログの `[TEST] InteractSystem`。
-- 見本（`_Samples/`）はありません。
+## Verifying
+- Test: `interact_system_test_component` in `_Test/InteractSystemTest/`. Place a button entity (mesh + `basic_interactable_component` + `interact_trigger_component` + `interact_gate_component`, `OpenOnBegin` off) near the player, and put the button entity into `Button` on the entity with the test component. It checks the gate's `Open` / `Close` / `IsOpen`, `InteractedEvent`, `interacted_condition_component` (picked with `Trigger`) and `Reset`. When the log says "interact", press the button within 15 seconds (otherwise only that item fails). About 16 seconds at most. Results go to the output log as `[TEST] InteractSystem`.
+- There is no sample (`_Samples/`).

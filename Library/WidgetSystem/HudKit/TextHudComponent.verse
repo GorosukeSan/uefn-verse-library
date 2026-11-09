@@ -7,60 +7,60 @@ using { SceneGraphSystem }
 using { WidgetSystem }
 using { WidgetSystem.TooltipKit }
 
-# 文字の HUD の文字を変える依頼
-# 方向：利用者の component から text_hud_component の entity へ（SendDown か、祖先から SendDown）
-# 送り手：利用者の component。受け手：text_hud_component。消費しない
+# Request to change the text of the text HUD
+# Direction: from your component to the text_hud_component's entity (SendDown, or SendDown from an ancestor)
+# Sender: your component. Receiver: text_hud_component. Not consumed
 hud_text_request_event<public> := class(scene_event):
-    # 変える相手。false なら全員（これから出す人も）
+    # Whose text to change. false means everyone (including people shown later)
     Agent<public>:?agent = false
-    # 出す文字
+    # Text to show
     Text<public>:message
 
-# 役割：画面の決まった位置に文字を 1 行出す HUD（操作は奪わない）。全員に同じ文字（SetText）か、人ごとの文字（SetTextFor）を出す。空の文字なら見えない
-# 置き方：エディターで entity に付ける。だれに・いつ出すかは player_widget_component の設定（Audience・ActiveOnBegin・起動の合図）
-# 知らせを受ける：hud_text_request_event で文字を変える（コードを書かずに、ほかの部品から変えるとき）
-# 外から：SetText / SetTextFor / ClearTextFor
+# Role: HUD that shows one line of text at a fixed screen position (does not take input). Shows the same text for everyone (SetText) or per-person text (SetTextFor). Empty text is invisible
+# Placement: in the editor, attach to an entity. Who sees it and when is set on player_widget_component (Audience, ActiveOnBegin, activation signals)
+# Notifications received: changes the text via hud_text_request_event (to change from other parts without writing code)
+# From outside: SetText / SetTextFor / ClearTextFor
 text_hud_component<public> := class<final_super>(player_widget_component):
 
-    # 最初に出す文字
+    # Text shown at first
     @editable:
         ToolTip := TextHudTextToolTip
         Categories := array{TextHudCategory}
     Text<public>:string = ""
-    # 置く位置（画面の横の割合 0.0〜1.0）。既定 0.5
+    # Position (horizontal screen ratio 0.0-1.0). Default 0.5
     @editable_number(float):
         ToolTip := WidgetPositionXToolTip
         Categories := array{TextHudCategory}
         MinValue := option{0.0}
         MaxValue := option{1.0}
     PositionXRatio<public>:float = 0.5
-    # 置く位置（画面の縦の割合 0.0〜1.0）。既定 0.15
+    # Position (vertical screen ratio 0.0-1.0). Default 0.15
     @editable_number(float):
         ToolTip := WidgetPositionYToolTip
         Categories := array{TextHudCategory}
         MinValue := option{0.0}
         MaxValue := option{1.0}
     PositionYRatio<public>:float = 0.15
-    # 文字の色。既定 白
+    # Text color. Default white
     @editable:
         ToolTip := TextHudColorToolTip
         Categories := array{TextHudCategory}
     TextColor<public>:color = NamedColors.White
-    # 文字の大きさ（1080p のピクセル）。0 なら Fortnite の既定の大きさ。既定 0
+    # Text size (pixels at 1080p). 0 uses Fortnite's default size. Default 0
     @editable_number(float):
         ToolTip := TextHudSizeToolTip
         Categories := array{TextHudCategory}
         MinValue := option{0.0}
         MaxValue := option{400.0}
     TextSize<public>:float = 0.0
-    # 文字の後ろの板の不透明度（0.0〜1.0）。0 なら板を出さない。既定 0
+    # Opacity of the panel behind the text (0.0-1.0). 0 shows no panel. Default 0
     @editable_number(float):
         ToolTip := TextHudBackgroundOpacityToolTip
         Categories := array{TextHudCategory}
         MinValue := option{0.0}
         MaxValue := option{1.0}
     BackgroundOpacity<public>:float = 0.0
-    # 文字の後ろの板の色。既定 黒
+    # Color of the panel behind the text. Default black
     @editable:
         ToolTip := TextHudBackgroundColorToolTip
         Categories := array{TextHudCategory}
@@ -70,20 +70,20 @@ text_hud_component<public> := class<final_super>(player_widget_component):
     var<private> AgentTexts:[agent]message = map{}
     var<private> Blocks:[agent]text_block = map{}
 
-    # 全員の文字を Value にする（人ごとの文字は消す）。これから出す人にもこの文字を出す
+    # Set everyone's text to Value (per-person text is cleared). People shown later also get this text
     SetText<public>(Value:message):void =
         set SharedText = option{Value}
         set AgentTexts = map{}
         for (Agent -> Block : Blocks):
             Block.SetText(Value)
 
-    # Agent の文字だけを Value にする（全員の文字より優先）
+    # Set only Agent's text to Value (takes priority over everyone's text)
     SetTextFor<public>(Agent:agent, Value:message):void =
         if (set AgentTexts[Agent] = Value) {}
         if (Block := Blocks[Agent]):
             Block.SetText(Value)
 
-    # Agent の人ごとの文字を消し、全員の文字に戻す
+    # Clear Agent's per-person text and go back to everyone's text
     ClearTextFor<public>(Agent:agent):void =
         set AgentTexts = AgentTexts.RemoveKey(Agent)
         if (Block := Blocks[Agent]):

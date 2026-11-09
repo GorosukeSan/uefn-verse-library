@@ -6,13 +6,13 @@ using { CountdownSystem }
 using { MCPSystem }
 using { MCPSystem.TooltipKit }
 
-# 役割：Countdown ツールセット（宛先 "countdown"）。カウントダウン（CountdownSystem の countdown_component）の一覧・状態、始める・やり直す・止める・一時停止・続ける・秒を足す
-#   カウントダウンは entity の番号か名前で指す
-# 置き方：受け箱と同じ entity に付けるとよい
-# タグ：自分の entity に mcp_controllable_tag と mcp_session_restorable_tag（キー "countdowns"：残り秒・一時停止）
+# Role: Countdown toolset (destination "countdown"). Lists countdowns (CountdownSystem's countdown_component) and their state; start, restart, stop, pause, resume, add seconds
+#   A countdown is addressed by entity id or name
+# Placement: best attached to the same entity as the inbox
+# Tags: mcp_controllable_tag and mcp_session_restorable_tag on its own entity (key "countdowns": remaining seconds, paused)
 mcp_countdown_toolset_component<public> := class<final_super>(component, mcp_controllable, mcp_session_restorable):
 
-    # 同じツールセットを複数置くときの名前（空なら "countdown" だけで届く）
+    # Name used when the same toolset is placed more than once (when empty, "countdown" alone reaches it)
     @editable:
         ToolTip := McpToolsetIdToolTip
         Categories := array{McpCategory}
@@ -35,14 +35,14 @@ mcp_countdown_toolset_component<public> := class<final_super>(component, mcp_con
 
     McpTools<override>()<transacts>:[]mcp_tool =
         array:
-            McpTool("list", "カウントダウンの一覧。data に [\{id,name,running,paused,remaining,duration\}]", array{})
-            McpTool("state", "カウントダウン 1 つの状態", array{McpArg("countdown", "entity", "カウントダウン")})
-            McpTool("start", "数えていなければ始める", array{McpArg("countdown", "entity", "カウントダウン")})
-            McpTool("restart", "最初から数え直す（seconds で今回だけの長さ）", array{McpArg("countdown", "entity", "カウントダウン"), McpOptArg("seconds", "float", "秒")})
-            McpTool("stop", "やめる（数え終わりは知らせない）", array{McpArg("countdown", "entity", "カウントダウン")})
-            McpTool("pause", "一時停止", array{McpArg("countdown", "entity", "カウントダウン")})
-            McpTool("resume", "続ける", array{McpArg("countdown", "entity", "カウントダウン")})
-            McpTool("add_seconds", "残りを増やす（マイナスで減らす）", array{McpArg("countdown", "entity", "カウントダウン"), McpArg("seconds", "float", "秒")})
+            McpTool("list", "List of countdowns. data: [\{id,name,running,paused,remaining,duration\}]", array{})
+            McpTool("state", "State of one countdown", array{McpArg("countdown", "entity", "countdown")})
+            McpTool("start", "Starts it if not counting", array{McpArg("countdown", "entity", "countdown")})
+            McpTool("restart", "Counts again from the start (seconds overrides the duration for this run only)", array{McpArg("countdown", "entity", "countdown"), McpOptArg("seconds", "float", "seconds")})
+            McpTool("stop", "Stops it (no finished notification)", array{McpArg("countdown", "entity", "countdown")})
+            McpTool("pause", "Pauses", array{McpArg("countdown", "entity", "countdown")})
+            McpTool("resume", "Resumes", array{McpArg("countdown", "entity", "countdown")})
+            McpTool("add_seconds", "Adds to the remaining time (negative subtracts)", array{McpArg("countdown", "entity", "countdown"), McpArg("seconds", "float", "seconds")})
 
     McpHandle<override>(Call:mcp_call):mcp_reply =
         Tool := Call.Tool
@@ -80,7 +80,7 @@ mcp_countdown_toolset_component<public> := class<final_super>(component, mcp_con
             else:
                 McpFail("unknown_tool", Tool)
         else:
-            McpFail("no_entity", "countdown（countdown_component の entity）")
+            McpFail("no_entity", "countdown (an entity with countdown_component)")
 
     FindCountdowns<private>()<transacts>:[]countdown_component =
         if (World := Entity.GetSimulationEntity[]):
@@ -88,7 +88,7 @@ mcp_countdown_toolset_component<public> := class<final_super>(component, mcp_con
         else:
             array{}
 
-    # ---- 状態（キー "countdowns"：{"<キー>":{"running","paused","remaining"}}） ----
+    # ---- State (key "countdowns": {"<key>":{"running","paused","remaining"}}) ----
 
     McpSessionKey<override>()<transacts>:string = "countdowns"
 

@@ -4,8 +4,8 @@ using { /Fortnite.com/Characters }
 using { /Fortnite.com/Abilities }
 using { /UnrealEngine.com/Abilities }
 
-# InEntity（アイテムの entity）に付いた fort_item_ability_component の ItemEquippedAbilities を、Agent のキャラクターに使う（演出を出す）。使えたものを返すので、止めるときに EndItemAbilities に渡す
-# fort_item_ability_component が無い・キャラクターがいないときは何もせず空を返す
+# Uses the ItemEquippedAbilities of the fort_item_ability_component on InEntity (the item's entity) on Agent's character (plays the effects). Returns the ones that could be used, so pass them to EndItemAbilities when stopping
+# Does nothing and returns an empty array when there is no fort_item_ability_component or no character
 (InEntity:entity).BeginItemAbilities<public>(Agent:agent):[]ability_effect =
     var Effects:[]ability_effect = array{}
     if:
@@ -20,7 +20,7 @@ using { /UnrealEngine.com/Abilities }
                     set Effects += array{Effect}
     Effects
 
-# BeginItemAbilities が返した演出を止める（止められないものは取り除く）
+# Stops the effects returned by BeginItemAbilities (removes the ones that cannot be canceled)
 EndItemAbilities<public>(Effects:[]ability_effect):void =
     for (Effect : Effects):
         Canceled := logic{Effect.AbilityComponent.Cancel[ability_ended{}]}

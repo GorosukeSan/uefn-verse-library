@@ -4,13 +4,13 @@ using { ActivationSystem }
 using { VolumeSystem }
 using { VolumeSystem.TooltipKit }
 
-# 役割：ボリュームに最初の 1 人が入ったら起動の合図（activated_event）、最後の 1 人が出たら停止の合図（deactivated_event）を Targets へ送る（「人がいるあいだだけ動く」仕掛け）
-# 置き方：エディターで、player_volume_component と同じ entity か、その祖先の entity に付ける
-# 知らせ：Targets の entity とその子孫へ activated_event / deactivated_event。Targets が空なら、この entity の子の entity へ送る（自分の entity と、player_volume_component の付いた entity へは送らない。ボリュームが停止の合図で止まってしまうため）
-# 前提：数えるのは、この entity か子孫のボリュームから上へ届いた知らせ（複数あれば合計の人数）
+# Role: sends the activation signal (activated_event) to Targets when the first player enters the volume and the deactivation signal (deactivated_event) when the last one leaves (a gadget that "runs only while someone is there")
+# Placement: attach in the editor to the same entity as player_volume_component, or to an ancestor entity
+# Notifies: activated_event / deactivated_event to the Targets entities and their descendants. When Targets is empty, sends to this entity's child entities (never to its own entity or to entities carrying player_volume_component, because the deactivation signal would stop the volume)
+# Requirements: counts the notifications that reach this entity from volumes on it or its descendants (summed when there are several)
 volume_activation_component<public> := class<final_super>(component):
 
-    # 最初の 1 人が入ったら起動の合図、最後の 1 人が出たら停止の合図を送る entity（その entity と子孫に届く）。空ならこの entity の子へ送る
+    # Entities that receive the activation signal when the first player enters and the deactivation signal when the last one leaves (the entity and its descendants receive it). When empty, sends to this entity's children
     @editable:
         ToolTip := VolumeActivationTargetsToolTip
         Categories := array{VolumeCategory}
@@ -32,7 +32,7 @@ volume_activation_component<public> := class<final_super>(component):
                     Send(false, false)
         false
 
-    # 今だれかが中にいれば成功する
+    # Succeeds if someone is inside now
     IsOccupied<public>()<decides><transacts>:void =
         not IsEmpty()?
 
@@ -43,7 +43,7 @@ volume_activation_component<public> := class<final_super>(component):
 
     Send<private>(Activate:logic, By:?agent):void =
         Receivers := if (Targets.Length > 0) then Targets else Entity.GetEntities()
-        # ボリュームの entity には送らない（停止の合図でボリュームが止まり、二度と出入りを調べなくなるため）
+        # Skip the volume's entity (the deactivation signal would stop the volume and it would never check again)
         for (Receiver : Receivers, not Receiver.GetComponent[player_volume_component]):
             if (Activate?):
                 if (Agent := By?):

@@ -7,7 +7,7 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：SelectedEvent の知らせを数える（Subscribe に Record を渡す）
+# Role: counts SelectedEvent notifications (pass Record to Subscribe)
 test_mode_recorder<public> := class:
 
     var<private> Count:int = 0
@@ -21,10 +21,10 @@ test_mode_recorder<public> := class:
 
     GetLast<public>()<transacts>:?game_mode_component = LastMode
 
-# 役割：ModeSystem の動作確認。Order による候補の並び、受け付け（Activate / Deactivate）、Select の決め方（AllowReselect）、Clear、SelectedEvent と mode_changed_event、mode_selected_condition、投票（mode_vote_component）を確かめる
-# テストのレベル：この component を付けた entity を 1 つ置く（mode_select はテストが実行時に作る）。区画（または世界）にほかの mode_select_component を置かない
-#   投票のテストには player_manager_component とプレイヤー 1 人が要る（いなければ投票のテストは飛ばす）
-# 結果：出力ログの [TEST] ModeSystem
+# Role: verification of ModeSystem. Checks candidate order by Order, accepting (Activate / Deactivate), how Select decides (AllowReselect), Clear, SelectedEvent and mode_changed_event, mode_selected_condition, and voting (mode_vote_component)
+# Test level: one entity with this component (mode_select is created by the test at runtime). Do not place another mode_select_component in the scope (or the world)
+#   The voting test needs player_manager_component and one player (skipped when absent)
+# Result: [TEST] ModeSystem in the output log
 mode_system_test_component<public> := class<final_super>(component):
 
     var<private> ChangedEventCount:int = 0
@@ -42,7 +42,7 @@ mode_system_test_component<public> := class<final_super>(component):
         Vote := mode_vote_component{Entity := SelectEntity}
         SelectEntity.AddComponents(array{Selector, Vote})
         Entity.AddEntities(array{SelectEntity})
-        # 並び順が Order と逆になるように足す
+        # add them in the reverse of Order
         Second := AddMode(SelectEntity, "Second", 1)
         First := AddMode(SelectEntity, "First", 0)
 

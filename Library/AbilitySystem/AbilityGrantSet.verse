@@ -3,7 +3,7 @@ using { /Verse.org/Simulation }
 using { PlayerSystem }
 using { SceneGraphSystem }
 
-# 役割：付与の component が使う部品。自分が付与した人を覚え、Owner の entity の能力すべてへ Grant / Revoke する（ほかの付与元が付与した分には触らない）
+# Role: a part used by grant components. Remembers the players it granted and calls Grant / Revoke on every ability of the Owner entity (never touches grants made by other granters)
 ability_grant_set<internal> := class<unique>:
 
     var<private> Granted:[]agent = array{}
@@ -28,7 +28,7 @@ ability_grant_set<internal> := class<unique>:
     IsGrantedBy<internal>(Agent:agent)<decides><transacts>:void =
         Granted.Find[Agent]
 
-# 役割：付与の component が使う部品。動いているあいだ、Owner の区画の全プレイヤー（途中参加も）に付与し、退出した人・止めたときに剥奪する。Owner が持ち主のいる entity（slot の下。キャラクターの中など）なら、持ち主にだけ付与する
+# Role: a part used by grant components. While running, grants to every player in Owner's scope (including late joiners) and revokes from players who leave and when stopped. If Owner is an entity with an owner (under a slot, inside a character, etc.), grants only to the owner
 ability_player_feed<internal> := class<unique>:
 
     Set<internal>:ability_grant_set = ability_grant_set{}
@@ -43,7 +43,7 @@ ability_player_feed<internal> := class<unique>:
         if (Owner?):
             return
         set Owner = option{InOwner}
-        # 持ち主のいる entity（キャラクターの中など）なら、その人にだけ付与する
+        # On an entity with an owner (inside a character, etc.), grant only to that player
         if (OwningPlayer := InOwner.FindOwningPlayer[]):
             Set.GrantTo(InOwner, OwningPlayer)
         else if (Manager := InOwner.FindScopedComponent[player_manager_component]):

@@ -1,9 +1,9 @@
-# VolumeSystem の Kit をライブラリの外（利用者のコード）から使えるように public にする。
-# フォルダから作られるモジュールは既定で internal なので、宣言しないと外から using できない。
+# Makes the VolumeSystem Kits public so they can be used from outside the library (your code).
+# Modules created from folders are internal by default, so without this declaration they cannot be used with using from outside.
 ActivationKit<public> := module {}
-# ボリュームの中の人数の条件（player_in_volume_condition_component）
+# Condition on the number of players inside a volume (player_in_volume_condition_component)
 ConditionKit<public> := module {}
-# エディターに出す説明（message）
+# Descriptions shown in the editor (message)
 TooltipKit<public> := module {}
-# ボリュームの中の人にだけ widget を出す部品
+# Part that shows a widget only to players inside a volume
 WidgetKit<public> := module {}

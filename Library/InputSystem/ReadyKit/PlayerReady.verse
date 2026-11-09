@@ -3,38 +3,38 @@ using { /Verse.org/Simulation }
 using { PlayerSystem }
 using { SceneGraphSystem }
 
-# 方向：区画全体（SendScoped。区画が無ければ世界全体）
-# 送り手：player_ready_component（の view）。受け手：all_players_ready_condition_component など。消費しない
+# Direction: the whole zone (SendScoped; the whole world when there is no zone)
+# Sender: player_ready_component (its view). Receivers: all_players_ready_condition_component, etc. Not consumed
 player_ready_changed_event<public> := class(scene_event):
-    # 送った player_ready_component
+    # The player_ready_component that sent it
     PlayerReady<public>:player_ready_component
-    # 切り替えた人
+    # The agent who toggled
     Agent<public>:agent
-    # 切り替えたあと準備 OK なら true
+    # true when ready after the toggle
     Ready<public>:logic
 
-# 「準備 OK」の人（agent）に付くタグ。player_ready_component（の view）が付け外しする（ほかの System は Agent.HasPlayerTag[player_ready_tag] で確かめる）
+# Tag attached to a "ready" agent. Attached and removed by player_ready_component (its view) (other Systems check with Agent.HasPlayerTag[player_ready_tag])
 player_ready_tag<public> := class(player_state_tag):
 
-# 役割：1 人分の「準備 OK」を持つ（押されたときの切り替えは player_ready_component が呼ぶ）
-# 置き方：実行時に player_ready_component が作る（エディターでは置かない）
-# タグ：準備 OK のあいだ、その人（agent）に player_ready_tag を付ける（view が消える＝受け付けをやめる・その人が退出すると外す）
-# いつ：view が止まる（OnEndSimulation。停止・HideFor・退出で slot ごと外れる）と「準備 OK でない」に戻る（知らせは送らない）
+# Role: holds one player's "ready" state (the toggle on press is called by player_ready_component)
+# Placement: created at runtime by player_ready_component (not placed in the editor)
+# Tags: while ready, attaches player_ready_tag to the agent (removed when the view disappears = accepting stops, or the player leaves)
+# When: when the view stops (OnEndSimulation; deactivation, HideFor, or leaving, which removes the whole slot) it goes back to "not ready" (no notification is sent)
 player_ready_view_component<public> := class<final_super>(component):
 
-    # この view を作った player_ready_component
+    # The player_ready_component that created this view
     Source<public>:player_ready_component
-    # この view が受け持つ人
+    # The player this view handles
     Player<public>:player
 
     var<private> Ready:logic = false
     var<private> ReadyTags:player_tag_holder = player_tag_holder{}
 
-    # 「準備 OK」のあいだ成功する
+    # Succeeds while "ready"
     IsReady<public>()<decides><reads>:void =
         Ready?
 
-    # 準備 OK にする（Value が false なら取り消す）。変わったときだけ知らせる
+    # Sets ready (cancels when Value is false). Notifies only when it changed
     SetReady<public>(Value:logic):void =
         if (Ready = Value):
             return
@@ -43,7 +43,7 @@ player_ready_view_component<public> := class<final_super>(component):
         Source.NotifyReadyChanged(Player, Value)
 
     OnEndSimulation<override>():void =
-        # 退出などで view が止まったら準備も戻す（止まった view が数に残らないように）
+        # When the view stops (leaving, etc.), reset the ready state too (so a stopped view does not stay in the count)
         set Ready = false
         ReadyTags.RemoveAll()
         (super:)OnEndSimulation()

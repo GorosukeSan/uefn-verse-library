@@ -3,20 +3,20 @@ using { /Verse.org/Simulation }
 using { ScheduleSystem }
 using { ScheduleSystem.TooltipKit }
 
-# 文字の形
+# Text format
 schedule_text_format<public> := enum:
-    # 01:02:03（時は 24 を超えてもそのまま）
+    # 01:02:03 (hours may exceed 24)
     HoursMinutesSeconds
-    # 62:03（分は 60 を超えてもそのまま）
+    # 62:03 (minutes may exceed 60)
     MinutesSeconds
     # 1d 01:02:03
     DaysHoursMinutesSeconds
-    # 丸 1 日の数だけ（1）
+    # Number of whole days only (1)
     Days
-    # 合計の秒（3723）
+    # Total seconds (3723)
     TotalSeconds
 
-# 残り秒数 RemainingWholeSeconds（切り上げた整数）を Format の文字列にする（Prefix を前に付ける）
+# Format the remaining seconds RemainingWholeSeconds (rounded-up integer) as a Format string (with Prefix in front)
 FormatRemaining<public>(RemainingWholeSeconds:int, Format:schedule_text_format, Prefix:string)<transacts>:string =
     Body := case (Format):
         schedule_text_format.HoursMinutesSeconds => FormatHoursMinutesSeconds(RemainingWholeSeconds)
@@ -26,46 +26,46 @@ FormatRemaining<public>(RemainingWholeSeconds:int, Format:schedule_text_format, 
         schedule_text_format.TotalSeconds => "{Max(RemainingWholeSeconds, 0)}"
     "{Prefix}{Body}"
 
-# 文字列を widget に渡せる message にする（失敗する文脈・<transacts> の中では呼べない）
+# Turn a string into a message that can be passed to a widget (cannot be called in a failure context or inside <transacts>)
 ScheduleTextToMessage<public><localizes>(Text:string):message = "{Text}"
 
-# 残り時間の文字が変わった知らせ
-# 方向：schedule_text_component の entity から下へ（SendDown）。schedule_countdown_hud_component は自分の widget へ Forward する
-# 送り手：schedule_text_component / schedule_countdown_hud_component。受け手：文字を出す widget・看板など。消費しない
+# Notification that the remaining-time text changed
+# Direction: down from the schedule_text_component entity (SendDown). schedule_countdown_hud_component Forwards it to its own widgets
+# Sender: schedule_text_component / schedule_countdown_hud_component. Receivers: widgets, signs and the like that show the text. Not consumed
 schedule_text_changed_event<public> := class(scene_event):
-    # 送った component
+    # The component that sent it
     Sender<public>:component
-    # 表示する文字（Prefix 付き）
+    # The text to show (with Prefix)
     Text<public>:message
-    # 文字にした残り秒数（切り上げた整数）
+    # The remaining seconds the text was made from (rounded-up integer)
     RemainingWholeSeconds<public>:int
 
-# 役割：スケジュールの残り時間を "MM:SS" などの文字（message）にして、変わったときだけ知らせる（看板・3D の文字・利用者の widget に使う）
-# 置き方：エディターで entity に付ける。schedule_component の entity かその子孫に置く
-# 知らせ：文字が変わったとき schedule_text_changed_event を下へ送り、TextChangedEvent に届ける（残り 1 秒以上なら毎秒、同じ文字なら送らない）
-# 外から：GetText（今の文字）、GetRemainingWholeSeconds（文字にした残り秒数）。OnlyWhileShown がオンなら Show / Hide で更新を止める（誰も見ていない表示の分を省く）
-# 前提・注意：message は連結できないので、前に付ける文字は Prefix（string）で持つ
+# Role: turns the schedule's remaining time into text (message) such as "MM:SS" and notifies only when it changes (for signs, 3D text, your widgets)
+# Placement: attach to an entity in the editor, on the schedule_component entity or a descendant
+# Notifies: when the text changes, sends schedule_text_changed_event down and fires TextChangedEvent (every second while 1 s or more remains; not sent when the text is the same)
+# From outside: GetText (the current text), GetRemainingWholeSeconds (the remaining seconds the text was made from). With OnlyWhileShown on, Show / Hide start and stop the updates (saves the work for displays nobody is looking at)
+# Requirements / notes: messages cannot be concatenated, so the leading text is held as Prefix (string)
 schedule_text_component<public> := class<final_super>(component):
 
-    # 文字の形（schedule_text_format）。既定 MinutesSeconds（62:03）
+    # Text format (schedule_text_format). Default MinutesSeconds (62:03)
     @editable:
         ToolTip := ScheduleTextFormatToolTip
         Categories := array{ScheduleDisplayCategory}
     Format<public>:schedule_text_format = schedule_text_format.MinutesSeconds
 
-    # 残りの選び方（UntilStart / UntilEnd）。既定 UntilEnd
+    # Which remaining value to use (UntilStart / UntilEnd). Default UntilEnd
     @editable:
         ToolTip := ScheduleRemainingKindToolTip
         Categories := array{ScheduleDisplayCategory}
     RemainingKind<public>:schedule_remaining_kind = schedule_remaining_kind.UntilEnd
 
-    # 文字の前に付ける固定の文字列。空なら付けない（既定）
+    # Fixed string put before the text. Nothing is added when empty (default)
     @editable:
         ToolTip := ScheduleTextPrefixToolTip
         Categories := array{ScheduleDisplayCategory}
     Prefix<public>:string = ""
 
-    # オンなら Show を呼んでいるあいだだけ毎秒更新する。オフなら常に更新する（既定）
+    # When on, updated every second only while Show has been called. When off, always updated (default)
     @editable:
         ToolTip := ScheduleTextOnlyWhileShownToolTip
         Categories := array{ScheduleDisplayCategory}
@@ -79,7 +79,7 @@ schedule_text_component<public> := class<final_super>(component):
 
     TextChangedEventInternal<private><final>:event(message) = event(message){}
 
-    # 文字が変わったときに、新しい文字で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires with the new text when the text changes (Await / Subscribe; cannot be Signaled from outside)
     TextChangedEvent<public><final>:listenable(message) = MakeProxyListenable(TextChangedEventInternal)
 
     OnBeginSimulation<override>():void =
@@ -87,24 +87,24 @@ schedule_text_component<public> := class<final_super>(component):
         set Shown = if (OnlyWhileShown?) then false else true
         Attached := Follower.Attach(Entity, Refresh, option{Refresh})
         if (not Attached?):
-            Print("[schedule_text_component] schedule_component がこの entity にも祖先にも見つかりません")
+            Print("[schedule_text_component] schedule_component not found on this entity or any ancestor")
 
     OnEndSimulation<override>():void =
         Follower.Detach()
         (super:)OnEndSimulation()
 
-    # 今の文字（まだ 1 回も計算していなければ空の message）
+    # The current text (an empty message until computed for the first time)
     GetText<public>():message =
         if (Current := LastMessage?):
             Current
         else:
             ScheduleTextToMessage("")
 
-    # 今の文字の元になった残り秒数（切り上げた整数。まだなら -1）
+    # The remaining seconds the current text was made from (rounded-up integer; -1 until then)
     GetRemainingWholeSeconds<public>()<transacts>:int =
         LastRemainingSeconds
 
-    # 更新を始める（OnlyWhileShown がオンのとき）。その場で今の文字を計算して知らせる
+    # Start updating (when OnlyWhileShown is on). Computes and notifies the current text immediately
     Show<public>():void =
         if (Shown?):
             return
@@ -112,11 +112,11 @@ schedule_text_component<public> := class<final_super>(component):
         if (Schedule := Follower.FindSchedule[]):
             Refresh(Schedule.GetCurrentSnapshot())
 
-    # 更新を止める（OnlyWhileShown がオンのとき）
+    # Stop updating (when OnlyWhileShown is on)
     Hide<public>():void =
         set Shown = false
 
-    # 更新しているあいだ成功する
+    # Succeeds while updating
     IsShown<public>()<decides><transacts>:void =
         Shown?
 

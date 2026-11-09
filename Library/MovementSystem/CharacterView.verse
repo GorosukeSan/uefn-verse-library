@@ -1,12 +1,12 @@
 using { /Verse.org/SpatialMath }
 using { /Fortnite.com/Characters }
 
-# カメラ（視点）の世界での位置（Forward・Left・Up、センチメートル）。Epic の GetViewLocation（UE の XYZ）を Verse の座標に変えて返す（Forward = X、Left = -Y、Up = Z）
+# World position of the camera (view) (Forward / Left / Up, centimeters). Converts Epic's GetViewLocation (UE XYZ) to Verse coordinates (Forward = X, Left = -Y, Up = Z)
 (FortCharacter:fort_character).GetViewOrigin<public>()<transacts>:vector3 =
     Location := FortCharacter.GetViewLocationXYZ()
     FromXYZ(Location)
 
-# 視点の向き（世界の座標の、長さ 1 の vector3。Forward・Left・Up）。Epic の GetViewRotation（UE の XYZ）の前向きを Verse の座標に変えて返す（Forward = X、Left = -Y、Up = Z）
+# View direction (unit-length vector3 in world coordinates, Forward / Left / Up). Converts the forward of Epic's GetViewRotation (UE XYZ) to Verse coordinates (Forward = X, Left = -Y, Up = Z)
 (FortCharacter:fort_character).GetViewDirection<public>()<transacts>:vector3 =
     Forward := FortCharacter.GetViewForwardXYZ()
     FromXYZ(Forward)

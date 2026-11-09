@@ -6,12 +6,12 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：JetpackSystem の動作確認。jetpack_ability_component をコードから付与・剥奪し（回数の数え方・イベント・ゲージ）、人の操作でチャージして飛ぶとゲージとエネルギーが変わることを確かめる
-# テストのレベル：
-#   - player_manager_component を付けた entity を 1 つ
-#   - テスト用の entity に jetpack_system_test_component だけを付ける（能力とエネルギーはテストが実行時に子として作る）
-# 人の操作：「jump, then hold jump in the air」と出たら、30 秒以内にジャンプし、空中でジャンプを 1 秒ほど押し続けて離し、着地する
-# 結果：出力ログの [TEST] JetpackSystem
+# Role: verification of JetpackSystem. Grants / revokes jetpack_ability_component from code (reference counting, events, gauge) and checks that charging and flying by human input changes the gauge and the energy
+# Test level:
+#   - one entity with player_manager_component
+#   - the test entity carries only jetpack_system_test_component (the ability and the energy are created by the test at runtime as children)
+# Human input: when "jump, then hold jump in the air" appears, jump within 30 seconds, hold jump in the air for about 1 second, release, and land
+# Result: [TEST] JetpackSystem in the output log
 jetpack_system_test_component<public> := class<final_super>(component):
 
     var<private> BoostSceneEventCount:int = 0
@@ -77,7 +77,7 @@ jetpack_system_test_component<public> := class<final_super>(component):
         Results.Check("RevokedEvent on last Revoke", if (RevokedPayload?) then true else false)
         Results.CheckFloat("ratio 0 after Revoke", Jetpack.GetBoostRatio(Agent), 0.0, 0.001)
 
-    # Jetpack の BoostRatioChangedEvent で、ゲージが Target になるまで Seconds 秒まで待つ。なれば true
+    # Waits up to Seconds for Jetpack's BoostRatioChangedEvent to reach Target. True when it does
     AwaitRatio<private>(Jetpack:jetpack_ability_component, Target:float, Seconds:float)<suspends>:logic =
         race:
             block:

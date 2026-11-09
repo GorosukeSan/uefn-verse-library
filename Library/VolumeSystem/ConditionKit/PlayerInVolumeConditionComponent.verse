@@ -5,13 +5,13 @@ using { SceneGraphSystem }
 using { VolumeSystem }
 using { VolumeSystem.TooltipKit }
 
-# 役割：ボリュームの中に MinPlayers 人以上いれば満たす（複数のボリュームを見るときは合計）
-# 置き方：エディターで entity に付ける
-# 親：game_transition_component か condition_all / condition_any の entity の直下
-# 子：player_volume_component を付けた entity（子孫ならどこでも。知らせが上へ届いたボリュームを数える）。子に置けないときは Volume で選ぶ
+# Role: satisfied when at least MinPlayers players are inside the volume (summed when watching several volumes)
+# Placement: attach to an entity in the editor
+# Parent: directly under the entity of a game_transition_component or condition_all / condition_any
+# Children: entities with player_volume_component (anywhere among the descendants; counts the volumes whose notifications reach this entity). When it cannot be a child, pick it with Volume
 player_in_volume_condition_component<public> := class<final_super>(condition_component):
 
-    # この人数以上が中にいれば満たす（1〜100、既定 1）
+    # Satisfied when at least this many players are inside (1-100, default 1)
     @editable_number(int):
         ToolTip := VolumeMinPlayersToolTip
         Categories := array{VolumeCategory}
@@ -19,7 +19,7 @@ player_in_volume_condition_component<public> := class<final_super>(condition_com
         MaxValue := option{100}
     MinPlayers<public>:int = 1
 
-    # 見張るボリューム（player_volume_component を付けた entity）。空なら、この entity か子孫のボリュームの知らせを数える
+    # The volume to watch (an entity with player_volume_component). When empty, counts the notifications from volumes on this entity or its descendants
     @editable:
         ToolTip := VolumeConditionVolumeToolTip
         Categories := array{VolumeCategory}

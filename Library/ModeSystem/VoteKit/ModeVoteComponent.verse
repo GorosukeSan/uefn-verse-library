@@ -6,26 +6,26 @@ using { SceneGraphSystem }
 using { ModeSystem }
 using { ModeSystem.TooltipKit }
 
-# だれかの投票が変わった知らせ（投票した・取り消した・全部消えた）
-# 方向：区画全体（SendScoped。区画が無ければ世界全体）
-# 送り手：mode_vote_component。受け手：票数を出す画面など。消費しない
+# Notification that someone's vote changed (voted, withdrawn, or all cleared)
+# Direction: the whole scope (SendScoped; the whole world without a scope)
+# Sender: mode_vote_component. Receivers: screens that show vote counts, etc. Not consumed
 mode_vote_changed_event<public> := class(scene_event):
-    # 送った mode_vote_component
+    # The mode_vote_component that sent it
     Vote<public>:mode_vote_component
-    # 投票を変えた人。全員の票が消えたときは false
+    # The player whose vote changed. false when all votes were cleared
     Agent<public>:?agent
-    # その人が今投票しているモード。取り消したときは false
+    # The mode that player now votes for. false when withdrawn
     Mode<public>:?game_mode_component
 
-# 役割：参加者の投票を集め、多数決で同じ entity の mode_select_component にモードを決めさせる（決め方だけを受け持つ。選べるモード・受け付ける期間は mode_select_component のまま）
-# 置き方：エディターで、mode_select_component と同じ entity に付ける
-# 決め方：区画の参加者が全員投票したら（MajorityEnds が true なら、過半数が同じモードに入れた時点で）、票の一番多いモードを TrySelect する。同数なら Order の小さいモード。決まったあとは票を受け付けない（mode_select_component が受け付けをやめるか Clear されると、票は消える）
-# 知らせ：mode_vote_changed_event を区画全体へ送り、VoteChangedEvent に届ける
-# 外から：TryVote / Unvote（画面のボタンなどから）、GetVoteCount / FindVote で今の票を問い合わせる
-# 前提：区画（または世界）に player_manager_component が 1 つ
+# Role: collects the players' votes and has the mode_select_component on the same entity decide the mode by majority (it only handles the decision; the selectable modes and the accepting period stay with mode_select_component)
+# Placement: attach in the editor to the same entity as mode_select_component
+# How it decides: once every player in the scope has voted (or, when MajorityEnds is true, as soon as a majority voted for the same mode), calls TrySelect with the mode that has the most votes. On a tie, the mode with the smaller Order. No votes are accepted after the decision (votes are cleared when mode_select_component stops accepting or is cleared)
+# Notifies: sends mode_vote_changed_event to the whole scope and fires VoteChangedEvent
+# From outside: TryVote / Unvote (from screen buttons etc.); query the current votes with GetVoteCount / FindVote
+# Requirements: one player_manager_component in the scope (or the world)
 mode_vote_component<public> := class<final_super>(component):
 
-    # true なら過半数が同じモードに入れた時点で決める。false なら全員が投票してから。既定 false
+    # true decides as soon as a majority voted for the same mode. false waits until everyone voted. Default false
     @editable:
         ToolTip := ModeVoteMajorityEndsToolTip
         Categories := array{ModeCategory}
@@ -37,12 +37,12 @@ mode_vote_component<public> := class<final_super>(component):
 
     VoteChangedEventInternal<private><final>:event(tuple(agent, ?game_mode_component)) = event(tuple(agent, ?game_mode_component)){}
 
-    # だれかが投票・取り消しをするたびに、（その人, 今投票しているモード。取り消しなら false）で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires each time someone votes or withdraws, with (the player, the mode they now vote for; false when withdrawn) (Await / Subscribe; cannot be signaled from outside)
     VoteChangedEvent<public><final>:listenable(tuple(agent, ?game_mode_component)) = MakeProxyListenable(VoteChangedEventInternal)
 
     VotesClearedEventInternal<private><final>:event() = event(){}
 
-    # 全員の票がまとめて消えたとき（受け付けの終わり・Clear）に届く。VoteChangedEvent はこのときは届かないので、票数を表示している側はこれも購読する（Await / Subscribe する。外から Signal はできない）
+    # Fires when all votes are cleared at once (end of accepting, Clear). VoteChangedEvent does not fire then, so anything that shows vote counts subscribes to this too (Await / Subscribe; cannot be signaled from outside)
     VotesClearedEvent<public><final>:listenable(tuple()) = MakeProxyListenable(VotesClearedEventInternal)
 
     OnBeginSimulation<override>():void =
@@ -63,7 +63,7 @@ mode_vote_component<public> := class<final_super>(component):
         set Manager = false
         (super:)OnEndSimulation()
 
-    # Agent の票を Mode にする（入れ直しもできる）。効いたら true。mode_select_component が無い・受け付けていない・もう決まっている・Mode がその子のモードでないときは false。投票で全員がそろえば、その場でモードが決まる
+    # Sets Agent's vote to Mode (a vote can be changed). true if it took effect. false when there is no mode_select_component, it is not accepting, a mode is already decided, or Mode is not one of its child modes. If this vote completes the count, the mode is decided on the spot
     TryVote<public>(Agent:agent, Mode:game_mode_component):logic =
         if:
             Selector := Entity.GetComponent[mode_select_component]
@@ -80,25 +80,25 @@ mode_vote_component<public> := class<final_super>(component):
         else:
             false
 
-    # Agent の票を取り消す。投票していなければ何もしない
+    # Withdraws Agent's vote. Does nothing if the agent has not voted
     Unvote<public>(Agent:agent):void =
         if (Votes[Agent]):
             RemoveVote(Agent)
             NotifyVoteChanged(option{Agent}, false)
 
-    # Mode に入っている票の数（退出した人の票は数えない）
+    # Number of votes for Mode (votes of players who left are not counted)
     GetVoteCount<public>(Mode:game_mode_component)<transacts>:int =
         var Count:int = 0
         for (Agent -> Voted : Votes, Voted = Mode, IsPresent[Agent]):
             set Count += 1
         Count
 
-    # Agent が投票しているモード。投票していなければ失敗する
+    # The mode Agent votes for. Fails if the agent has not voted
     FindVote<public>(Agent:agent)<decides><transacts>:game_mode_component =
         Votes[Agent]
 
     OnSelectedChanged<private>(Mode:?game_mode_component):void =
-        # 選びが消えた（受け付けの終わり・Clear）ら、票も消す
+        # When the selection is cleared (end of accepting, Clear), clear the votes too
         if (not Mode?):
             ClearVotes()
 
@@ -116,7 +116,7 @@ mode_vote_component<public> := class<final_super>(component):
     RemoveVote<private>(Agent:agent):void =
         set Votes = Votes.RemoveKey(Agent)
 
-    # 決める条件がそろっていれば、票の一番多いモード（同数なら Order の小さいもの）を TrySelect する
+    # If the conditions to decide are met, calls TrySelect with the mode that has the most votes (the smaller Order on a tie)
     TryDecide<private>(Selector:mode_select_component):void =
         PlayerCount := GetPlayerCount()
         if (PlayerCount <= 0):
@@ -140,7 +140,7 @@ mode_vote_component<public> := class<final_super>(component):
         else:
             0
 
-    # Agent が今参加している（slot がある）なら成功する。player_manager_component が無ければ失敗する
+    # Succeeds if Agent is currently in the game (has a slot). Fails without a player_manager_component
     IsPresent<private>(Agent:agent)<decides><transacts>:void =
         Manager?.FindSlot[player[Agent]]
 

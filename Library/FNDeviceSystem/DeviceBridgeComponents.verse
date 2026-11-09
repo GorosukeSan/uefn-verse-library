@@ -6,24 +6,24 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { FNDeviceSystem.TooltipKit }
 
-# FNDeviceSystem：Fortnite のクリエイティブ デバイス（creative_device）に頼る処理をまとめる System。
-# Scene Graph の部品（起動・停止の合図、だれが起こしたか）と、デバイスでしかできないこと（ゲームの終了・職業とチーム・スコア・シネマティック・音など）をつなぐ。
-# デバイスはレベルに置いたものを @editable で選ぶ。ほかの System はデバイスに依存しない（デバイスを使うときはこの System の部品を置く）。
+# FNDeviceSystem: the System that gathers everything relying on Fortnite creative devices (creative_device).
+# Connects Scene Graph parts (activation / deactivation signals, who caused them) with things only devices can do (ending the game, class and team, score, cinematics, audio, ...).
+# Devices placed in the level are chosen through @editable. No other System depends on devices (to use a device, place a part of this System).
 
-# 役割：起動の合図を受けたら、Trigger のトリガー デバイスを鳴らす。停止の合図を受けたら StopTrigger を鳴らす
-#   合図がだれが起こしたかの分かるもの（activated_by_agent_event）なら、その人で Trigger(Agent) する（デバイス側で「起こした人」に効く設定がそのまま使える）
-#   トリガー デバイスはエディターでほとんどのデバイスの操作につなげられるので、Scene Graph からデバイスを動かす万能の出口になる
-# 置き方：エディターで entity に付ける（合図が届く場所。インタラクト・ボリューム・メニューの Targets など）
-# 外から：Fire / FireFor（コードから鳴らす）
-# 前提・注意：デバイスは 1 つずつ選ぶ（デバイスの配列は MCP で書けないため）。複数のデバイスを使うときは、子の entity にこの部品を 1 つずつ置く
+# Role: on the activation signal, fires the trigger device in Trigger. On the deactivation signal, fires StopTrigger
+#   When the signal tells who caused it (activated_by_agent_event), calls Trigger(Agent) with that agent (so device settings that act on the "instigator" work as is)
+#   A trigger device can be wired to almost any device action in the editor, so this is the universal outlet for driving devices from the Scene Graph
+# Placement: attach to an entity in the editor (wherever the signal arrives: the Targets of an interact, a volume, a menu, ...)
+# From outside: Fire / FireFor (fire from code)
+# Requirements: devices are chosen one at a time (an array of devices cannot be written through MCP). To use several devices, place one of this part on each child entity
 device_trigger_component<public> := class<final_super>(component):
 
-    # 起動の合図で鳴らすトリガー デバイス
+    # The trigger device fired on the activation signal
     @editable:
         ToolTip := DeviceTriggersToolTip
         Categories := array{FNDeviceCategory}
     Trigger<public>:?trigger_device = false
-    # 停止の合図で鳴らすトリガー デバイス
+    # The trigger device fired on the deactivation signal
     @editable:
         ToolTip := DeviceStopTriggersToolTip
         Categories := array{FNDeviceCategory}
@@ -39,28 +39,28 @@ device_trigger_component<public> := class<final_super>(component):
             Device.Trigger()
         false
 
-    # Trigger をだれでもなく鳴らす
+    # Fires Trigger with no agent
     Fire<public>():void =
         if (Device := Trigger?):
             Device.Trigger()
 
-    # Trigger を Agent が起こしたものとして鳴らす
+    # Fires Trigger as caused by Agent
     FireFor<public>(Agent:agent):void =
         if (Device := Trigger?):
             Device.Trigger(Agent)
 
-# 役割：Trigger のトリガー デバイスが鳴るたびに、Targets の entity へ起動の合図を送る（鳴らした人が分かれば activated_by_agent_event）。デバイス側の出来事（ボタン・タイマー・倒した数など）を、トリガー デバイスを通して Scene Graph の部品につなぐ入口
-# 置き方：エディターで entity に付ける。Targets が空なら、この entity とその子孫へ送る
-# 知らせ：TriggeredEvent（鳴らした人。分からなければ false）
-# 前提・注意：デバイスは 1 つずつ選ぶ（デバイスの配列は MCP で書けないため）。複数のデバイスを使うときは、子の entity にこの部品を 1 つずつ置く
+# Role: every time the trigger device in Trigger fires, sends the activation signal to the Targets entities (activated_by_agent_event when the firing agent is known). The entry point that connects device-side events (buttons, timers, elimination counts, ...) to Scene Graph parts through a trigger device
+# Placement: attach to an entity in the editor. When Targets is empty, sends to this entity and its descendants
+# Notifies: TriggeredEvent (the firing agent; false when unknown)
+# Requirements: devices are chosen one at a time (an array of devices cannot be written through MCP). To use several devices, place one of this part on each child entity
 device_event_component<public> := class<final_super>(component):
 
-    # 鳴ったら合図を送るトリガー デバイス
+    # The trigger device that sends the signal when it fires
     @editable:
         ToolTip := DeviceEventTriggersToolTip
         Categories := array{FNDeviceCategory}
     Trigger<public>:?trigger_device = false
-    # 起動の合図を送る entity。空なら、この entity とその子孫
+    # The entities the activation signal is sent to. When empty, this entity and its descendants
     @editable:
         ToolTip := DeviceEventTargetsToolTip
         Categories := array{FNDeviceCategory}
@@ -68,7 +68,7 @@ device_event_component<public> := class<final_super>(component):
 
     TriggeredEventInternal<private><final>:event(?agent) = event(?agent){}
 
-    # Trigger が鳴るたびに、鳴らした人（分からなければ false）で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires with the firing agent (false when unknown) every time Trigger fires (Await / Subscribe; cannot be Signaled from outside)
     TriggeredEvent<public><final>:listenable(?agent) = MakeProxyListenable(TriggeredEventInternal)
 
     var<private> Subscriptions:[]cancelable = array{}
@@ -93,16 +93,16 @@ device_event_component<public> := class<final_super>(component):
             else:
                 Receiver.SendActivated()
 
-# 起動の合図を受けたときに、デバイスへ渡す相手
+# Who is passed to the device when the activation signal is received
 device_target_agents<public> := enum:
-    # 合図を起こした人（activated_by_agent_event の Agent）。分からなければ何もしない
+    # The agent who caused the signal (the Agent of activated_by_agent_event). Does nothing when unknown
     Activator
-    # 持ち主（ロードアウトの中など、slot の下に置いたとき）。いなければ合図を起こした人
+    # The owner (when placed under a slot, e.g. inside a loadout). The agent who caused the signal when there is none
     Owner
-    # 区画の全員
+    # Everyone in the zone
     Everyone
 
-# 役割：部品が使う、合図からデバイスへ渡す相手を決める補助
+# Role: helper used by the parts to decide who is passed from the signal to the device
 GetDeviceTargets<internal>(InEntity:entity, SceneEvent:scene_event, Targets:device_target_agents)<transacts>:[]agent =
     case (Targets):
         device_target_agents.Everyone =>

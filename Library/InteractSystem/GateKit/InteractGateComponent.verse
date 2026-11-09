@@ -3,15 +3,15 @@ using { /Verse.org/Simulation }
 using { ActivationSystem }
 using { InteractSystem.TooltipKit }
 
-# 役割：開いているあいだだけ、同じ entity の interactable_component を押せるようにする（閉じているあいだは押せない）
-# 置き方：エディターで entity に付ける
-# 親：起動の合図が届く場所（ゲームの流れなら、ノードの entity かその子孫。interact_trigger_component の Targets で選ばれた entity でもよい）
-# 同じ entity：interactable_component（basic_interactable_component など）
-# いつ開くか：起動の合図（activated_event）で開き、停止の合図（deactivated_event）で閉じる。OpenOnBegin が true ならシミュレーション開始から開いている。コードから Open / Close を呼んでもよい
-# 外から：Open / Close / IsOpen
+# Role: makes the interactable_component on the same entity pressable only while open (not pressable while closed)
+# Placement: attach to an entity in the editor
+# Parent: where the activation signal arrives (in a game sequence, the node's entity or a descendant. It may also be an entity chosen in interact_trigger_component's Targets)
+# Same entity: interactable_component (basic_interactable_component, etc.)
+# When it opens: opens on the activation signal (activated_event) and closes on the deactivation signal (deactivated_event). Open from the start of the simulation when OpenOnBegin is true. Open / Close can also be called from code
+# From outside: Open / Close / IsOpen
 interact_gate_component<public> := class<final_super>(component):
 
-    # true ならシミュレーション開始から押せる。false なら起動の合図から（既定 false）
+    # true is pressable from the start of the simulation. false waits for the activation signal (default false)
     @editable:
         ToolTip := InteractGateOpenOnBeginToolTip
         Categories := array{InteractCategory}
@@ -25,7 +25,7 @@ interact_gate_component<public> := class<final_super>(component):
         Apply()
 
     OnSimulate<override>()<suspends>:void =
-        # 同じ entity の interactable_component が OnBeginSimulation を終えてから、もう一度合わせる
+        # Sync once more after the interactable_component on the same entity has finished OnBeginSimulation
         TickEvents.PrePhysics.Await()
         Apply()
 
@@ -36,17 +36,17 @@ interact_gate_component<public> := class<final_super>(component):
             Close()
         false
 
-    # 押せるようにする
+    # Makes it pressable
     Open<public>():void =
         set Opened = true
         Apply()
 
-    # 押せないようにする
+    # Makes it not pressable
     Close<public>():void =
         set Opened = false
         Apply()
 
-    # 開いている（押せる）あいだ成功する
+    # Succeeds while open (pressable)
     IsOpen<public>()<decides><transacts>:void =
         Opened?
 

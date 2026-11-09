@@ -4,18 +4,18 @@ using { ConditionSystem }
 using { SceneGraphSystem }
 using { GameSequenceSystem.TooltipKit }
 
-# 役割：条件を満たしたら Target のノードへ進む（Target が空なら流れを終える）
-# 置き方：エディターで entity に付ける
-# 親：game_node_component の entity の直下
-# 子：条件（condition_component の派生）を付けた entity を直下に。複数置くと「すべて満たしたら」進む（どれか 1 つでよいなら condition_any でまとめる）。無ければすぐ進む
+# Role: advances to the Target node when the conditions are satisfied (ends the sequence when Target is empty)
+# Placement: attach to an entity in the editor
+# Parent: directly under the entity of game_node_component
+# Children: entities with conditions (condition_component subclasses), directly under it. With several, advances "when all are satisfied" (group them with condition_any when any one is enough). Without any, advances immediately
 game_transition_component<public> := class<final_super>(component):
 
-    # 条件を満たしたときに進むノード（game_node_component を付けた entity）。空ならここで流れを終える。既定 空
+    # The node (entity with game_node_component) to advance to when the conditions are satisfied. Empty ends the sequence here. Default empty
     @editable:
         ToolTip := TransitionTargetToolTip
         Categories := array{TransitionCategory, TransitionTargetCategory}
     Target<public>:?entity = false
-    # 同じノードの遷移が同時に進めるとき、大きいほうを優先する（0〜100）。既定 0
+    # When several transitions of the same node can advance at once, the larger value wins (0-100). Default 0
     @editable_number(int):
         ToolTip := TransitionPriorityToolTip
         Categories := array{TransitionCategory, TransitionPriorityCategory}
@@ -23,10 +23,10 @@ game_transition_component<public> := class<final_super>(component):
         MaxValue := option{100}
     Priority<public>:int = 0
 
-    # 進めるなら成功する。直下の子の条件（condition_component）をすべて満たしていれば成功し、条件が無ければいつも成功する
+    # Succeeds when it can advance. Succeeds when every condition (condition_component) of the direct children is satisfied; always succeeds without conditions
     IsReady<public>()<decides><transacts>:void =
         Entity.AreChildConditionsSatisfied[]
 
-    # Target が空（この遷移で流れを終える）なら成功する。Target にノードが無いことは、進むときに game_sequence_component が調べる
+    # Succeeds when Target is empty (this transition ends the sequence). Whether Target lacks a node is checked by game_sequence_component when advancing
     IsFinish<public>()<decides><transacts>:void =
         not Target?

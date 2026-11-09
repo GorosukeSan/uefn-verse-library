@@ -1,7 +1,7 @@
-# InputSystem の Kit をライブラリの外（利用者のコード）から使えるように public にする。
-# フォルダから作られるモジュールは既定で internal なので、宣言しないと外から using できない。
+# Make the InputSystem Kits public so they can be used from outside the library (your code).
+# Modules created from folders are internal by default; without this declaration they cannot be imported with using.
 InputKit<public> := module {}
-# 「準備 OK」の部品（player_ready_component・all_players_ready_condition_component）
+# "Ready" parts (player_ready_component, all_players_ready_condition_component)
 ReadyKit<public> := module {}
-# エディターに出す説明（message）
+# Descriptions (message) shown in the editor
 TooltipKit<public> := module {}

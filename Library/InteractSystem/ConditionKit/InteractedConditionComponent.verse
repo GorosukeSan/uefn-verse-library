@@ -5,14 +5,14 @@ using { ConditionSystem }
 using { SceneGraphSystem }
 using { InteractSystem.TooltipKit }
 
-# 役割：押されたら満たす（起動し直すと満たさなくなる）
-# 置き方：エディターで entity に付ける
-# 親：game_transition_component か condition_all / condition_any の entity の直下
-# 子：interact_trigger_component を付けた entity（子孫ならどこでも）。子に置けないときは Trigger で選ぶ
-# 外から：Reset で満たさない状態に戻す（起動の合図 activated_event でも戻る）
+# Role: satisfied once pressed (re-activating makes it unsatisfied again)
+# Placement: attach to an entity in the editor
+# Parent: directly under the entity of a game_transition_component or condition_all / condition_any
+# Children: an entity with interact_trigger_component (anywhere among the descendants). When it cannot be a child, pick it with Trigger
+# From outside: Reset puts it back to unsatisfied (the activation signal activated_event does too)
 interacted_condition_component<public> := class<final_super>(condition_component):
 
-    # 見張るボタン（interact_trigger_component を付けた entity）。子孫のボタンは選ばなくても数える（既定 なし）
+    # The button to watch (an entity with interact_trigger_component). Descendant buttons count without being picked (default none)
     @editable:
         ToolTip := InteractedTriggerToolTip
         Categories := array{InteractCategory, InteractedTriggerCategory}
@@ -44,7 +44,7 @@ interacted_condition_component<public> := class<final_super>(condition_component
             SetInteracted(true)
         false
 
-    # 満たさない状態（まだ押されていない）に戻す
+    # Puts it back to unsatisfied (not pressed yet)
     Reset<public>():void =
         SetInteracted(false)
 

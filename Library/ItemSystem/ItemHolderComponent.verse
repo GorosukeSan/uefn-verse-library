@@ -4,35 +4,35 @@ using { /UnrealEngine.com/Itemization }
 using { SceneGraphSystem }
 using { ItemSystem.TooltipKit }
 
-# だれをアイテムの「持ち手」とみなすか
+# Who counts as the "holder" of the item
 item_holder_rule<public> := enum:
-    # 手持ちにあるあいだ（ほかのアイテムを装備していても）、持ち主
+    # The owner, while the item is in their inventory (even while another item is equipped)
     Owned
-    # 装備しているあいだ、装備している持ち主。子に item_holder_friend_component があれば、そのアイテムを装備しているあいだも
+    # The owner, while the item is equipped. With item_holder_friend_component children, also while one of those items is equipped
     Equipped
 
-# 役割：アイテムの持ち手（Rule で決める人）が付いたり外れたりするのを見張り、HolderAddedEvent / HolderRemovedEvent で知らせる。装備や inventory が変わるたびに調べ直す
-# 置き方：エディターで、アイテムの entity に付ける。持ち手で動くもの（ability_grant_item_component・widget_show_item_holder_component など）は、同じ entity でこれを見る
-# 同じ entity：item_component
-# 子：Rule が Equipped のとき、一緒に数えるアイテムの種類ごとに item_holder_friend_component を付けた entity（任意）
+# Role: watches the item's holder (whoever Rule selects) being attached or removed and notifies through HolderAddedEvent / HolderRemovedEvent. Re-checks whenever the equip state or the inventory changes
+# Placement: attach to the item's entity in the editor. Parts driven by the holder (ability_grant_item_component, widget_show_item_holder_component, ...) look for this on the same entity
+# Same entity: item_component
+# Children: when Rule is Equipped, one entity with item_holder_friend_component per item type to count together (optional)
 item_holder_component<public> := class<final_super>(component):
 
-    # だれを持ち手とみなすか。Owned は手持ちにあるあいだ、Equipped は装備しているあいだ。既定 Equipped
+    # Who counts as the holder. Owned: while in the inventory; Equipped: while equipped. Default Equipped
     @editable:
         ToolTip := ItemHolderRuleToolTip
         Categories := array{ItemHolderCategory}
     Rule<public>:item_holder_rule = item_holder_rule.Equipped
 
-    # 今の持ち手。いなければ false
+    # The current holder. false when there is none
     var<private> Holder<public>:?agent = false
 
     HolderAddedEventInternal<private><final>:event(agent) = event(agent){}
     HolderRemovedEventInternal<private><final>:event(agent) = event(agent){}
 
-    # 持ち手が付いたときに、その人で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires with the agent when a holder is attached (Await / Subscribe; cannot be Signaled from outside)
     HolderAddedEvent<public><final>:listenable(agent) = MakeProxyListenable(HolderAddedEventInternal)
 
-    # 持ち手が外れたとき（手放した・消えた・シミュレーションの終わりも）に、外れた人で届く
+    # Fires with the removed agent when the holder is removed (dropped, destroyed, or the end of the simulation)
     HolderRemovedEvent<public><final>:listenable(agent) = MakeProxyListenable(HolderRemovedEventInternal)
 
     OnSimulate<override>()<suspends>:void =
@@ -40,14 +40,14 @@ item_holder_component<public> := class<final_super>(component):
             loop:
                 UpdateHolder(Item)
                 AwaitHolderCheck(Item)
-                # 知らせのあと 1 フレーム待ってから調べ直す（同じフレームに続けて来た変化の取りこぼし対策）
+                # Wait one frame after the notification before checking again (so changes arriving back to back in the same frame are not missed)
                 TickEvents.PrePhysics.Await()
 
     OnEndSimulation<override>():void =
         SetHolder(false)
         (super:)OnEndSimulation()
 
-    # 今の持ち手がいれば返す。いなければ失敗する
+    # Returns the current holder if there is one. Fails otherwise
     FindHolder<public>()<decides><transacts>:agent =
         Holder?
 
@@ -95,12 +95,12 @@ item_holder_component<public> := class<final_super>(component):
             set Holder = NewHolder
             HolderAddedEventInternal.Signal(Next)
 
-# 役割：item_holder_component（Rule が Equipped）の持ち手に、一緒に数えるアイテムの種類。持ち主がこの種類のアイテムを装備しているあいだも、親のアイテムの持ち手とみなす
-# 置き方：エディターで entity に付ける（見た目の無い entity）
-# 親：item_holder_component を付けたアイテムの entity（直下に、種類ごとに 1 つずつ）
+# Role: an item type counted together for the holder of item_holder_component (Rule = Equipped). While the owner has an item of this type equipped, they also count as the holder of the parent item
+# Placement: attach to an entity in the editor (an entity with no look)
+# Parent: the item entity carrying item_holder_component (directly under it, one per type)
 item_holder_friend_component<public> := class<final_super>(component):
 
-    # 一緒に数えるアイテムの prefab の型。既定の entity のままだと、どのアイテムでも数えるので必ず選ぶ
+    # The prefab type of the item counted together. Left at the default entity it counts any item, so always choose one
     @editable:
         ToolTip := ItemHolderFriendItemTypeToolTip
         Categories := array{ItemHolderCategory}

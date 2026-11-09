@@ -5,17 +5,17 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：テスト用の能力。付与されているあいだ動いている人数を数える
-# 置き方：ability_system_test_component と同じ entity（テストが自分で探す）
+# Role: test ability. Counts how many agents are running while it is granted
+# Placement: same entity as ability_system_test_component (the test finds it itself)
 ability_test_probe_component<public> := class<final_super>(ability_component):
 
     var<private> Running:int = 0
     var<private> Started:int = 0
 
-    # 今 RunFor が動いている人数
+    # Number of agents whose RunFor is running now
     GetRunningCount<public>()<transacts>:int = Running
 
-    # RunFor が始まった回数（累計）
+    # Number of times RunFor has started (cumulative)
     GetStartedCount<public>()<transacts>:int = Started
 
     RunFor<override>(Agent:agent)<suspends>:void =
@@ -25,15 +25,15 @@ ability_test_probe_component<public> := class<final_super>(ability_component):
             set Running -= 1
         Sleep(Inf)
 
-# 役割：AbilitySystem の動作確認。最初に参加したプレイヤーを使い、コードからの Grant / Revoke と回数の数え方、イベント、付与の component を確かめる
-# テストのレベル：
-#   - player_manager_component を付けた entity を 1 つ
-#   - テスト用の entity に ability_system_test_component と ability_test_probe_component を付ける（付与の component は付けない）
-#   - 別の entity に ability_test_probe_component と ability_grant_players_component（GrantOnBegin = true）を付け、その entity を GrantedByPlayers に入れる
-# 結果：出力ログの [TEST] AbilitySystem
+# Role: verification of AbilitySystem. Uses the first player that joined and checks Grant / Revoke from code and the reference counting, the events, and the grant component
+# Test level:
+#   - one entity with player_manager_component
+#   - the test entity carries ability_system_test_component and ability_test_probe_component (no grant component)
+#   - another entity carries ability_test_probe_component and ability_grant_players_component (GrantOnBegin = true); put that entity into GrantedByPlayers
+# Result: [TEST] AbilitySystem in the output log
 ability_system_test_component<public> := class<final_super>(component):
 
-    # ability_grant_players_component（GrantOnBegin）と ability_test_probe_component を付けた entity
+    # Entity that carries ability_grant_players_component (GrantOnBegin) and ability_test_probe_component
     @editable
     GrantedByPlayers<public>:?entity = false
 

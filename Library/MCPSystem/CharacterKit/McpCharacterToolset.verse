@@ -8,30 +8,31 @@ using { PlayerSystem }
 using { MovementSystem }
 using { CharacterSystem }
 using { CharacterSystem.MoveKit }
+using { CharacterSystem.CellKit }
 using { CharacterSystem.BuffKit }
 using { CharacterSystem.SurfaceKit }
 using { MCPSystem }
 using { MCPSystem.TooltipKit }
 
-# 役割：Character ツールセット（宛先 "character"）。独自キャラクター（CharacterSystem の character_motor_component）を MCP から動かす
-#   移動の入力（walk の SetMoveInput）・世界の向きへの移動・ジャンプ・ダッシュ・テレポート・速度・重力・左右の入力のしかた（walk の SetSideStyle）、動きの JSON の再生（入力の時刻表 / 通る点の列）と記録
-#   プレイヤーは番号（core.players と同じ）で指す。体はその人が動かしている character_motor_component（Entity.FindCharacterMotorFor）
-# 置き方：受け箱と同じ entity に付けるとよい
-# 知らせ：長くかかるもの（move の seconds・play）は "accepted" を返し、終わったら [MCPC] {"event":"move_done" / "play_done",...}
-# タグ：自分の entity に mcp_controllable_tag と mcp_session_restorable_tag（状態のキー "characters"：人ごとの位置・速度・重力）。タグの名前 custom_character_tag を知らせる
-# 前提・注意：入力は walk の今の歩く向き（GetWalkBasis：Space（View / World / Facing / SideView）と左右の入力のしかた。TankTurn は体の向き）に合わせて世界の向きから直す（move_world・move_to・play の points）。段差を登る処理は CharacterSystem に無い
+# Role: Character toolset (destination "character"). Drives a custom character (CharacterSystem's character_motor_component) from MCP
+#   Move input (walk's SetMoveInput), walking in a world direction, jump, dash, teleport, velocity, gravity, side-input style (walk's SetSideStyle), playback of motion JSON (a timetable of inputs / a list of points to pass) and recording
+#   Players are addressed by index (same as core.players). The body is the character_motor_component that player drives (Entity.FindCharacterMotorFor)
+# Placement: best attached to the same entity as the inbox
+# Notifications: long-running tools (move with seconds, play) return "accepted" and emit [MCPC] {"event":"move_done" / "play_done",...} when done
+# Tags: mcp_controllable_tag and mcp_session_restorable_tag on its own entity (state key "characters": position, velocity and gravity per player). Reports the tag name custom_character_tag
+# Requirements, caveats: world directions are converted to input according to walk's current walk basis (GetWalkBasis: Space (View / World / Facing / SideView) and the side-input style; TankTurn uses the body's facing) (move_world, move_to, play's points). CharacterSystem has no step-climbing
 mcp_character_toolset_component<public> := class<final_super>(component, mcp_controllable, mcp_tag_provider, mcp_session_restorable):
 
-    # 同じツールセットを複数置くときの名前（空なら "character" だけで届く）
+    # Name used when the same toolset is placed more than once (when empty, "character" alone reaches it)
     @editable:
         ToolTip := McpToolsetIdToolTip
         Categories := array{McpCategory}
     InstanceId<public>:string = ""
 
     RoleTags<private>:mcp_role_tags = mcp_role_tags{}
-    # 人ごとの「動きの番号」。新しい move / play / stop で増やし、古い待ちはこれを見て止まる
+    # "Motion generation" per player. Incremented by each new move / play / stop; older waits check it and stop
     var<private> Generation:[agent]int = map{}
-    # 記録中の人
+    # Players being recorded
     var<private> Recorders:[agent]mcp_character_recorder = map{}
 
     OnBeginSimulation<override>():void =
@@ -56,22 +57,22 @@ mcp_character_toolset_component<public> := class<final_super>(component, mcp_con
 
     McpTools<override>()<transacts>:[]mcp_tool =
         array:
-            McpTool("list", "独自キャラクターを動かしている人の一覧。data に [\{player,pos,velocity,grounded\}]", array{})
-            McpTool("state", "体の状態（位置・速度 cm/s・接地・状態・重力の倍率・変更の倍率・ダッシュ中か・左右の入力のしかた side_style / side_style_base・動く床 ground_velocity / inherited_velocity / riding）", array{McpArg("player", "player", "番号")})
-            McpTool("move", "移動の入力を入れる（walk の SetMoveInput と同じ。forward = 前、left = 左。長さ 1 まで）。seconds を渡すとその秒数のあと 0 に戻す（終わりに move_done）", array{McpArg("player", "player", "番号"), McpArg("input", "json", "\{forward,left\} か [forward,left]"), McpOptArg("seconds", "float", "この秒数だけ入れる")})
-            McpTool("move_world", "世界の向き（cm の向き。長さは使わない）へ歩かせる。walk の Space に合わせて毎フレーム入力に直す。seconds（既定 1）のあと止める（move_done）", array{McpArg("player", "player", "番号"), McpArg("dir", "vector3", "向き"), McpOptArg("seconds", "float", "秒（既定 1.0）"), McpOptArg("scale", "float", "入力の強さ 0〜1（既定 1）")})
-            McpTool("move_to", "世界の位置へ歩かせる（水平の距離が tolerance 以下で止まる。着いたら move_done。ゲームが体を別の場所へ移したら reason = moved_away）", array{McpArg("player", "player", "番号"), McpArg("pos", "vector3", "行き先（cm）"), McpOptArg("tolerance", "float", "着いたとみなす距離 cm（既定 60）"), McpOptArg("timeout", "float", "秒（既定 15）")})
-            McpTool("stop", "入力を 0 にし、move / play を止める（brake = true なら水平の速度も 0）", array{McpArg("player", "player", "番号"), McpOptArg("brake", "bool", "水平の速度も 0 にする")})
-            McpTool("jump", "ジャンプさせる（跳べなければ failed）", array{McpArg("player", "player", "番号")})
-            McpTool("dash", "ダッシュさせる（出せなければ failed）", array{McpArg("player", "player", "番号")})
-            McpTool("teleport", "足元を pos へ（当たりを見ない）。keep_velocity が false（既定）なら速度を 0 に", array{McpArg("player", "player", "番号"), McpArg("pos", "vector3", "位置（cm。足元）"), McpOptArg("keep_velocity", "bool", "速度を残す")})
-            McpTool("set_velocity", "速度を決める（cm/s。世界の向き）", array{McpArg("player", "player", "番号"), McpArg("velocity", "vector3", "速度")})
-            McpTool("add_velocity", "速度を足す（cm/s）", array{McpArg("player", "player", "番号"), McpArg("delta", "vector3", "足す速度")})
-            McpTool("set_gravity_scale", "重力の倍率（1 で既定、0 で無重力）", array{McpArg("player", "player", "番号"), McpArg("scale", "float", "倍率")})
-            McpTool("set_side_style", "左右の入力のしかた（walk の基本。SetSideStyle と同じ）を変える。turn = 動く向きへ回る、strafe = 前を向いたまま横へ（カニ歩き）、tank_turn = その場で回る、toggle = 切り替えのボタンと同じ。バフが決めているあいだはそちらが優先。reply に今のしかたと基本", array{McpArg("player", "player", "番号"), McpArg("style", "string", "turn / strafe / tank_turn / toggle")})
-            McpTool("play", "動きの JSON を再生する（終わりに play_done）。steps：[\{t,move,world,jump,dash,teleport,stop\}]（t 秒に入力）／points：[\{pos,jump,dash,wait,teleport\}]（順に歩いて通る）", array{McpArg("player", "player", "番号"), McpArg("motion", "json", "\{steps:[...]\} か \{points:[...], tolerance, timeout\}")})
-            McpTool("record_start", "動きの記録を始める（interval 秒ごとの位置・速度・接地と、ジャンプ・ダッシュなどの出来事）", array{McpArg("player", "player", "番号"), McpOptArg("interval", "float", "秒（既定 0.1）")})
-            McpTool("record_stop", "記録を止めて返す。data に \{interval,samples:[\{t,pos,velocity,grounded\}],actions:[\{t,action\}],points:[\{pos\}]\}（points はそのまま play に渡せる）", array{McpArg("player", "player", "番号")})
+            McpTool("list", "Players driving a custom character. data: [\{player,pos,velocity,grounded\}]", array{})
+            McpTool("state", "Body state (position, velocity cm/s, grounded, state, gravity scale, modifier scale, dashing, side-input style side_style / side_style_base, moving floor ground_velocity / inherited_velocity / riding, cling clinging / cling_surface / cling_normal / can_cling, action cells cells / cell_capacity / cell_actions)", array{McpArg("player", "player", "player index")})
+            McpTool("move", "Sets the move input (same as walk's SetMoveInput; forward = ahead, left = left; length up to 1). With seconds, resets to 0 after that time (move_done at the end)", array{McpArg("player", "player", "player index"), McpArg("input", "json", "\{forward,left\} or [forward,left]"), McpOptArg("seconds", "float", "hold the input for this many seconds")})
+            McpTool("move_world", "Walks in a world direction (cm direction; length ignored). Converted to input every frame according to walk's Space. Stops after seconds (default 1) (move_done)", array{McpArg("player", "player", "player index"), McpArg("dir", "vector3", "direction"), McpOptArg("seconds", "float", "seconds (default 1.0)"), McpOptArg("scale", "float", "input strength 0-1 (default 1)")})
+            McpTool("move_to", "Walks to a world position (stops when the horizontal distance is at most tolerance; move_done on arrival. If the game moves the body elsewhere, reason = moved_away)", array{McpArg("player", "player", "player index"), McpArg("pos", "vector3", "destination (cm)"), McpOptArg("tolerance", "float", "distance in cm that counts as arrived (default 60)"), McpOptArg("timeout", "float", "seconds (default 15)")})
+            McpTool("stop", "Zeroes the input and stops move / play (brake = true also zeroes horizontal velocity)", array{McpArg("player", "player", "player index"), McpOptArg("brake", "bool", "also zero the horizontal velocity")})
+            McpTool("jump", "Jumps (failed if it cannot)", array{McpArg("player", "player", "player index")})
+            McpTool("dash", "Dashes (failed if it cannot)", array{McpArg("player", "player", "player index")})
+            McpTool("teleport", "Moves the feet to pos (no collision check). With keep_velocity false (default) the velocity is zeroed", array{McpArg("player", "player", "player index"), McpArg("pos", "vector3", "position (cm; the feet)"), McpOptArg("keep_velocity", "bool", "keep the velocity")})
+            McpTool("set_velocity", "Sets the velocity (cm/s, world axes)", array{McpArg("player", "player", "player index"), McpArg("velocity", "vector3", "velocity")})
+            McpTool("add_velocity", "Adds to the velocity (cm/s)", array{McpArg("player", "player", "player index"), McpArg("delta", "vector3", "velocity to add")})
+            McpTool("set_gravity_scale", "Gravity scale (1 = default, 0 = weightless)", array{McpArg("player", "player", "player index"), McpArg("scale", "float", "scale")})
+            McpTool("set_side_style", "Changes the side-input style (walk's base; same as SetSideStyle). turn = turn toward the movement direction, strafe = sidestep while facing forward, tank_turn = turn in place, toggle = same as the toggle button. While a buff decides the style, the buff wins. reply gives the current and base styles", array{McpArg("player", "player", "player index"), McpArg("style", "string", "turn / strafe / tank_turn / toggle")})
+            McpTool("play", "Plays a motion JSON (play_done at the end). steps: [\{t,move,world,jump,dash,teleport,stop\}] (input at t seconds) / points: [\{pos,jump,dash,wait,teleport\}] (walks through them in order)", array{McpArg("player", "player", "player index"), McpArg("motion", "json", "\{steps:[...]\} or \{points:[...], tolerance, timeout\}")})
+            McpTool("record_start", "Starts recording the motion (position, velocity and grounded every interval seconds, plus events such as jumps and dashes)", array{McpArg("player", "player", "player index"), McpOptArg("interval", "float", "seconds (default 0.1)")})
+            McpTool("record_stop", "Stops recording and returns it. data: \{interval,samples:[\{t,pos,velocity,grounded\}],actions:[\{t,action\}],points:[\{pos\}]\} (points can be passed to play as is)", array{McpArg("player", "player", "player index")})
 
     McpHandle<override>(Call:mcp_call):mcp_reply =
         Tool := Call.Tool
@@ -217,7 +218,7 @@ mcp_character_toolset_component<public> := class<final_super>(component, mcp_con
         else:
             McpFail("unknown_tool", Tool)
 
-    # ---- 人ごとの動きの番号 ----
+    # ---- Motion generation per player ----
 
     NextGeneration<private>(Agent:agent)<transacts>:int =
         Next := (if (G := Generation[Agent]) then G else 0) + 1
@@ -227,7 +228,7 @@ mcp_character_toolset_component<public> := class<final_super>(component, mcp_con
     IsCurrent<private>(Agent:agent, Gen:int)<transacts><decides>:void =
         Generation[Agent] = Gen
 
-    # ---- 待つもの（spawn する） ----
+    # ---- Waiting work (spawned) ----
 
     ReleaseAfter<private>(Call:mcp_call, Agent:agent, Gen:int, Walk:character_walk_component, Seconds:float)<suspends>:void =
         Sleep(Clamp(Seconds, 0.0, 600.0))
@@ -247,7 +248,7 @@ mcp_character_toolset_component<public> := class<final_super>(component, mcp_con
                 break
             if (GetSimulationElapsedTime() - Start >= Seconds):
                 break
-            # ゲームが体を別の場所へ移した（リスポーン・リザルトの舞台など）ならやめる
+            # Stop if the game moved the body elsewhere (respawn, results stage etc.)
             Now := Motor.Entity.GetGlobalTransform().Translation
             if (DistanceSquaredXY(Now, Previous) > JumpAwayCm * JumpAwayCm):
                 set Replaced = true
@@ -266,7 +267,7 @@ mcp_character_toolset_component<public> := class<final_super>(component, mcp_con
         Pos := Motor.Entity.GetGlobalTransform().Translation
         Call.Notify("move_done", McpObject(array{McpField("ok", if (Result = "reached") then "true" else "false"), McpField("reason", McpQuote(Result)), McpField("pos", McpVector(Pos))}))
 
-    # Target へ歩く。"reached" / "timeout" / "replaced" を返す（入力は残す。呼ぶ側が 0 にする）
+    # Walks to Target. Returns "reached" / "timeout" / "replaced" (the input is left as is; the caller zeroes it)
     WalkTo<private>(Agent:agent, Gen:int, Motor:character_motor_component, Walk:character_walk_component, Target:vector3, Tolerance:float, Timeout:float)<suspends>:string =
         Start := GetSimulationElapsedTime()
         var Result:string = "timeout"
@@ -276,7 +277,7 @@ mcp_character_toolset_component<public> := class<final_super>(component, mcp_con
                 set Result = "replaced"
                 break
             Pos := Motor.Entity.GetGlobalTransform().Translation
-            # ゲームが体を別の場所へ移した（クリアでリザルトの舞台へ・リスポーンなど）ならやめる
+            # Stop if the game moved the body elsewhere (to the results stage on clear, respawn etc.)
             if (DistanceSquaredXY(Pos, Previous) > JumpAwayCm * JumpAwayCm):
                 set Result = "moved_away"
                 break
@@ -288,13 +289,13 @@ mcp_character_toolset_component<public> := class<final_super>(component, mcp_con
                 break
             if (GetSimulationElapsedTime() - Start >= Timeout):
                 break
-            # 近づいたら弱める（行き過ぎない）
+            # Ease off when close (do not overshoot)
             Strength := Clamp(GapLength / 150.0, 0.35, 1.0)
             Walk.SetMoveInput(McpWorldToMoveInput(Walk, Motor, Gap) * Strength)
             Sleep(0.0)
         Result
 
-    # 動きの JSON を再生する
+    # Plays a motion JSON
     Play<private>(Call:mcp_call, Agent:agent, Gen:int, Motor:character_motor_component, Motion:[string]value)<suspends>:void =
         Walk:?character_walk_component = if (W := Motor.FindCharacterWalk[]) then option{W} else false
         var Ok:logic = true
@@ -361,7 +362,7 @@ mcp_character_toolset_component<public> := class<final_super>(component, mcp_con
         Pos := Motor.Entity.GetGlobalTransform().Translation
         Call.Notify("play_done", McpObject(array{McpField("ok", McpLogic(Ok)), McpField("reason", McpQuote(Reason)), McpField("done", "{Done}"), McpField("total", "{Total}"), McpField("pos", McpVector(Pos))}))
 
-    # steps の 1 つを当てる（move = 入力、world = 世界の向き（その時の向きで 1 回直す）、jump / dash、teleport = 位置、stop = 入力 0）
+    # Applies one step (move = input, world = world direction (converted once with the facing at that time), jump / dash, teleport = position, stop = zero input)
     ApplyStep<private>(Motor:character_motor_component, O:[string]value):void =
         if (Walk := Motor.FindCharacterWalk[]):
             if (MoveValue := O["move"], Input := ReadInput[MoveValue]):
@@ -378,7 +379,7 @@ mcp_character_toolset_component<public> := class<final_super>(component, mcp_con
         if (DashValue := O["dash"], McpValueToLogic[DashValue] = true, Dasher := Motor.Entity.GetComponent[character_dash_component]):
             Dasher.Dash()
 
-    # ---- 状態の書き出し・復元（キー "characters"。人ごとの位置・速度・重力の倍率。プレイヤーは番号で当てる） ----
+    # ---- State snapshot / restore (key "characters": position, velocity and gravity scale per player; players matched by index) ----
 
     McpSessionKey<override>()<transacts>:string = "characters"
 
@@ -406,30 +407,48 @@ mcp_character_toolset_component<public> := class<final_super>(component, mcp_con
         else:
             "bad_state"
 
-# 1 フレームでこれより遠くへ移ったら、ゲームが体を移した（テレポート）とみなして、歩かせるのをやめる（cm）
+# Moving farther than this in one frame counts as the game having moved the body (teleport), so walking stops (cm)
 JumpAwayCm<internal>:float = 800.0
 
-# 水平の距離の 2 乗
+# Squared horizontal distance
 DistanceSquaredXY<internal>(A:vector3, B:vector3)<transacts>:float =
     DL := A.Left - B.Left
     DF := A.Forward - B.Forward
     DL * DL + DF * DF
 
-# 体の状態の JSON
+# Body state as JSON
 McpMotorStateJson<public>(Motor:character_motor_component)<transacts>:string =
-    States := for (State : array{character_motor_state.Grounded, character_motor_state.Airborne, character_motor_state.Rising, character_motor_state.Falling, character_motor_state.Moving, character_motor_state.Still}, Motor.IsInState[State]):
+    States := for (State : array{character_motor_state.Grounded, character_motor_state.Airborne, character_motor_state.Rising, character_motor_state.Falling, character_motor_state.Moving, character_motor_state.Still, character_motor_state.Clinging}, Motor.IsInState[State]):
         McpQuote(MotorStateName(State))
     Dashing := if (Dasher := Motor.Entity.GetComponent[character_dash_component], Dasher.IsDashing[]) then "true" else "false"
-    # 左右の入力のしかた（walk が無ければ出さない）。side_style = 今のしかた（バフ込み）、side_style_base = walk の基本
+    # Side-input style (omitted without walk). side_style = current style (with buffs), side_style_base = walk's base
     SideFields:[]string = if (Walk := Motor.FindCharacterWalk[]) then array{McpField("side_style", McpQuote(SideStyleName(Walk.GetSideStyle()))), McpField("side_style_base", McpQuote(SideStyleName(Walk.GetBaseSideStyle())))} else array{}
-    # 動く床（ride が無ければ riding は出さない）。ground_velocity = 乗っている床の速度、inherited_velocity = 床から離れたときに受け継いだ水平の速度（着地で 0）
+    # Moving floor (riding is omitted without ride). ground_velocity = velocity of the floor being stood on, inherited_velocity = horizontal velocity inherited when leaving the floor (0 on landing)
     Riding := if (Ride := Motor.Entity.GetComponent[character_ride_component]) then (if (Ride.FindRidingEntity[]) then "true" else "false") else ""
     RideFields:[]string = if (Riding <> "") then array{McpField("riding", Riding)} else array{}
+    # Cling (ClingKit). clinging = whether clinging, cling_surface = wall / ceiling ("" when not clinging), cling_normal = surface normal (the last surface when not clinging), can_cling = whether a modifier that grants cling (GrantsCling) is active
+    ClingSurfaceName := if (Surface := Motor.GetClingSurface[]) then ClingSurfaceKey(Surface) else ""
+    ClingFields:[]string = array{McpField("clinging", if (Motor.IsClinging[]) then "true" else "false"), McpField("cling_surface", McpQuote(ClingSurfaceName)),
+        McpField("cling_normal", McpVector(Motor.GetClingNormal())), McpField("can_cling", if (Motor.CanCling[]) then "true" else "false")}
+    # Action cells (CellKit; omitted when absent). cells = remaining, cell_capacity = maximum, cell_actions = available actions
+    CellFields:[]string = if (Cells := Motor.Entity.GetComponent[character_action_cell_component]):
+        Actions := for (Action : array{character_cell_action.AirJump, character_cell_action.Boost, character_cell_action.WallKick}, Cells.HasAction[Action]):
+            McpQuote(CellActionKey(Action))
+        array{McpField("cells", "{Cells.GetCells()}"), McpField("cell_capacity", "{Cells.GetCapacity()}"), McpField("cell_actions", McpArray(Actions))}
+    else:
+        array{}
     McpObject(array{McpField("pos", McpVector(Motor.Entity.GetGlobalTransform().Translation)), McpField("velocity", McpVector(Motor.GetVelocity())),
         McpField("grounded", if (Motor.IsGrounded[]) then "true" else "false"), McpField("states", McpArray(States)), McpField("gravity_scale", McpNumber(Motor.GetGravityScale())),
         McpField("speed_multiplier", McpNumber(Motor.GetSpeedMultiplier())), McpField("jump_multiplier", McpNumber(Motor.GetJumpMultiplier())),
         McpField("extra_air_jumps", "{Motor.GetExtraAirJumps()}"), McpField("dashing", Dashing),
-        McpField("ground_velocity", McpVector(Motor.GetGroundVelocity())), McpField("inherited_velocity", McpVector(Motor.GetInheritedVelocity()))} + SideFields + RideFields)
+        McpField("ground_velocity", McpVector(Motor.GetGroundVelocity())), McpField("inherited_velocity", McpVector(Motor.GetInheritedVelocity()))} + SideFields + RideFields + ClingFields + CellFields)
+
+# Action cell action name (MCP string)
+CellActionKey<internal>(Action:character_cell_action)<computes>:string =
+    case (Action):
+        character_cell_action.AirJump => "air_jump"
+        character_cell_action.Boost => "boost"
+        character_cell_action.WallKick => "wall_kick"
 
 MotorStateJson<internal>(Motor:character_motor_component)<transacts>:string =
     McpMotorStateJson(Motor)
@@ -442,15 +461,22 @@ MotorStateName<internal>(State:character_motor_state)<computes>:string =
         character_motor_state.Falling => "falling"
         character_motor_state.Moving => "moving"
         character_motor_state.Still => "still"
+        character_motor_state.Clinging => "clinging"
 
-# 左右の入力のしかたの名前（MCP で使う。turn / strafe / tank_turn）
+# Name of the cling surface (used by MCP: wall / ceiling)
+ClingSurfaceKey<internal>(Surface:character_cling_surface)<computes>:string =
+    case (Surface):
+        character_cling_surface.Wall => "wall"
+        character_cling_surface.Ceiling => "ceiling"
+
+# Side-input style name (used by MCP: turn / strafe / tank_turn)
 SideStyleName<internal>(Style:character_side_style)<computes>:string =
     case (Style):
         character_side_style.Turn => "turn"
         character_side_style.Strafe => "strafe"
         character_side_style.TankTurn => "tank_turn"
 
-# 名前から左右の入力のしかた（turn / strafe / tank_turn。Turn / Strafe / TankTurn も受ける）。どれでもなければ失敗する
+# Side-input style from its name (turn / strafe / tank_turn; Turn / Strafe / TankTurn also accepted). Fails for anything else
 ReadSideStyle<internal>(Name:string)<transacts><decides>:character_side_style =
     Found := for (Style : array{character_side_style.Turn, character_side_style.Strafe, character_side_style.TankTurn}, SideStyleName(Style) = Name or SideStyleTitle(Style) = Name):
         Style
@@ -462,7 +488,7 @@ SideStyleTitle<internal>(Style:character_side_style)<computes>:string =
         character_side_style.Strafe => "Strafe"
         character_side_style.TankTurn => "TankTurn"
 
-# 入力（{"forward","left"} か [forward, left]）。長さは 1 までに縮める
+# Input ({"forward","left"} or [forward, left]). Shortened to length 1 at most
 ReadInput<internal>(V:value)<transacts><decides>:vector3 =
     Raw := McpReadInputRaw[V]
     Length := Raw.Length()
@@ -478,9 +504,9 @@ McpReadInputRaw<internal>(V:value)<transacts><decides>:vector3 =
         Left := if (X := O["left"]) then McpValueToFloat[X] else 0.0
         vector3{Forward := Forward, Left := Left}
 
-# 世界の向き Dir を、walk の今の歩く向き（GetWalkBasis：Space と左右の入力のしかたに合わせた軸）での移動の入力（forward = 前、left = 左。長さ 1）に直す
-#   SideView は前の軸が vector3{} なので left だけになる。TankTurn は体の向きが前で、left は「その方向へ回る」入力になる（横にある行き先へは回ってから進む）
-#   Motor は前の版との互換のために残している（使わない）
+# Converts world direction Dir into move input (forward = ahead, left = left; length 1) in walk's current walk basis (GetWalkBasis: axes according to Space and the side-input style)
+#   In SideView the forward axis is vector3{}, so only left remains. In TankTurn forward is the body's facing and left means "turn that way" (a destination to the side is reached by turning first, then moving)
+#   Motor is kept for compatibility with the previous version (unused)
 McpWorldToMoveInput<public>(Walk:character_walk_component, Motor:character_motor_component, Dir:vector3)<transacts>:vector3 =
     Horizontal := vector3{Forward := Dir.Forward, Left := Dir.Left}
     Length := Horizontal.Length()
@@ -490,11 +516,11 @@ McpWorldToMoveInput<public>(Walk:character_walk_component, Motor:character_motor
     Basis := Walk.GetWalkBasis()
     vector3{Forward := DotProduct(Unit, Basis(0)), Left := DotProduct(Unit, Basis(1))}
 
-# 1 人の動きの記録（record_start で作り、record_stop で JSON にする）
+# Motion recording of one player (created by record_start, turned into JSON by record_stop)
 mcp_character_recorder<internal> := class<internal>:
     Motor<internal>:character_motor_component
     IntervalSeconds<internal>:float
-    # 記録する数の上限（約 5 分 / 0.1 秒）
+    # Maximum number of samples (about 5 minutes at 0.1 s)
     MaxSamples<internal>:int = 3000
 
     var<private> Samples:[]string = array{}
@@ -550,3 +576,6 @@ ActionName<internal>(Action:character_action)<computes>:string =
         character_action.StartedMoving => "started_moving"
         character_action.StoppedMoving => "stopped_moving"
         character_action.HitWall => "hit_wall"
+        character_action.WallKicked => "wall_kicked"
+        character_action.ClingStart => "cling_start"
+        character_action.ClingEnd => "cling_end"

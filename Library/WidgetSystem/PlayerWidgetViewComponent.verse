@@ -4,15 +4,15 @@ using { /UnrealEngine.com/Temporary/UI }
 using { PlayerSystem }
 using { SceneGraphSystem }
 
-# 役割：1 人の画面に widget を足し、消えるときに外す（外したあと widget_view の HiddenEvent を送る）。作った側からの知らせ（player_view_source_event）と、同じ人のほかの view からの知らせ（player_event）を widget_view.ReceivedEvent に渡す
-#   Mode = Menu なら、同じ人のほかのメニューと重ならないようにする（Owner の MenuConflict）。ほかのメニューは、同じ slot の下の view から探す
-# 置き方：実行時に player_widget_component が作る（エディターでは置かない）
+# Role: adds a widget to one person's screen and removes it when it goes away (then sends widget_view's HiddenEvent). Passes notifications from the creator (player_view_source_event) and from the same person's other views (player_event) to widget_view.ReceivedEvent
+#   With Mode = Menu, avoids overlapping the same person's other menus (Owner's MenuConflict). Other menus are looked up among the views under the same slot
+# Placement: created at runtime by player_widget_component (not placed in the editor)
 player_widget_view_component<public> := class<final_super><internal>(component):
-    # 1 人分の窓口
+    # The view for one person
     View<public>:widget_view
-    # 画面に足す widget
+    # The widget added to the screen
     Root<public>:widget
-    # 画面に足すときの重ね順と入力モード
+    # Stacking order and input mode when added to the screen
     Slot<public>:player_ui_slot
 
     var<private> Added:logic = false
@@ -23,7 +23,7 @@ player_widget_view_component<public> := class<final_super><internal>(component):
         if (Slot.InputMode = ui_input_mode.All):
             if (Other := FindOtherMenu[]):
                 if (View.Owner.MenuConflict = player_widget_menu_conflict.KeepOther):
-                    # こちらを出さない（閉じた扱いにして view ごと外す）
+                    # Do not show this one (treat as closed and remove the whole view)
                     View.Close()
                     return
                 Other.View.Close()
@@ -49,7 +49,7 @@ player_widget_view_component<public> := class<final_super><internal>(component):
             View.NotifyReceived(ForPlayer.Event)
         false
 
-    # 同じ人（同じ slot の下）に出ている、ほかのメニュー（Mode = Menu）の view。無ければ失敗する
+    # The view of another menu (Mode = Menu) shown to the same person (under the same slot). Fails if there is none
     FindOtherMenu<private>()<decides><transacts>:player_widget_view_component =
         SlotEntity := Entity.GetParent[]
         Found := for:

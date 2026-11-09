@@ -7,32 +7,32 @@ using { /Fortnite.com/Game }
 using { /Fortnite.com/Characters }
 using { MCPSystem.TooltipKit }
 
-# MCPSystem の版（describe・hello の "v"。Python の送り手と約束の形が変わったら上げる）
+# MCPSystem version (the "v" of describe and hello; bumped when the contract with the Python sender changes)
 MCPSystemVersion<public>:string = "1.0.0"
 
-# ==== 送り手と受け手の約束（Python の送り手 mcpsystem と同じ。README の「命令と返事の形」）====
-# 経路：送り手が MCP の EntityToolset.SetComponentProperty で mcp_inbox_component.Inbox（文字列の @editable）に JSON を書く
-#   → ライブ編集でセッション中のゲームに届く（v43.00 実測、往復 約 0.1 秒）→ 受け箱が毎フレーム比べ、変わったら読む
-#   → 宛先のツールセット（mcp_controllable）に渡す → 返事を Print("[MCPC] ...") → 送り手が MCP の GetVerseOutput で読む
-# Inbox：{"n":<書くたびに変える数>,"cmds":[{"seq":S,"to":"<ツールセット>[@<インスタンス>]","tool":"<ツール>","args":{..} か [..]}, ...]}
-#   （命令の配列 [...] や命令 1 つでもよい。"tool" の代わりに "cmd" でもよい）
-#   cmds は返事をまだ見ていない命令だけ（送り手は返事を見たら外して書き直す）。seq は増やすだけ（送り手はミリ秒の時刻から始める）
-# 返事：[MCPC] {"seq":S,"ok":true|false,"to":..,"tool":..,"hits":<受けた部品の数>,"reply":"<文>","error":"<種類>","data":<JSON>,"f":<フレーム>,"t":<秒>}
-#   1 フレームの返事は 1 行にまとめる（[MCPC] [{...},{...}]。1 行 MaxLineChars 文字まで。残りは次のフレーム）
-#   1 つの返事が MaxLineChars を超えるときは分ける：[MCPC] ~K:i:n:<JSON の一部をそのまま>（送り手が i の順につないで読む）。60 万文字を超える返事は too_large
-#   長くかかるツールの終わり：[MCPC] {"event":"<名前>","seq":S,"data":<JSON>,"f":..,"t":..}
-#   受け箱の起動：[MCPC] {"seq":0,"hello":true,"v":"1.0.0","boot":<起動ごとの数>,...}（送り手は見たら未完了を書き直す）
-# 重複（seq が処理済み以下）は実行しない。覚えている返事（直近 256 件）を 1 秒に 1 回まで出し直す
+# ==== Contract between sender and receiver (same as the Python sender mcpsystem; "Command and reply format" in README) ====
+# Path: the sender writes JSON into mcp_inbox_component.Inbox (a string @editable) with MCP's EntityToolset.SetComponentProperty
+#   -> live edit delivers it to the running session (measured in v43.00: about 0.1 s round trip) -> the inbox compares every frame and reads it when changed
+#   -> handed to the addressed toolset (mcp_controllable) -> the reply is Print("[MCPC] ...") -> the sender reads it with MCP's GetVerseOutput
+# Inbox: {"n":<number changed on every write>,"cmds":[{"seq":S,"to":"<toolset>[@<instance>]","tool":"<tool>","args":{..} or [..]}, ...]}
+#   (an array of commands [...] or a single command is also accepted; "cmd" may be used instead of "tool")
+#   cmds holds only the commands whose reply has not been seen yet (the sender removes a command once it sees the reply and rewrites). seq only increases (the sender starts from the time in milliseconds)
+# Reply: [MCPC] {"seq":S,"ok":true|false,"to":..,"tool":..,"hits":<number of parts that received it>,"reply":"<text>","error":"<code>","data":<JSON>,"f":<frame>,"t":<seconds>}
+#   The replies of one frame are joined into one line ([MCPC] [{...},{...}]; up to MaxLineChars characters per line; the rest goes in the next frame)
+#   A single reply above MaxLineChars is split: [MCPC] ~K:i:n:<a raw slice of the JSON> (the sender joins them in the order of i). A reply above 600k characters becomes too_large
+#   End of a long-running tool: [MCPC] {"event":"<name>","seq":S,"data":<JSON>,"f":..,"t":..}
+#   Inbox start-up: [MCPC] {"seq":0,"hello":true,"v":"1.0.0","boot":<number per start>,...} (the sender rewrites its pending commands when it sees this)
+# Duplicates (seq at or below the last processed one) are not executed. The remembered reply (last 256) is re-emitted at most once per second
 
-# 1 つの命令（JSON から読んだもの）
+# One command (as read from JSON)
 mcp_command<public> := class<internal>:
     Seq<public>:int
     To<public>:string
     Tool<public>:string
-    # "args" の値（無ければ false）
+    # The "args" value (false when absent)
     Args<public>:?value
 
-# JSON の値 1 つを命令にする。seq が無い・1 以上の整数でないなら失敗する
+# Turns one JSON value into a command. Fails when seq is missing or not an integer of 1 or more
 McpReadCommand<public>(V:value)<transacts><decides>:mcp_command =
     O := V.AsObject[]
     Seq := McpValueToInt[O["seq"]]
@@ -42,58 +42,58 @@ McpReadCommand<public>(V:value)<transacts><decides>:mcp_command =
     Args:?value = if (A := O["args"]) then option{A} else false
     mcp_command{Seq := Seq, To := To, Tool := Tool, Args := Args}
 
-# 受け箱が集めた受け口（component と、その mcp_controllable）
+# A receiver collected by the inbox (the component and its mcp_controllable)
 mcp_target<internal> := class<internal>:
     Component<internal>:component
     Controllable<internal>:mcp_controllable
 
-# 役割：MCP からの命令の受け箱。Inbox（文字列の @editable）に書かれた命令を読み、宛先のツールセット（mcp_controllable）に渡し、返事を Print する。Core ツールセット（"core"）を自分で持つ
-# 置き方：最上位の entity を 1 つ作って付ける（ライブ編集で書くのはこの component の Inbox だけ。Lore のロックはその entity のパッケージだけ）。
-#   ツールセットの component（EntityKit の mcp_entity_toolset_component など）は同じ entity に置くとよい（どこに置いても、タグで集める）
-# いつ：開始から止まるまで毎フレーム Inbox を比べる。起動時の中身は実行しない（RunInboxAtStart がオフのとき。作り直しのあと、前に実行した命令を繰り返さない）
-# 知らせ：[MCPC] で始まる 1 行の JSON（返事・知らせ・起動の合図）。送り手は MCP の GetVerseOutput で読む
-# タグ：mcp_controllable_tag の entity から mcp_controllable を集める（実行中に増えた部品にも追いつく）
-# 外から：ResolveEntity / GetHandle / FindHandleEntity / FindNamed（entity の番号と名前）、FindTagEntry（タグの名前）、Notify、GetLogLevel / SetLogLevel、IsInRound / GetRoundNumber
-# 前提・注意：ライブ編集の無い環境（公開した島）では Inbox はクック時の値のまま変わらず、何もしない。公開版では Quiet をオンにする
+# Role: inbox for commands from MCP. Reads the commands written into Inbox (a string @editable), hands them to the addressed toolset (mcp_controllable) and Prints the replies. Carries the Core toolset ("core") itself
+# Placement: create one top-level entity and attach it (live edit only ever writes this component's Inbox, so Lore locking is limited to that entity's package).
+#   Toolset components (EntityKit's mcp_entity_toolset_component etc.) are best placed on the same entity (they are collected by tag, so any entity works)
+# When: compares Inbox every frame from start until stop. The contents at start are not executed (when RunInboxAtStart is off, so a rebuilt inbox does not repeat commands it already ran)
+# Notifications: one-line JSON prefixed [MCPC] (replies, notifications, start-up signal). The sender reads them with MCP's GetVerseOutput
+# Tags: collects mcp_controllable from entities with mcp_controllable_tag (also picks up parts added while running)
+# Public API: ResolveEntity / GetHandle / FindHandleEntity / FindNamed (entity ids and names), FindTagEntry (tag names), Notify, GetLogLevel / SetLogLevel, IsInRound / GetRoundNumber
+# Requirements, caveats: without live edit (a published island) Inbox keeps its cooked value and nothing happens. Turn Quiet on for the published version
 mcp_inbox_component<public> := class<final_super>(component):
 
-    # MCP が書く命令の JSON（{"n":..,"cmds":[...]}、命令の配列、命令 1 つのどれか）。エディターでは空にしておく
+    # Command JSON written by MCP ({"n":..,"cmds":[...]}, an array of commands, or a single command). Leave it empty in the editor
     @editable:
         ToolTip := McpInboxTextToolTip
         Categories := array{McpCategory}
     Inbox<public>:string = ""
-    # オンなら、起動時（ラウンドの開始・リセット・Verse の入れ直し）に Inbox に入っている命令を実行する（セッション開始前に書いておいた命令で始める使い方）。既定オフ
+    # When on, the commands in Inbox are executed at start (round start, reset, Verse reload) (to start from commands written before the session). Default off
     @editable:
         ToolTip := McpInboxRunAtStartToolTip
         Categories := array{McpCategory}
     RunInboxAtStart<public>:logic = false
-    # 1 フレームに実行する命令の数の上限（1〜1000。重い命令が多いなら下げる）。既定 50
+    # Maximum commands executed per frame (1-1000; lower it for many heavy commands). Default 50
     @editable_number(int):
         ToolTip := McpInboxMaxPerFrameToolTip
         Categories := array{McpCategory}
         MinValue := option{1}
         MaxValue := option{1000}
     MaxPerFrame<public>:int = 50
-    # 返事 1 行の文字数の上限（2000〜15000。GetVerseOutput は 1 行 16384 文字で切る）。既定 12000
+    # Maximum characters per reply line (2000-15000; GetVerseOutput truncates a line at 16384 characters). Default 12000
     @editable_number(int):
         ToolTip := McpInboxMaxLineCharsToolTip
         Categories := array{McpCategory}
         MinValue := option{2000}
         MaxValue := option{15000}
     MaxLineChars<public>:int = 12000
-    # オンなら返事・知らせを Print しない（命令は実行する）。公開版でログを汚さないため。既定オフ
+    # When on, replies and notifications are not Printed (commands still run). Keeps the log clean in the published version. Default off
     @editable:
         ToolTip := McpInboxQuietToolTip
         Categories := array{McpCategory}
     Quiet<public>:logic = false
-    # 受け箱のログの詳しさの初期値（0 = 返事だけ、1 = 起動・壊れた命令、2 = 命令ごと、3 = さらに詳しく）。debug.set_level で変えられる。既定 1
+    # Initial verbosity of the inbox log (0 = replies only, 1 = start-up and broken commands, 2 = every command, 3 = verbose). Changeable with debug.set_level. Default 1
     @editable_number(int):
         ToolTip := McpInboxLogLevelToolTip
         Categories := array{McpCategory}
         MinValue := option{0}
         MaxValue := option{3}
     LogLevel<public>:int = 1
-    # 返事の行をクライアントの画面にも出す秒数（0 ならログだけ。Print は既定で 2 秒画面に出るので、0 にしてプレイの邪魔をしない）。既定 0
+    # Seconds to show reply lines on the client screen as well (0 means log only; Print shows on screen for 2 s by default, so 0 keeps it out of the way of play). Default 0
     @editable_number(float):
         ToolTip := McpInboxScreenSecondsToolTip
         Categories := array{McpCategory}
@@ -111,7 +111,7 @@ mcp_inbox_component<public> := class<final_super>(component):
     var<private> Batch:[]string = array{}
     var<private> BatchChars:int = 0
     var<private> NextChunkId:int = 1
-    # 1 つの返事の文字数の上限（これを超える返事は too_large にする）
+    # Maximum characters of one reply (a larger reply becomes too_large)
     MaxReplyChars<private>:int = 600000
     var<private> Targets:[]mcp_target = array{}
     var<private> ScannedAt:float = -1000.0
@@ -163,32 +163,32 @@ mcp_inbox_component<public> := class<final_super>(component):
     OnRoundEnded<private>():void =
         set InRound = false
 
-    # ---- 外から ----
+    # ---- Public API ----
 
-    # ラウンドの途中（始まってから終わるまで）なら成功する。round manager が無ければ失敗する
+    # Succeeds while a round is in progress (from start to end). Fails without a round manager
     IsInRound<public>()<transacts><decides>:void =
         InRound?
 
-    # 今のラウンドの番号（round manager が無ければ 0）
+    # Current round number (0 without a round manager)
     GetRoundNumber<public>()<transacts>:int =
         if (Manager := RoundManager?) then Manager.RoundNumber else 0
 
-    # 今のフレームの番号（受け箱が始まってから数えた数）
+    # Current frame number (counted since the inbox started)
     GetFrame<public>()<transacts>:int = Frame
 
-    # ログの詳しさ（0〜3）
+    # Log verbosity (0-3)
     GetLogLevel<public>()<transacts>:int = Level
 
-    # ログの詳しさを変える（0〜3 に丸める）
+    # Changes the log verbosity (clamped to 0-3)
     SetLogLevel<public>(NewLevel:int)<transacts>:void =
         set Level = Clamp(NewLevel, 0, 3)
 
-    # Level 以下の詳しさなら「[mcp_inbox_component] Text」を Print する（Quiet なら出さない）
+    # Prints "[mcp_inbox_component] Text" when AtLevel is within Level (nothing when Quiet)
     Log<public>(AtLevel:int, Text:string)<transacts>:void =
         if (AtLevel <= Level, not Quiet?):
             Print("[mcp_inbox_component] {Text}", ?Duration := ScreenSeconds)
 
-    # 長くかかるツールが終わったときの知らせを出す（このフレームの返事の行に入る）。Data は JSON（空なら付けない）
+    # Emits the notification for a finished long-running tool (goes into this frame's reply line). Data is JSON (omitted when empty)
     Notify<public>(EventName:string, Seq:int, Data:string)<transacts>:void =
         var Fields:[]string = array{McpField("event", McpQuote(EventName)), McpField("seq", "{Seq}")}
         if (Data <> ""):
@@ -196,7 +196,7 @@ mcp_inbox_component<public> := class<final_super>(component):
         set Fields += array{McpField("f", "{Frame}"), McpField("t", McpNumber(GetSimulationElapsedTime()))}
         AddToBatch(McpObject(Fields))
 
-    # entity の番号（このセッションの中で変わらない。entity.find などの "id"）。初めての entity なら番号を付ける
+    # Id of an entity (stable within the session; the "id" of entity.find etc.). A new entity gets a new id
     GetHandle<public>(Target:entity)<transacts>:int =
         if (Known := EntityHandles[Target]):
             Known
@@ -207,11 +207,11 @@ mcp_inbox_component<public> := class<final_super>(component):
             if (set HandleEntities[Handle] = Target) {}
             Handle
 
-    # 番号 Handle の entity。知らない番号なら失敗する
+    # The entity with id Handle. Fails for an unknown id
     FindHandleEntity<public>(Handle:int)<transacts><decides>:entity =
         HandleEntities[Handle]
 
-    # mcp_name_component の名前が Name の entity（世界から。並び順は決まらない）
+    # Entities whose mcp_name_component name is Name (from the whole world; order is undefined)
     FindNamed<public>(Name:string)<transacts>:[]entity =
         if (World := Entity.GetSimulationEntity[]):
             for (Found : World.FindDescendantEntitiesWithTag(mcp_name_tag), Found.GetMcpName() = Name):
@@ -219,7 +219,7 @@ mcp_inbox_component<public> := class<final_super>(component):
         else:
             array{}
 
-    # 引数の値から entity を探す（番号・数の文字列・名前・{"id":..}・{"name":..}）。見つからなければ失敗する
+    # Resolves an entity from an argument value (id, numeric string, name, {"id":..} or {"name":..}). Fails when not found
     ResolveEntity<public>(V:value)<transacts><decides>:entity =
         var Found:?entity = false
         if (O := V.AsObject[]):
@@ -236,7 +236,7 @@ mcp_inbox_component<public> := class<final_super>(component):
             set Found = option{E}
         Found?
 
-    # 名前を付けたタグの一覧（受け箱が知っているもの ＋ mcp_controllable_tag の entity の mcp_tag_provider が知らせたもの）
+    # List of named tags (those the inbox knows + those reported by mcp_tag_provider on entities with mcp_controllable_tag)
     GetTagEntries<public>()<transacts>:[]mcp_tag_entry =
         var Entries:[]mcp_tag_entry = array:
             McpTagEntry("mcp_controllable_tag", mcp_controllable_tag)
@@ -247,18 +247,18 @@ mcp_inbox_component<public> := class<final_super>(component):
                 set Entries += Provider.McpTagEntries()
         Entries
 
-    # 名前 Name のタグ。知らない名前なら失敗する
+    # The tag named Name. Fails for an unknown name
     FindTagEntry<public>(Name:string)<transacts><decides>:mcp_tag_entry =
         Found := for (Entry : GetTagEntries(), Entry.Name = Name) { Entry }
         Found[0]
 
-    # 今の受け口（mcp_controllable）をすべて（集め直す）
+    # All current receivers (mcp_controllable) (rescans)
     GetControllables<public>()<transacts>:[]mcp_controllable =
         Rescan()
         for (Target : Targets) { Target.Controllable }
 
-    # 命令 1 つ（{"seq":..,"to":..,"tool":..,"args":..}。seq は省略でき、無ければ 1）をその場で実行して、返事の JSON を返す（Print しない。重複の扱い・連番は見ない）
-    #   ゲームのコードやテストから、MCP と同じ形で受け口を呼ぶときに使う。読めない JSON なら bad_json / bad_command の返事
+    # Executes one command ({"seq":..,"to":..,"tool":..,"args":..}; seq is optional, 1 when absent) right away and returns the reply JSON (no Print; no duplicate handling or sequence check)
+    #   For calling receivers from game code or tests in the same form as MCP. Unreadable JSON gives a bad_json / bad_command reply
     ExecuteJson<public>(CommandJson:string):string =
         if (Root := Parse[CommandJson], O := Root.AsObject[]):
             Seq := if (SeqValue := O["seq"], S := McpValueToInt[SeqValue], S > 0) then S else 1
@@ -269,9 +269,9 @@ mcp_inbox_component<public> := class<final_super>(component):
         else:
             "\{\"seq\":-1,\"ok\":false,\"error\":\"bad_json\",\"reply\":\"bad_json\"\}"
 
-    # ---- 読む ----
+    # ---- Reading ----
 
-    # 新しい命令を Todo に積む。重複には（1 秒に 1 回まで）覚えている返事を返す
+    # Queues new commands into Todo. Duplicates get the remembered reply (at most once per second)
     Read<private>(Text:string)<transacts>:void =
         if (Text = ""):
             return
@@ -301,7 +301,7 @@ mcp_inbox_component<public> := class<final_super>(component):
             Log(1, "bad json ({Text.Length} chars)")
             AddToBatch("\{\"seq\":-1,\"ok\":false,\"error\":\"bad_json\",\"reply\":\"bad_json\",\"len\":{Text.Length}\}")
 
-    # Todo から MaxPerFrame 件まで実行し、このフレームの返事を 1 行で出す
+    # Runs up to MaxPerFrame commands from Todo and emits this frame's replies as one line
     Step<private>():void =
         var Ran:int = 0
         var Rest:[]mcp_command = array{}
@@ -311,14 +311,14 @@ mcp_inbox_component<public> := class<final_super>(component):
                 set Ran += 1
                 set DoneSeq = C.Seq
                 if (set Replies[C.Seq] = Json) {}
-                # 出したばかりの返事は 1 秒（30 フレーム）は出し直さない（送り手がまだ読んでいないだけのことが多い）
+                # A reply just emitted is not re-emitted for 1 s (30 frames) (usually the sender simply has not read it yet)
                 if (set ReEmitFrame[C.Seq] = Frame) {}
                 AddToBatch(Json)
             else:
                 set Rest += array{C}
         set Todo = Rest
         Flush()
-        # 古い返事を忘れる（直近 256 件だけ残す）
+        # Forget old replies (keep only the last 256)
         if (Replies[DoneSeq - 256]):
             var Kept:[int]string = map{}
             for (Key -> Json : Replies, Key > DoneSeq - 256):
@@ -326,16 +326,16 @@ mcp_inbox_component<public> := class<final_super>(component):
             set Replies = Kept
             set ReEmitFrame = map{}
 
-    # ---- 返事を出す ----
+    # ---- Emitting replies ----
 
     Emit<private>(Line:string)<transacts>:void =
         if (not Quiet?):
             Print("[MCPC] {Line}", ?Duration := ScreenSeconds)
 
-    # 返事・知らせを今のフレームの行に足す。1 つで行に入らない大きさなら分けて出す
+    # Adds a reply / notification to the current frame's line. One that does not fit a line by itself is emitted in chunks
     AddToBatch<private>(Json:string)<transacts>:void =
         if (Json.Length > MaxReplyChars):
-            # 大きすぎる返事は出さない（Print の行が多すぎて間引かれ、送り手が待ち続けるのを避ける）
+            # Do not emit an oversized reply (too many Print lines get dropped and the sender would wait forever)
             AddToBatch("\{\"seq\":-1,\"ok\":false,\"error\":\"too_large\",\"reply\":\"too_large {Json.Length} chars\"\}")
         else if (Json.Length + 2 > MaxLineChars):
             EmitChunks(Json)
@@ -353,8 +353,8 @@ mcp_inbox_component<public> := class<final_super>(component):
         set Batch = array{}
         set BatchChars = 0
 
-    # 大きい JSON を分けて出す：[MCPC] ~<chunk_id>:<part>:<parts>:<JSON の一部をそのまま>（逃がさない。返事の JSON に改行は無いので 1 行に収まる）
-    #   送り手は part の順につないで読む。UTF-8 の文字の途中で切らないよう、ASCII の文字の前で切る
+    # Emits a large JSON in chunks: [MCPC] ~<chunk_id>:<part>:<parts>:<a raw slice of the JSON> (not escaped; reply JSON has no newlines, so it fits one line)
+    #   The sender joins them in the order of part. Splits happen before an ASCII character so a UTF-8 character is never cut in half
     EmitChunks<private>(Json:string)<transacts>:void =
         Flush()
         PieceChars := Max(MaxLineChars - 100, 1000)
@@ -382,9 +382,9 @@ mcp_inbox_component<public> := class<final_super>(component):
             End := if (Following := Starts[Index + 1]) then Following else Json.Length
             Emit("~{ChunkId}:{Index}:{Starts.Length}:{McpSlice(Json, Start, End - Start)}")
 
-    # ---- 実行する ----
+    # ---- Executing ----
 
-    # 宛先に渡して返事の JSON を作る
+    # Hands the command to its destination and builds the reply JSON
     RunCommand<private>(C:mcp_command):string =
         Split := SplitTarget(C.To)
         Toolset := Split(0)
@@ -419,7 +419,7 @@ mcp_inbox_component<public> := class<final_super>(component):
         Log(2, "ran seq={C.Seq} {C.To}.{C.Tool} ok={McpLogic(Reply.Ok)}")
         McpObject(Fields)
 
-    # 1 つの受け口でツールを実行する（ツールの有無・省略できない引数を先に確かめる）
+    # Runs the tool on one receiver (checks that the tool exists and the required arguments are present first)
     RunTarget<private>(Target:mcp_target, C:mcp_command):mcp_reply =
         Tools := Target.Controllable.McpTools()
         if (Tool := FindMcpTool[Tools, C.Tool]):
@@ -453,19 +453,19 @@ mcp_inbox_component<public> := class<final_super>(component):
             Positional := Positional
             ArgNames := for (Arg : Tool.Args) { Arg.Name }
 
-    # 省略できない引数のうち、無いものの名前。全部あれば失敗する
+    # Name of a missing required argument. Fails when all are present
     FindMissingArg<private>(Call:mcp_call, Tool:mcp_tool)<transacts><decides>:string =
         Missing := for (Arg : Tool.Args, Arg.Required?, not Call.HasArg[Arg.Name]) { Arg.Name }
         Missing[0]
 
-    # "widget@main" → ("widget", "main")、"widget" → ("widget", "")
+    # "widget@main" -> ("widget", "main"), "widget" -> ("widget", "")
     SplitTarget<private>(To:string)<transacts>:tuple(string, string) =
         if (At := McpFindChar[To, '@']):
             (McpSlice(To, 0, At), McpSlice(To, At + 1, To.Length))
         else:
             (To, "")
 
-    # Toolset（と Id）に合う受け口。見つからなければ集め直してもう一度探す
+    # Receivers matching Toolset (and Id). When none is found, rescans and searches again
     FindTargets<private>(Toolset:string, Id:string)<transacts>:[]mcp_target =
         if (GetSimulationElapsedTime() - ScannedAt > 1.0 or Targets.Length = 0 or HasStaleTarget[]):
             Rescan()
@@ -487,7 +487,7 @@ mcp_inbox_component<public> := class<final_super>(component):
         Stale := for (Target : Targets, not Target.Component.IsSimulating[]) { Target }
         Stale.Length > 0
 
-    # タグの entity の component から mcp_controllable を集める
+    # Collects mcp_controllable from the components of tagged entities
     Rescan<private>()<transacts>:void =
         set ScannedAt = GetSimulationElapsedTime()
         if (World := Entity.GetSimulationEntity[]):
@@ -496,20 +496,20 @@ mcp_inbox_component<public> := class<final_super>(component):
         else:
             set Targets = array{}
 
-    # ---- Core ツールセット（宛先 "core"。"inbox" でもよい） ----
+    # ---- Core toolset (destination "core"; "inbox" also works) ----
 
     CoreTools<private>()<transacts>:[]mcp_tool =
         array:
-            McpTool("ping", "受け箱が動いているか（pong を返す）", array{})
-            McpTool("echo", "引数をそのまま返す（text か、並びの引数を空白でつないだもの）", array{McpOptArg("text", "string", "返す文字")})
-            McpTool("describe", "ツールセットとツールの一覧（引数の説明つき）。data に JSON", array{McpOptArg("toolset", "string", "このツールセットだけ")})
-            McpTool("list", "受け口（ツールセット）の一覧。data に [\{toolset,id,tools\}]", array{})
-            McpTool("status", "受け箱の状態（処理済みの seq・待ち・フレーム・受け口の数・ログの詳しさ）", array{})
-            McpTool("time", "シミュレーションの秒・UTC の Unix 時刻・フレーム", array{})
-            McpTool("round", "ラウンドの途中か・番号", array{})
-            McpTool("players", "プレイヤーの一覧（番号・キャラクターの有無・位置 cm）。ほかのツールの player はこの番号", array{})
-            McpTool("tags", "名前を付けたタグの一覧（entity.find / player.has_tag などで使える名前）", array{})
-            McpTool("batch", "命令の配列を同じフレームで順に実行する。data に返事の配列", array{McpArg("cmds", "json", "[\{to,tool,args\}, ...]（seq は要らない。core.batch は入れられない）")})
+            McpTool("ping", "Is the inbox alive (returns pong)", array{})
+            McpTool("echo", "Returns the arguments (text, or the positional arguments joined with spaces)", array{McpOptArg("text", "string", "text to return")})
+            McpTool("describe", "List of toolsets and tools with argument descriptions. JSON in data", array{McpOptArg("toolset", "string", "only this toolset")})
+            McpTool("list", "List of receivers (toolsets). data: [\{toolset,id,tools\}]", array{})
+            McpTool("status", "Inbox status (last processed seq, pending, frame, receiver count, log level)", array{})
+            McpTool("time", "Simulation seconds, UTC Unix time, frame", array{})
+            McpTool("round", "Whether a round is in progress, and its number", array{})
+            McpTool("players", "List of players (index, has character, position in cm). The player argument of other tools is this index", array{})
+            McpTool("tags", "List of named tags (usable in entity.find / player.has_tag etc.)", array{})
+            McpTool("batch", "Runs an array of commands in order within the same frame. data: array of replies", array{McpArg("cmds", "json", "[\{to,tool,args\}, ...] (no seq needed; core.batch cannot be nested)")})
 
     RunCore<private>(C:mcp_command):mcp_reply =
         Call := MakeCall(C, "core", "", if (Tool := FindMcpTool[CoreTools(), C.Tool]) then Tool else mcp_tool{})
@@ -575,12 +575,12 @@ mcp_inbox_component<public> := class<final_super>(component):
         else:
             McpFail("unknown_tool", C.Tool)
 
-# 受け口 1 つの説明（{"toolset","id","tools":[...]}）
+# Description of one receiver ({"toolset","id","tools":[...]})
 McpToolsetJson<public>(Controllable:mcp_controllable)<transacts>:string =
     McpObject(array{McpField("toolset", McpQuote(Controllable.McpToolset())), McpField("id", McpQuote(Controllable.McpId())),
         McpField("tools", McpArray(for (T : Controllable.McpTools()) { T.ToJson() }))})
 
-# 複数の受け口に届いたときの 1 つ分の結果
+# One result when a command reached several receivers
 McpResultJson<internal>(Controllable:mcp_controllable, Reply:mcp_reply)<transacts>:string =
     Name := if (Controllable.McpId() = "") then Controllable.McpToolset() else "{Controllable.McpToolset()}@{Controllable.McpId()}"
     var Fields:[]string = array{McpField("to", McpQuote(Name)), McpField("ok", McpLogic(Reply.Ok)), McpField("reply", McpQuote(Reply.Text))}
@@ -588,18 +588,18 @@ McpResultJson<internal>(Controllable:mcp_controllable, Reply:mcp_reply)<transact
         set Fields += array{McpDataField(Reply.Data)}
     McpObject(Fields)
 
-# "data":<JSON> の項目。Data が JSON として読めなければ、文字列として載せて "data_error":true を足す
+# The "data":<JSON> field. When Data does not parse as JSON, it is embedded as a string and "data_error":true is added
 McpDataField<internal>(Data:string)<transacts>:string =
     if (Parse[Data]):
         McpField("data", Data)
     else:
         "{McpField("data", McpQuote(Data))},{McpField("data_error", "true")}"
 
-# 最初の空白までの語
+# The word up to the first space
 McpFirstWord<internal>(Text:string)<transacts>:string =
     if (Space := McpFindChar[Text, ' ']) then McpSlice(Text, 0, Space) else Text
 
-# 大きい返事を分けるとき、この文字の前で切ってよい（ASCII。UTF-8 の文字の途中ではない）
+# A large reply may be split before this character (ASCII, so never inside a UTF-8 character)
 IsSafeSplitChar<internal>(C:char)<transacts><decides>:void =
     var Found:logic = false
     for (S : " ,:{}[]\"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-", S = C):

@@ -6,7 +6,7 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：ReadyChangedEvent の知らせを数える（Subscribe に Record を渡す）
+# Role: counts ReadyChangedEvent notifications (pass Record to Subscribe)
 test_ready_recorder<public> := class:
 
     var<private> Count:int = 0
@@ -20,10 +20,10 @@ test_ready_recorder<public> := class:
 
     GetLast<public>()<transacts>:logic = LastReady
 
-# 役割：InputSystem の動作確認。player_ready_component をコードから動かし（Activate / FindInput / SetReady / ToggleReady / IsReady / GetReadyCount / ResetAll / Deactivate）、ReadyChangedEvent・player_ready_changed_event・all_players_ready_condition を確かめる。slot が世界から外れたとき（退出の代わり）に、その人の準備 OK が数に残らないことも確かめる。最後に E キー（ゲームパッドは RB）を押してもらい、player_input_component の TriggeredEvent と、押して（同じ entity の player_input_component の InputAction で）準備 OK が切り替わることを確かめる
-# テストのレベル：player_manager_component を付けた entity を 1 つと、この component を付けた entity を 1 つ（入力と準備の component はテストが実行時に作る）。区画（または世界）にほかの player_ready_component を置かない。プレイヤー 1 人で始める（参加を最大 10 秒待つ）
-# 操作：ログに「press E」と出たら 10 秒以内に E キー（ゲームパッドは RB）を押す。押さなければその項目だけ失敗になる
-# 結果：出力ログの [TEST] InputSystem
+# Role: verification of InputSystem. Drives player_ready_component from code (Activate / FindInput / SetReady / ToggleReady / IsReady / GetReadyCount / ResetAll / Deactivate) and checks ReadyChangedEvent, player_ready_changed_event and all_players_ready_condition. Also checks that when a slot leaves the world (standing in for a player leaving) that player's ready state no longer counts. Finally asks for the E key (RB on gamepad) and checks player_input_component's TriggeredEvent and that pressing (the InputAction of the player_input_component on the same entity) toggles ready
+# Test level: one entity with player_manager_component and one entity with this component (the input and ready components are created by the test at runtime). Do not place another player_ready_component in the scope (or the world). Start with one player (waits up to 10 seconds for them to join)
+# Input: when "press E" appears in the log, press the E key (RB on gamepad) within 10 seconds. If not pressed, only that item fails
+# Result: [TEST] InputSystem in the output log
 input_system_test_component<public> := class<final_super>(component):
 
     var<private> ReadyEventCount:int = 0
@@ -84,7 +84,7 @@ input_system_test_component<public> := class<final_super>(component):
         Results.Check("ready: all_players_ready not satisfied after ResetAll", if (Condition.IsSatisfied[]) then false else true)
         TestLeave(Results, Manager, Ready, Player)
 
-        # 押して確かめる
+        # check by pressing
         Input.Activate()
         Results.Check("input: active after Activate", if (Input.IsActive[]) then true else false)
         Print("[TEST] InputSystem: press E (gamepad RB) within 10 seconds")
@@ -103,9 +103,9 @@ input_system_test_component<public> := class<final_super>(component):
         Subscription.Cancel()
         InputEntity.RemoveFromParent()
 
-    # 退出の代わりに、その人の slot を manager の下から外す（退出のときと同じく、slot の下の view が世界から外れて OnEndSimulation を通る）。
-    # 外れた view は数えず、準備 OK も戻る。slot を戻すと view も戻り、準備 OK でないところから数え直す
-    # ⚠ 本物の退出（manager の PlayerRemovedEvent で view の一覧から除く）は、プレイヤー 1 人では確かめられない（2 人以上で 1 人が抜けて確かめる）
+    # Instead of leaving, remove the player's slot from under the manager (as when leaving, the view under the slot leaves the world and goes through OnEndSimulation).
+    # The removed view is not counted and its ready state is reset. Putting the slot back brings the view back, counting again from not ready
+    # ⚠ A real leave (removal from the view list on the manager's PlayerRemovedEvent) cannot be checked with one player (needs 2 or more players with one leaving)
     TestLeave<private>(Results:test_log, Manager:player_manager_component, Ready:player_ready_component, Player:player):void =
         Ready.SetReady(Player, true)
         if (Slot := Manager.FindSlot[Player]):

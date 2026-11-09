@@ -11,7 +11,7 @@ using { VolumeSystem.ActivationKit }
 using { VolumeSystem.ConditionKit }
 using { _Test }
 
-# 役割：テスト用。起動・停止の合図を数える
+# Role: test helper. Counts the activate / deactivate signals
 test_activation_probe_component<public> := class<final_super>(component):
     var<private> Activated:int = 0
     var<private> Deactivated:int = 0
@@ -26,11 +26,11 @@ test_activation_probe_component<public> := class<final_super>(component):
     GetActivatedCount<public>()<transacts>:int = Activated
     GetDeactivatedCount<public>()<transacts>:int = Deactivated
 
-# 役割：VolumeSystem の動作確認。プレイヤーの位置にボリュームを作って「入った」（PlayerEnteredEvent・IsInside・in_volume_tag）、
-#   player_in_volume_condition_component が満たされること、volume_activation_component が子へ起動の合図を送ることを見る。
-#   そのあとボリュームを遠くへ動かして「出た」（PlayerExitedEvent・タグが外れる・停止の合図）を見る
-# テストのレベル：player_manager_component を付けた entity を 1 つと、この component を付けた entity を 1 つ。プレイヤー 1 人で始める（地面に立っていること）
-# 結果：出力ログの [TEST] VolumeSystem
+# Role: verification of VolumeSystem. Creates a volume at the player's position and checks "entered" (PlayerEnteredEvent, IsInside, in_volume_tag),
+#   that player_in_volume_condition_component is satisfied, and that volume_activation_component sends the activate signal to children.
+#   Then moves the volume far away and checks "exited" (PlayerExitedEvent, tag removed, deactivate signal)
+# Test level: one entity with player_manager_component and one entity with this component. Start with one player (standing on the ground)
+# Result: [TEST] VolumeSystem in the output log
 volume_system_test_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =
@@ -48,13 +48,13 @@ volume_system_test_component<public> := class<final_super>(component):
         if (Results.Finish[]) {}
 
     Run<private>(Results:test_log, Agent:agent, Position:vector3)<suspends>:void =
-        # 構成：根（条件 + 起動の Kit）─ ボリューム、根 ─ 合図を受ける子
+        # Layout: root (condition + activation Kit) - volume, root - child that receives the signals
         Root := entity{}
         Condition := player_in_volume_condition_component{Entity := Root, MinPlayers := 1}
         Activation := volume_activation_component{Entity := Root}
         Root.AddComponents(array{Condition, Activation})
         VolumeEntity := entity{}
-        # 底面を足元より下にして、キャラクターの位置が入る大きさにする
+        # Put the bottom below the feet and make it big enough to contain the character's position
         VolumeEntity.SetGlobalTransform(MakeTranslationTransform(Position - vector3{Up := 200.0}))
         Volume := player_volume_component{Entity := VolumeEntity, WidthCm := 600.0, DepthCm := 600.0, HeightCm := 600.0, PollIntervalSeconds := 0.1}
         VolumeEntity.AddComponents(array{Volume})
@@ -81,7 +81,7 @@ volume_system_test_component<public> := class<final_super>(component):
         Results.Check("volume_activation occupied", if (Activation.IsOccupied[]) then true else false)
         Results.CheckInt("child got activated_event", Probe.GetActivatedCount(), 1)
 
-        # 遠くへ動かして出す
+        # Move it far away to exit
         VolumeEntity.SetGlobalTransform(MakeTranslationTransform(Position + vector3{Forward := 10000.0}))
         Arrived11 := AwaitWithin(Volume.PlayerExitedEvent, 2.0)
         if (Arrived11?):
@@ -94,7 +94,7 @@ volume_system_test_component<public> := class<final_super>(component):
         Results.CheckInt("child got deactivated_event", Probe.GetDeactivatedCount(), 1)
         Results.Check("volume still active after the last one left (not stopped by its own deactivated_event)", if (Volume.IsActive[]) then true else false)
 
-        # Deactivate で止まる
+        # Deactivate stops it
         Volume.Deactivate()
         Results.Check("Deactivate -> not active", if (Volume.IsActive[]) then false else true)
         Root.RemoveFromParent()

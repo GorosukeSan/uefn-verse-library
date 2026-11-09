@@ -6,13 +6,13 @@ using { SpawnSystem }
 using { CheckpointSystem }
 using { CheckpointSystem.TooltipKit }
 
-# 役割：spawner が出すものを、チェックポイント（Prefab に checkpoint_component を付けたもの）にする。checkpoint の大きさ（WidthCm・DepthCm・ThicknessCm）は借りた範囲の大きさ
-# 置き方：エディターで、spawner_component と同じ entity に付ける。spawner は、大きさを FootprintX/Y/Z（例 3 × 3 × 1）、高さを段ごと（LevelIntervalCells、例 50）、見た目を範囲いっぱい（FitToArea）にすると、段ごとに 1 つの足場になる
-# 同じ entity：spawner_component。プレイヤーの位置を基準にするなら players_origin_component
-# 前提：区画に grid_component と player_manager_component が 1 つずつ（checkpoint_component の前提）
+# Role: makes what the spawner spawns a checkpoint (Prefab with checkpoint_component attached). The checkpoint's size (WidthCm, DepthCm, ThicknessCm) is the size of the reserved area
+# Placement: attach to the same entity as spawner_component in the editor. With the spawner's size set by FootprintX/Y/Z (e.g. 3 x 3 x 1), height per level (LevelIntervalCells, e.g. 50) and look filling the area (FitToArea), you get one platform per level
+# Same entity: spawner_component. players_origin_component to base positions on the players
+# Requirements: one grid_component and one player_manager_component in the zone (the requirements of checkpoint_component)
 checkpoint_factory_component<public> := class<final_super>(spawn_factory_component):
 
-    # チェックポイントの見た目にする prefab（当たり判定のあるメッシュを入れる）。既定の entity のままだと見た目の無いチェックポイントになる
+    # The prefab used as the checkpoint's look (put in a mesh with collision). Left at the default entity, the checkpoint has no look
     @editable:
         ToolTip := CheckpointPrefabToolTip
         Categories := array{CheckpointCategory}

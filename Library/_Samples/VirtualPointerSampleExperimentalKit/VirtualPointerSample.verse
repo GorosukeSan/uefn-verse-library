@@ -10,48 +10,48 @@ using { ActivationSystem }
 using { PlayerSystem }
 using { SceneGraphSystem }
 
-# 役割：Virtual Pointer（画面のカーソル）の見本。動いているあいだ、全プレイヤーに TouchMapping を足してポインターを出し、クリック（PointerSelect の押し始め）の画面座標を DeprojectViewportToWorld で光線にし、FindSweepHits で当たった場所を求める
-#   (a) 当たった位置（LUF、cm）を Print する
-#   (b) TeleportOnClick なら、その人をそこへ移動する
-#   (c) UseOverheadCamera なら、その人の真上 CameraHeightCm に perspective_camera_component を作って camera_director_component.AddCamera で足す（俯瞰で地面をクリックしやすい）
-#   止まるときは Mapping・カメラを必ず外す
-# 置き方：エディターで空の entity に付ける。区画（または世界）に player_manager_component を 1 つ置く
-# 試し方：セッションを始めると（StartOnBegin）ポインターが出る。地面をクリックすると出力ログと画面に当たった位置が出る。TeleportOnClick をオンにするとその場所へ移動する。UseOverheadCamera をオンにすると上空から見下ろす
-# いつ：StartOnBegin が true ならシミュレーション開始から。false なら起動の合図（activated_event）から停止の合図（deactivated_event）まで
-# 知らせ：ClickedEvent（クリックした人と、当たった世界座標）。ほかの component はこれを購読してポインターを使える
-# 前提・注意：
-#   - camera 系の component は v43.00 でも @experimental（使うと島を公開できない）。UseOverheadCamera はオフが既定
-#   - プレイサーバーで camera_director_component が見つからない既知の不具合（v43.00）がある。見つからないときはカメラ無しで続ける
-#   - 光線はカメラの目の位置から出るので、自分のキャラクターに当たった分は除く
+# Role: Virtual Pointer (on-screen cursor) sample. While running, adds TouchMapping to every player to show the pointer, turns the screen position of a click (the start of a PointerSelect press) into a ray with DeprojectViewportToWorld, and finds the hit location with FindSweepHits
+#   (a) Prints the hit position (LUF, cm)
+#   (b) With TeleportOnClick, teleports the player there
+#   (c) With UseOverheadCamera, creates a perspective_camera_component CameraHeightCm straight above the player and adds it with camera_director_component.AddCamera (a top-down view makes the ground easier to click)
+#   On stop, the Mapping and the camera are always removed
+# Placement: attach to an empty entity in the editor. Place one player_manager_component in the scope (or the world)
+# Try it: when the session starts (StartOnBegin), the pointer appears. Clicking the ground shows the hit position in the output log and on screen. With TeleportOnClick on, you teleport there. With UseOverheadCamera on, you look down from above
+# When: with StartOnBegin true, from the start of the simulation. With false, from the activate signal (activated_event) to the deactivate signal (deactivated_event)
+# Notifies: ClickedEvent (the player who clicked and the hit world position). Other components can subscribe to it to use the pointer
+# Requirements / notes:
+#   - The camera components are still @experimental in v43.00 (using them prevents publishing the island). UseOverheadCamera is off by default
+#   - There is a known issue (v43.00) where camera_director_component is not found on play servers. When not found, it continues without a camera
+#   - The ray starts at the camera's eye position, so hits on the player's own character are excluded
 virtual_pointer_sample_component<public> := class<final_super>(component):
 
-    # オンなら、シミュレーション開始から始める。オフなら起動の合図を待つ
+    # When on, starts from the start of the simulation. When off, waits for the activate signal
     @editable
     StartOnBegin<public>:logic = true
 
-    # オンなら、クリックした場所へその人を移動する
+    # When on, teleports the player to the clicked location
     @editable
     TeleportOnClick<public>:logic = false
 
-    # オンなら、その人の真上に俯瞰カメラを足す（@experimental）
+    # When on, adds a top-down camera straight above the player (@experimental)
     @editable
     UseOverheadCamera<public>:logic = false
 
-    # 俯瞰カメラの高さ（cm）
+    # Height of the top-down camera (cm)
     @editable
     CameraHeightCm<public>:float = 3000.0
 
-    # クリック先を探す光線の長さ（cm）
+    # Length of the ray that looks for the click target (cm)
     @editable
     MaxTraceDistanceCm<public>:float = 100000.0
 
-    # 移動先を当たった面から浮かせる高さ（cm）
+    # Height to lift the teleport destination above the hit surface (cm)
     @editable
     LandingOffsetCm<public>:float = 100.0
 
     ClickedEventInternal<private><final>:event(tuple(agent, vector3)) = event(tuple(agent, vector3)){}
 
-    # クリックして何かに当たるたびに、(クリックした人, 当たった世界座標) で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires with (the player who clicked, the hit world position) every time a click hits something (Await / Subscribe; cannot be Signaled from outside)
     ClickedEvent<public><final>:listenable(tuple(agent, vector3)) = MakeProxyListenable(ClickedEventInternal)
 
     Views<private>:player_view_set = player_view_set{}
@@ -69,27 +69,27 @@ virtual_pointer_sample_component<public> := class<final_super>(component):
         Views.Deactivate()
         (super:)OnEndSimulation()
 
-    # 全員（途中参加も）にポインターを出す。もう出していれば何もしない
+    # Show the pointer to everyone (late joiners too). Does nothing when already shown
     Activate<public>():void =
         Views.Activate(Entity, CreateView)
 
-    # 全員のポインター・カメラを外す
+    # Remove everyone's pointer and camera
     Deactivate<public>():void =
         Views.Deactivate()
 
-    # 動いているあいだ成功する
+    # Succeeds while running
     IsActive<public>()<decides><transacts>:void =
         Views.IsActive[]
 
     CreateView<private>(ViewEntity:entity, Slot:player_slot_component):component =
         virtual_pointer_view_component{Entity := ViewEntity, Source := Self, Player := Slot.Player}
 
-    # view から呼ばれる
+    # Called from the view
     NotifyClicked<internal>(Agent:agent, Position:vector3):void =
         ClickedEventInternal.Signal((Agent, Position))
 
-# 役割：1 人分のポインター。TouchMapping を足し、クリックを待って光線を飛ばす。俯瞰カメラもこの entity の子に作る（view が消えると一緒に消える）
-# 置き方：実行時に virtual_pointer_sample_component が作る（エディターでは置かない）
+# Role: one player's pointer. Adds TouchMapping, waits for clicks and casts the ray. The top-down camera is also created as a child of this entity (removed together with the view)
+# Placement: created at runtime by virtual_pointer_sample_component (never placed in the editor)
 virtual_pointer_view_component<public> := class<final_super>(component):
 
     Source<public>:virtual_pointer_sample_component
@@ -109,12 +109,12 @@ virtual_pointer_view_component<public> := class<final_super>(component):
                         CameraHandle.Cancel()
                     RunPointer(PlayerInput)
                 else:
-                    Print("[virtual_pointer_sample] カメラを足せませんでした（camera_director_component が無い）。カメラ無しで続けます", ?Duration := 6.0)
+                    Print("[virtual_pointer_sample] Could not add the camera (no camera_director_component). Continuing without a camera", ?Duration := 6.0)
                     RunPointer(PlayerInput)
             else:
                 RunPointer(PlayerInput)
         else:
-            Print("[virtual_pointer_sample] この人の入力（player_input）が取れません")
+            Print("[virtual_pointer_sample] Cannot get this player's input (player_input)")
 
     OnEndSimulation<override>():void =
         if (Camera := CameraEntity?):
@@ -123,20 +123,20 @@ virtual_pointer_view_component<public> := class<final_super>(component):
         (super:)OnEndSimulation()
 
     RunPointer<private>(PlayerInput:player_input)<suspends>:void =
-        Print("[virtual_pointer_sample] ポインターが出ました。地面をクリックしてください", ?Duration := 6.0)
+        Print("[virtual_pointer_sample] The pointer is shown. Click the ground", ?Duration := 6.0)
         loop:
             Clicked := PlayerInput.GetInputEvents(PointerSelect).BeginDetectEvent.Await()
             ScreenPosition := Clicked(1)
             Ray := Player.DeprojectViewportToWorld(ScreenPosition)
             if (Hit := FindHit[Ray]):
-                Print("[virtual_pointer_sample] 当たった位置 (cm): L={Hit.Left} U={Hit.Up} F={Hit.Forward}", ?Duration := 4.0)
+                Print("[virtual_pointer_sample] Hit position (cm): L={Hit.Left} U={Hit.Up} F={Hit.Forward}", ?Duration := 4.0)
                 Source.NotifyClicked(Player, Hit)
                 if (Source.TeleportOnClick?):
                     Teleport(Hit)
             else:
-                Print("[virtual_pointer_sample] クリック先に何も当たりませんでした（画面座標 L={ScreenPosition.Left} U={ScreenPosition.Up}）", ?Duration := 4.0)
+                Print("[virtual_pointer_sample] Nothing was hit at the click (screen position L={ScreenPosition.Left} U={ScreenPosition.Up})", ?Duration := 4.0)
 
-    # 光線を飛ばし、自分のキャラクターを除いて一番近い当たりの位置を返す
+    # Cast the ray and return the position of the nearest hit, excluding the player's own character
     FindHit<private>(Ray:deproject_results)<decides><transacts>:vector3 =
         var Best:?vector3 = false
         var BestDistance:float = Source.MaxTraceDistanceCm
@@ -148,7 +148,7 @@ virtual_pointer_view_component<public> := class<final_super>(component):
                 set BestDistance = Hit.SourceHitDistance
         Best?
 
-    # HitEntity が自分（player の entity かキャラクターの entity）か、その子孫なら成功する
+    # Succeeds when HitEntity is the player (the player entity or the character entity) or a descendant of it
     IsOwnBody<private>(HitEntity:entity)<decides><transacts>:void =
         var Current:entity = HitEntity
         var Found:logic = false
@@ -169,12 +169,12 @@ virtual_pointer_view_component<public> := class<final_super>(component):
         Landing := Hit + vector3{Up := Source.LandingOffsetCm}
         if (FortCharacter := Player.GetFortCharacter[]):
             if (FortCharacter.TeleportTo[SpatialMath.FromVector3(Landing), SpatialMath.FromRotation(IdentityRotation())]):
-                Print("[virtual_pointer_sample] 移動しました", ?Duration := 3.0)
+                Print("[virtual_pointer_sample] Teleported", ?Duration := 3.0)
                 PlaceCameraAbove(Landing)
             else:
-                Print("[virtual_pointer_sample] そこへは移動できません（はまる場所など）", ?Duration := 3.0)
+                Print("[virtual_pointer_sample] Cannot teleport there (e.g. a place where you would get stuck)", ?Duration := 3.0)
 
-    # 俯瞰カメラの entity をこの entity の子に作り、その人の真上に置く（camera_director_component に足すのは呼んだ側）
+    # Create the top-down camera entity as a child of this entity and place it straight above the player (the caller adds it to camera_director_component)
     MakeOverheadCamera<private>():perspective_camera_component =
         Camera := entity{}
         CameraComponent := perspective_camera_component{Entity := Camera}
@@ -185,12 +185,12 @@ virtual_pointer_view_component<public> := class<final_super>(component):
             PlaceCameraAbove(CharacterEntity.GetGlobalTransform().Translation)
         CameraComponent
 
-    # その人の camera_director_component（player の entity の子孫にある）。無ければ失敗する（v43.00 のプレイサーバーの既知の不具合でも失敗する）
+    # The player's camera_director_component (a descendant of the player entity). Fails when there is none (also fails because of the known issue on v43.00 play servers)
     FindCameraDirector<private>()<decides><transacts>:camera_director_component =
         first (Found : Player.FindDescendantComponents(camera_director_component)):
             Found
 
-    # 俯瞰カメラを Position の真上へ置き、まっすぐ下を向ける
+    # Place the top-down camera straight above Position, looking straight down
     PlaceCameraAbove<private>(Position:vector3)<transacts>:void =
         if (Camera := CameraEntity?):
             Camera.SetGlobalTransform(transform:

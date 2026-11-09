@@ -6,19 +6,19 @@ using { ItemSystem }
 using { PlayerSystem }
 using { CheckpointSystem }
 
-# 役割：区画のどれかのチェックポイント（checkpoint_component）にだれかが乗るたびに、エネルギー（EnergySystem の energy_component）を満タンにする（Fill）。満たす先は置いた場所で決まる：
-#   - この entity か子孫に energy_component があれば（FindEnergy。能力が使う FindEnergyFor の 1 番目と同じ）、それだけ（能力の entity に置いた、付与された全員で分け合うエネルギーなど）。同じ entity に能力（ability_component の派生）があれば、どれかを付与されている人が乗ったときだけ
-#   - 無ければ、乗った人のエネルギー：その人（agent）に付いた energy_component と、持ち物（アイテム）の energy_component（FindEnergy）すべて
-#   プレイヤーの slot の下（ロードアウトの中など）に置いたときは、持ち主が乗ったときだけ満たす
-# 置き方：エディターで、区画（game_scope_component の entity）の中の entity に付ける（区画が無ければ世界のどこか）。乗った知らせ（checkpoint_reached_event）は区画の根から下へ届くので、区画の外や inventory の中（アイテムの entity）に置くと届かない。アイテムのエネルギーを満たすなら、区画の中の別の entity に置く（乗った人の持ち物を満たす）
-# 同じ entity：満たす energy_component（子でもよい。無くてもよい）。能力（hover_ability_component など）と付与の component。区画の根など、関係のない energy_component を子孫に持つ entity には置かない（そのどれかを満たしてしまう）
-# 知らせ：満たしたとき、RefilledEvent に（乗った人, 満たした energy_component）で届く（もう満タンだったものは満たさず、届かない）
-# 前提：エネルギーの「使う側」（hover・jetpack など）はこの部品を知らない。チェックポイントに乗った知らせを受けて満たすだけ
+# Role: every time someone steps onto any checkpoint (checkpoint_component) of the zone, fills energy (EnergySystem's energy_component) to full (Fill). What gets filled depends on where this is placed:
+#   - If this entity or a descendant has an energy_component (FindEnergy; the same as the first result of FindEnergyFor used by abilities), only that one (e.g. energy placed on an ability's entity and shared by everyone granted it). If the same entity has abilities (ability_component subclasses), only when someone granted one of them steps on
+#   - Otherwise, the energy of the agent who stepped on: the energy_component attached to the agent and every energy_component of their items (FindEnergy)
+#   Placed under a player's slot (inside a loadout, etc.), fills only when the owner steps on
+# Placement: attach, in the editor, to an entity inside the zone (the entity of game_scope_component) (anywhere in the world when there is no zone). The reached notification (checkpoint_reached_event) travels down from the zone root, so it does not arrive outside the zone or inside an inventory (an item's entity). To fill an item's energy, place it on another entity inside the zone (fills the items of the agent who stepped on)
+# Same entity: the energy_component to fill (may be a child; may be absent). An ability (hover_ability_component, etc.) and its grant component. Do not place on an entity whose descendants include unrelated energy_components (e.g. the zone root), or one of those gets filled
+# Notifies: when filled, RefilledEvent fires with (the agent who stepped on, the energy_component filled) (energy that was already full is not filled and does not fire)
+# Requirements: the energy "consumers" (hover, jetpack, ...) know nothing about this part. It only fills on the checkpoint reached notification
 checkpoint_energy_refill_component<public> := class<final_super>(component):
 
     RefilledEventInternal<private><final>:event(tuple(agent, energy_component)) = event(tuple(agent, energy_component)){}
 
-    # エネルギーを満たしたときに、（チェックポイントに乗った人, 満たした energy_component）で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires with (the agent who stepped onto the checkpoint, the energy_component filled) when energy is filled (Await / Subscribe; cannot be Signaled from outside)
     RefilledEvent<public><final>:listenable(tuple(agent, energy_component)) = MakeProxyListenable(RefilledEventInternal)
 
     OnReceive<override>(SceneEvent:scene_event):logic =
@@ -26,8 +26,8 @@ checkpoint_energy_refill_component<public> := class<final_super>(component):
             RefillFor(Reached.Agent)
         false
 
-    # Agent がチェックポイントに乗ったときと同じように満たす（チェックポイントを通さずに満たしたいとき）。満たしたものがあれば true
-    # 満たす処理（Fill）と知らせ（RefilledEvent）は巻き戻せないので <decides> にはできない
+    # Fills as if Agent had stepped onto a checkpoint (to fill without going through a checkpoint). true when something was filled
+    # Filling (Fill) and the notification (RefilledEvent) cannot roll back, so this cannot be <decides>
     TryRefillFor<public>(Agent:agent):logic =
         RefillFor(Agent)
 
@@ -42,7 +42,7 @@ checkpoint_energy_refill_component<public> := class<final_super>(component):
         else:
             false
 
-    # 持ち主がいれば持ち主だけ。同じ entity に能力があれば、どれかを付与されている人だけ
+    # Only the owner when there is one. When the same entity has abilities, only agents granted one of them
     AppliesTo<private>(Agent:agent)<decides><transacts>:void =
         if (Owner := Entity.FindOwningPlayer[]):
             Owner = Agent
@@ -52,7 +52,7 @@ checkpoint_energy_refill_component<public> := class<final_super>(component):
                 Ability
             Granted.Length > 0
 
-    # 満たす先（この entity か子孫の energy_component、無ければ Agent 自身と持ち物の energy_component）
+    # What to fill (the energy_component of this entity or a descendant; otherwise the energy_components of Agent and their items)
     GetTargets<private>(Agent:agent)<transacts>:[]energy_component =
         if (Own := Entity.FindEnergy[]):
             array{Own}

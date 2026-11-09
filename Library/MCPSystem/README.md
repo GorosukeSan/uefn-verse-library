@@ -1,16 +1,12 @@
 # MCPSystem
 
-English | [日本語](README.ja.md)
-
 A System that lets MCP (Python running outside the editor) send commands to the **game running in a session** and read the replies. It relies on UEFN **live edit** (changing an `@editable` in the editor reaches the running session in about 0.1 s). It does not drive the screen (no mouse or keyboard input).
 
 - The sender (Python) writes a **list of commands (JSON)** into a string `@editable` on the inbox component → the inbox hands each command to the addressed **toolset** → the reply is `Print`ed → the sender reads it through MCP's `GetVerseOutput`.
-- Commands are addressed as "toolset.tool" (the same idea as the toolsets of UEFN's own MCP). Toolsets exist for entities, players, custom characters, screens (UI), game flow, spawning, pickups, movers, countdowns, energy, state snapshot / restore and debugging (13 toolsets, 112 tools). Your own game parts can add their own toolset by implementing the `mcp_controllable` interface.
+- Commands are addressed as "toolset.tool" (the same idea as the toolsets of UEFN's own MCP). Toolsets exist for entities, players, custom characters, screens (UI), game flow, spawning, pickups, movers, countdowns, energy, state snapshot / restore and debugging (13 toolsets, 114 tools). Your own game parts can add their own toolset by implementing the `mcp_controllable` interface.
 - UI is **opt-in per screen**: only screens that carry `mcp_widget_control_component` are visible and pressable from MCP. A press reaches `AwaitClick` / `AwaitChoice` exactly like a real click (the author's code does not change).
 
 Verified against **UEFN v43.00** (2026-11-08). MCPSystem version: **1.0.0** (`MCPSystemVersion`; bumped when the contract with the sender changes).
-
-> **Language note:** the tool table below is a manual translation of the table that `gen_tool_docs.py` generates into `README.ja.md` from the Verse sources. Tool names and arguments are identical; the one-line descriptions that `help` / `describe` return at runtime (the `McpTool(...)` doc strings in the `.verse` files) and the header comments of the components are in Japanese.
 
 ## Folders and dependencies
 | Location | Contents | Depends on |
@@ -98,12 +94,13 @@ Lobby (entity of the lobby screen)
 - Python uses `json.loads(line, strict=False)` (only `"`, `\`, newline, tab and carriage return are escaped).
 
 ## Toolsets and tools
-Auto-generated into `README.ja.md` from the Verse sources (works without a session):
+Auto-generated from the Verse sources (works without a session):
 ```
-python -I <MCPSystem package>\tools\gen_tool_docs.py <Library>\MCPSystem --readme <Library>\MCPSystem\README.ja.md --python <MCPSystem package>\mcpsystem\toolsets_table.py
+python -I <MCPSystem package>\tools\gen_tool_docs.py <Library>\MCPSystem --readme <Library>\MCPSystem\README.md --python <MCPSystem package>\mcpsystem\toolsets_table.py
 ```
-From the inbox of a running session (includes your game's toolsets): `python -I mcp.py describe --markdown` (in the MCPSystem package folder). Declare tools as a single line `McpTool("name", "description", array{McpArg(...), McpOptArg(...)})` so the generator can read them. The table below was translated by hand from the generated one.
+From the inbox of a running session (includes your game's toolsets): `python -I mcp.py describe --markdown` (in the MCPSystem package folder). Declare tools as a single line `McpTool("name", "description", array{McpArg(...), McpOptArg(...)})` so the generator can read them.
 
+<!-- tools:begin -->
 | Toolset (destination) | Tool | Arguments | What it does |
 |---|---|---|---|
 | `core` | `ping` | — | Is the inbox alive (returns pong) |
@@ -117,7 +114,7 @@ From the inbox of a running session (includes your game's toolsets): `python -I 
 | `core` | `tags` | — | List of named tags (usable in entity.find / player.has_tag etc.) |
 | `core` | `batch` | cmds:json | Runs an array of commands in order within the same frame. data: array of replies |
 | `character` | `list` | — | Players driving a custom character. data: [{player,pos,velocity,grounded}] |
-| `character` | `state` | player:player | Body state (position, velocity cm/s, grounded, state, gravity scale, modifier scale, dashing, side-input style `side_style` (with buffs) / `side_style_base` (walk's base; side_style is omitted without walk), moving floor `ground_velocity` (velocity of the floor being stood on) / `inherited_velocity` (horizontal velocity inherited when leaving the floor; 0 on landing) / `riding` (only when the body has `character_ride_component`; true while being carried)) |
+| `character` | `state` | player:player | Body state (position, velocity cm/s, grounded, state, gravity scale, modifier scale, dashing, side-input style side_style / side_style_base, moving floor ground_velocity / inherited_velocity / riding, cling clinging / cling_surface / cling_normal / can_cling, action cells cells / cell_capacity / cell_actions) |
 | `character` | `move` | player:player, input:json, seconds:float? | Sets the move input (same as walk's SetMoveInput; forward = ahead, left = left; length up to 1). With seconds, resets to 0 after that time (move_done at the end) |
 | `character` | `move_world` | player:player, dir:vector3, seconds:float?, scale:float? | Walks in a world direction (cm direction; length ignored). Converted to input every frame according to walk's Space. Stops after seconds (default 1) (move_done) |
 | `character` | `move_to` | player:player, pos:vector3, tolerance:float?, timeout:float? | Walks to a world position (stops when the horizontal distance is at most tolerance; move_done on arrival. If the game moves the body elsewhere, reason = moved_away) |
@@ -128,7 +125,7 @@ From the inbox of a running session (includes your game's toolsets): `python -I 
 | `character` | `set_velocity` | player:player, velocity:vector3 | Sets the velocity (cm/s, world axes) |
 | `character` | `add_velocity` | player:player, delta:vector3 | Adds to the velocity (cm/s) |
 | `character` | `set_gravity_scale` | player:player, scale:float | Gravity scale (1 = default, 0 = weightless) |
-| `character` | `set_side_style` | player:player, style:string | Changes the side-input style (walk's base; same as `SetSideStyle`). `turn` = turn toward the movement direction, `strafe` = sidestep while facing forward, `tank_turn` = turn in place, `toggle` = same as the toggle button (`SwitchSideStyle`). While a buff (`character_modifier.SideStyle`) decides the style, the buff wins. reply gives the current and base styles |
+| `character` | `set_side_style` | player:player, style:string | Changes the side-input style (walk's base; same as SetSideStyle). turn = turn toward the movement direction, strafe = sidestep while facing forward, tank_turn = turn in place, toggle = same as the toggle button. While a buff decides the style, the buff wins. reply gives the current and base styles |
 | `character` | `play` | player:player, motion:json | Plays a motion JSON (play_done at the end). steps: [{t,move,world,jump,dash,teleport,stop}] (input at t seconds) / points: [{pos,jump,dash,wait,teleport}] (walks through them in order) |
 | `character` | `record_start` | player:player, interval:float? | Starts recording the motion (position, velocity and grounded every interval seconds, plus events such as jumps and dashes) |
 | `character` | `record_stop` | player:player | Stops recording and returns it. data: {interval,samples:[{t,pos,velocity,grounded}],actions:[{t,action}],points:[{pos}]} (points can be passed to play as is) |
@@ -141,16 +138,16 @@ From the inbox of a running session (includes your game's toolsets): `python -I 
 | `countdown` | `resume` | countdown:entity | Resumes |
 | `countdown` | `add_seconds` | countdown:entity, seconds:float | Adds to the remaining time (negative subtracts) |
 | `debug` | `log` | text:string | Writes "[MCP] text" to the log (a marker in the same timeline as the game log) |
-| `debug` | `get_level` | — | Inbox log verbosity (0–3) |
+| `debug` | `get_level` | — | Inbox log verbosity (0-3) |
 | `debug` | `set_level` | level:int | Changes the inbox log verbosity (0 = replies only, 1 = start-up and broken commands, 2 = every command, 3 = verbose) |
 | `debug` | `dump` | toolset:string? | Calls every receiver that has an argument-less "state" tool. data: [{to,ok,reply,data}] |
 | `debug` | `counts` | — | Number of entities in the world, receivers, and named entities |
 | `debug` | `frames` | seconds:float? | Measures the frame count and the seconds per frame (average, max) over seconds (frames at the end) |
 | `debug` | `wait` | seconds:float | Waits seconds, then notifies (a sample long-running tool; waited at the end) |
 | `debug` | `payload` | chars:int | Returns a string of chars characters in data (to exercise the split-reply mechanism) |
-| `energy` | `list` | — | List of energies. data: [{id,name,owner,amount,max,ratio}] (owner is the owning player's index, −1 if none) |
+| `energy` | `list` | — | List of energies. data: [{id,name,owner,amount,max,ratio}] (owner is the owning player's index, -1 if none) |
 | `energy` | `get` | energy:entity?, player:player? | Amount (either energy or player) |
-| `energy` | `set` | energy:entity?, player:player?, amount:float | Sets the amount (clamped to 0–max) |
+| `energy` | `set` | energy:entity?, player:player?, amount:float | Sets the amount (clamped to 0-max) |
 | `energy` | `restore` | energy:entity?, player:player?, amount:float | Adds (the part above max is discarded) |
 | `energy` | `consume` | energy:entity?, player:player?, amount:float | Uses (stops at 0 even if short) |
 | `energy` | `spend` | energy:entity?, player:player?, amount:float | Uses only if enough (otherwise failed and nothing changes) |
@@ -166,7 +163,7 @@ From the inbox of a running session (includes your game's toolsets): `python -I 
 | `entity` | `enable` | entity:entity, recursive:bool? | Enables the entity's enableable components (mesh etc.) |
 | `entity` | `disable` | entity:entity, recursive:bool? | Disables the entity's enableable components |
 | `entity` | `has_tag` | entity:entity, tag:string | Whether the tag is present (reply is true / false) |
-| `entity` | `add_tag` | entity:entity, tag:string | Adds a tag (`<concrete>` tags only; removed when this toolset stops) |
+| `entity` | `add_tag` | entity:entity, tag:string | Adds a tag (<concrete> tags only; removed when this toolset stops) |
 | `entity` | `remove_tag` | entity:entity, tag:string, all:bool? | Removes a tag added from MCP (all = true removes every tag of that type) |
 | `entity` | `activate` | entity:entity, player:player? | Sends the activation signal (activated_event; with player, activated_by_agent_event) to the entity and its descendants |
 | `entity` | `deactivate` | entity:entity | Sends the deactivation signal (deactivated_event) to the entity and its descendants |
@@ -195,7 +192,7 @@ From the inbox of a running session (includes your game's toolsets): `python -I 
 | `player` | `get_position` | player:player | Position (cm), facing and velocity (cm/s) of the Fortnite character |
 | `player` | `teleport` | player:player, pos:vector3, yaw:float? | Moves the Fortnite character (writes the body entity's transform) |
 | `player` | `has_tag` | player:player, tag:string | Whether the agent has the tag (reply is true / false) |
-| `player` | `add_tag` | player:player, tag:string | Adds a tag to the agent (`<concrete>` tags only; removed when this toolset stops) |
+| `player` | `add_tag` | player:player, tag:string | Adds a tag to the agent (<concrete> tags only; removed when this toolset stops) |
 | `player` | `remove_tag` | player:player, tag:string, all:bool? | Removes a tag added from MCP (all = true removes every tag of that type) |
 | `player` | `groups` | — | List of groups (player_group_component). data: [{id,name,members}] |
 | `player` | `join_group` | player:player, group:entity | Joins the group (player_group_component.Join; also leaves sibling groups if so configured) |
@@ -216,9 +213,11 @@ From the inbox of a running session (includes your game's toolsets): `python -I 
 | `widget` | `list` | — | List of opted-in screens (whether shown or not). data: [{screen,entity,widgets:[{widget,mode,audience,shown_to}]}] |
 | `widget` | `screens` | player:player? | Screens currently shown and the buttons waiting. data: [{player,screen,widget,mode,buttons:[{id,index,label,enabled}]}] |
 | `widget` | `press` | player:player, screen:string, button:string, widget:int? | Presses a button (by id, label or index; reaches AwaitClick / AwaitChoice like a real click) |
+| `widget` | `pointer` | player:player, screen:string, x:float, y:float, down:bool?, widget:int? | Injects a pointer into the screen (widget_view.InjectPointer; treated like a Virtual Pointer press, so a card sinks where pressed). x, y are screen fractions (top-left 0,0 to bottom-right 1,1) |
 | `widget` | `show` | player:player, screen:string, widget:int? | Shows the screen (ShowFor) |
 | `widget` | `close` | player:player, screen:string, widget:int? | Closes the screen (HideFor) |
 | `widget` | `state` | — | Number of opted-in screens and of screens currently shown |
+<!-- tools:end -->
 
 ## The Python sender (the MCPSystem package, outside the Library)
 ```python

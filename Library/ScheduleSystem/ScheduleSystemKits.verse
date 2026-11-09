@@ -1,9 +1,9 @@
-# ScheduleSystem の Kit をライブラリの外（利用者のコード）から使えるように public にする。
-# フォルダから作られるモジュールは既定で internal なので、宣言しないと外から using できない。
+# Makes the ScheduleSystem Kits public so that code outside the library (your code) can use them.
+# Modules created from folders are internal by default, so they cannot be used from outside without this declaration.
 ConditionKit<public> := module {}
-# 残り時間を文字・数字のメッシュで出す component（schedule_text_component / schedule_digit_display_component）
+# Components that show the remaining time as text or digit meshes (schedule_text_component / schedule_digit_display_component)
 DisplayKit<public> := module {}
-# 開始前のカウントダウンを画面に出す component（schedule_countdown_hud_component）
+# Component that shows a pre-start countdown on screen (schedule_countdown_hud_component)
 HudKit<public> := module {}
-# エディターに出す説明（message）
+# Descriptions shown in the editor (message)
 TooltipKit<public> := module {}

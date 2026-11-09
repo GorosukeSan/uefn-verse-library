@@ -1,34 +1,34 @@
 using { /Verse.org/SceneGraph }
 using { /Verse.org/SpatialMath }
 
-# 役割：mover の行き先 1 つ。Position は世界の位置（センチメートル）。Index は、mover_path_route_component なら地点の番号（並べた順で 0 から。往復でも同じ地点は同じ番号）、ランダムな道のりなら選んだ回数（0 から）
+# Role: one target of a mover. Position is a world position (centimeters). Index is the point number for mover_path_route_component (0-based in the arranged order; the same point keeps the same number when going back and forth), or the pick count (0-based) for random routes
 mover_target<public> := struct<computes>:
-    # 行き先の世界の位置（センチメートル）
+    # World position of the target (centimeters)
     Position<public>:vector3 = vector3{}
-    # 決まった地点の道のりなら地点の番号、ランダムの道のりなら選んだ回数（どちらも 0 から）
+    # Point number for a fixed-point route, pick count for a random route (both 0-based)
     Index<public>:int = 0
 
-# 方向：mover の entity から SendDown（自分と子孫）
-# 送り手：mover_component（Mover）。次の行き先を決めて向かい始めたとき
-# 受け手：行き先の目印などの見た目。消費しない
+# Direction: SendDown from the mover entity (itself and descendants)
+# Sender: mover_component (Mover). When the next target is chosen and the mover starts heading for it
+# Receivers: looks such as target markers. Not consumed
 mover_target_changed_event<public> := class(scene_event):
-    # 送った mover_component
+    # The mover_component that sent it
     Mover<public>:mover_component
-    # 決めた行き先
+    # The chosen target
     Target<public>:mover_target
 
-# 方向：mover の entity から SendDown（自分と子孫）
-# 送り手：mover_component（Mover）。行き先に着いたとき（TargetReachedEvent と同じタイミング）
-# 受け手：着いたときの演出など。消費しない
+# Direction: SendDown from the mover entity (itself and descendants)
+# Sender: mover_component (Mover). On arrival at a target (same timing as TargetReachedEvent)
+# Receivers: arrival effects and the like. Not consumed
 mover_target_reached_event<public> := class(scene_event):
-    # 送った mover_component
+    # The mover_component that sent it
     Mover<public>:mover_component
-    # 着いた行き先
+    # The reached target
     Target<public>:mover_target
 
-# 方向：mover の entity から SendDown（自分と子孫）
-# 送り手：mover_component（Mover）。道のりの終わり（mover_path_mode.Once の最後の地点に着いた・道のりの component が無い）で止まったとき（FinishedEvent と同じタイミング）
-# 受け手：止まったときの演出など。消費しない
+# Direction: SendDown from the mover entity (itself and descendants)
+# Sender: mover_component (Mover). When the mover stops at the end of the route (reached the last point of mover_path_mode.Once / no route component) (same timing as FinishedEvent)
+# Receivers: stop effects and the like. Not consumed
 mover_finished_event<public> := class(scene_event):
-    # 止まった mover_component
+    # The mover_component that stopped
     Mover<public>:mover_component

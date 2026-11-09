@@ -8,34 +8,34 @@ using { SwingSystem.ModifierKit }
 using { SwingSystem.TargetKit }
 using { _Test }
 
-# 役割：SwingSystem の動作確認。最初に参加したプレイヤーを使い、次を順に確かめる
-#   1. 倍率の重ね方（swing_stats.Apply。人は要らない）
-#   2. コードからの Grant と、待機中の状態（Agent.IsSwinging が失敗・Agent.GetSwingState が Idle、待機中の Release は何も起こさない）
-#   2b. 状態のタグ：swing_anchored_tag / swing_pendulum_tag を付け外しすると、Agent.IsSwinging / Agent.GetSwingState と、基底（swinging_tag・controlled_movement_tag）での HasPlayerTag が合う（能力は使わない）
-#   3. 倍率の登録：実行時に作った swing_modifier_component が registry に自分を登録し、ApplyTo / ApplyToAll / RemoveFrom で registry の GetStats が変わる。付与中のスイングに swing_stats_changed_event が届く。swing_modifier_grant_component が依頼（swing_modifier_request_event）で期限付きで掛け、期限で外す
-#   4. 寿命の的：実行時に作った swing_target_component + swing_life_component が、つかまれる（swing_attached_event をテストが送る）まで壊れず、つかまれてから LifeSeconds で壊れ、かかっていた点（swing_anchor_component）を Break する
-#   5. リフトの的：swing_target_component + swing_lift_component が、つかまれただけでは動かず、振り出される（swing_pulled_event）と TravelCm だけ動いてから壊れる
-#   6. 人の操作（RunHumanTests が true のとき）：ログの案内に従って、レティクルをつかめる物に向けて射撃を押す。HumanTimeoutSeconds 以内に GrabbedEvent が届き、Agent.IsSwinging が成功し、Release で ReleasedEvent が届いて Idle に戻るかを確かめる（届かなければ [SKIP] を出す）
-#   7. Revoke と RevokedEvent
-# テストのレベル：
-#   - player_manager_component を付けた entity を 1 つ、swing_registry_component を付けた entity を 1 つ（同じ区画に）
-#   - テスト用の entity に swing_system_test_component と swing_ability_component を付ける（付与の component は付けない。テストがコードから Grant / Revoke する）
-#   - 人の操作を確かめるなら、プレイヤーから見える位置に当たり判定のあるメッシュ（キューブなど）を置く
-# 結果：出力ログの [TEST] SwingSystem
+# Role: verification of SwingSystem. Uses the first player that joined and checks, in order:
+#   1. Stacking of multipliers (swing_stats.Apply; no player needed)
+#   2. Grant from code and the idle state (Agent.IsSwinging fails, Agent.GetSwingState is Idle, Release while idle does nothing)
+#   2b. State tags: attaching / removing swing_anchored_tag / swing_pendulum_tag keeps Agent.IsSwinging / Agent.GetSwingState consistent with HasPlayerTag on the bases (swinging_tag, controlled_movement_tag) (without the ability)
+#   3. Modifier registration: a swing_modifier_component created at runtime registers itself with the registry; ApplyTo / ApplyToAll / RemoveFrom change the registry's GetStats. A granted swing receives swing_stats_changed_event. swing_modifier_grant_component applies on request (swing_modifier_request_event) with a time limit and removes it when it expires
+#   4. Lifetime target: swing_target_component + swing_life_component created at runtime does not break until grabbed (the test sends swing_attached_event), breaks LifeSeconds after being grabbed, and Breaks the attached anchor (swing_anchor_component)
+#   5. Lift target: swing_target_component + swing_lift_component does not move when merely grabbed; when pulled (swing_pulled_event) it moves TravelCm and then breaks
+#   6. Human input (when RunHumanTests is true): follow the log and press fire with the reticle on a grabbable object. Checks that GrabbedEvent arrives within HumanTimeoutSeconds, Agent.IsSwinging succeeds, and Release delivers ReleasedEvent and returns to Idle (prints [SKIP] if it does not arrive)
+#   7. Revoke and RevokedEvent
+# Test level:
+#   - one entity with player_manager_component and one entity with swing_registry_component (in the same scope)
+#   - the test entity carries swing_system_test_component and swing_ability_component (no grant component; the test Grants / Revokes from code)
+#   - to check human input, place a mesh with collision (e.g. a cube) where the player can see it
+# Result: [TEST] SwingSystem in the output log
 swing_system_test_component<public> := class<final_super>(component):
 
-    # 人の操作（つかむ）を待つ時間（秒）
+    # Seconds to wait for human input (grabbing)
     @editable
     HumanTimeoutSeconds<public>:float = 30.0
 
-    # false なら人の操作の確認を飛ばす（自動の確認だけ）
+    # When false, skips the human-input checks (automatic checks only)
     @editable
     RunHumanTests<public>:logic = true
 
     StatsChangedEventInternal<private><final>:event(swing_stats) = event(swing_stats){}
     StatsChangedEvent<private><final>:listenable(swing_stats) = MakeProxyListenable(StatsChangedEventInternal)
 
-    # 同じ entity の swing_ability_component が SendUp する swing_stats_changed_event を受ける
+    # Receives the swing_stats_changed_event that the swing_ability_component on the same entity SendUps
     OnReceive<override>(SceneEvent:scene_event):logic =
         if (Changed := swing_stats_changed_event[SceneEvent]):
             StatsChangedEventInternal.Signal(Changed.Stats)
@@ -140,7 +140,7 @@ swing_system_test_component<public> := class<final_super>(component):
         TickEvents.PrePhysics.Await()
         Results.CheckFloat("removed modifier unregisters", Registry.GetStats(Agent).RangeScale, 1.0, 0.0001)
 
-    # 的に「つかまれた」と知らせるための点を作る（スイングがつかんだ点と同じく swing_anchor_component を付ける）
+    # Creates an anchor to tell the target "grabbed" (carries swing_anchor_component like the anchor a swing grabs)
     MakeAnchor<private>():tuple(entity, swing_anchor_component) =
         Anchor := entity{}
         Marker := swing_anchor_component{Entity := Anchor}
@@ -195,7 +195,7 @@ swing_system_test_component<public> := class<final_super>(component):
             Results.Fail("lift: shatters after travel", "no ShatteredEvent within 2 s (200 cm at 400 cm/s = 0.5 s)")
         AnchorPair(0).RemoveFromParent()
 
-    # 状態の入口（タグ）だけを確かめる。能力を使わず、テストが自分の holder でタグを付け外しする
+    # Checks only the state entry points (tags). Does not use the ability; the test attaches / removes the tags on its own holder
     TestStateTags<private>(Results:test_log, Agent:agent):void =
         StateTags := player_tag_holder{}
         StateTags.Add(Agent, swing_anchored_tag{})

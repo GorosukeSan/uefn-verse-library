@@ -1,13 +1,13 @@
 using { /Verse.org/SceneGraph }
 using { /Verse.org/Simulation }
 
-# 役割：スイングでつかまれる物の目印。つかまれた（swing_attached_event）・振り出された（swing_pulled_event）・外れた（swing_detached_event）を受けて、AttachedEvent / PulledEvent / DetachedEvent で知らせ、今かかっているロープの点を覚える。Shatter で壊れる（つかんでいる全員のロープを swing_anchor_component.Break で途切れさせ、1 フレーム待ってから自分の entity を消す）
-# 何をするかは同じ entity に置く TargetKit の component が決める（それぞれこの component の知らせを購読する）：
-#   - 最初につかまれてから一定時間で壊れる → swing_life_component
-#   - 振り出されると動き、着いたら壊れる → swing_lift_component
-#   - 自分のコードから → AttachedEvent などを購読し、終わったら Shatter
-# 置き方：エディターで entity に付ける（実行時に作ってもよい）。1 entity に 1 つ
-# 同じ entity：当たり判定のあるメッシュ（スイングでつかめるもの）と、TargetKit の component
+# Role: marker for an object that swings can grab. Receives grabbed (swing_attached_event) / launched (swing_pulled_event) / released (swing_detached_event), notifies through AttachedEvent / PulledEvent / DetachedEvent, and remembers the rope points currently attached. Shatter breaks it (cuts every holder's rope with swing_anchor_component.Break, waits one frame, then removes its own entity)
+# What happens is decided by the TargetKit components placed on the same entity (each subscribes to this component's notifications):
+#   - breaks a fixed time after the first grab -> swing_life_component
+#   - moves when launched from and breaks on arrival -> swing_lift_component
+#   - from your own code -> subscribe to AttachedEvent etc. and call Shatter when done
+# Placement: attach to an entity in the editor (may also be created at runtime). One per entity
+# Same entity: a mesh with collision (what the swing grabs) and the TargetKit components
 swing_target_component<public> := class<final_super>(component):
 
     var<private> Anchors:[]entity = array{}
@@ -20,31 +20,31 @@ swing_target_component<public> := class<final_super>(component):
     DetachedEventInternal<private><final>:event(agent) = event(agent){}
     ShatteredEventInternal<private><final>:event() = event(){}
 
-    # ロープをかけられるたびに、かけた人で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires with the agent each time a rope is attached (Await / Subscribe it; it cannot be Signaled from outside)
     AttachedEvent<public><final>:listenable(agent) = MakeProxyListenable(AttachedEventInternal)
 
-    # この物を起点に振り出されるたびに、振り出した人で届く（地面で待っているあいだは届かない）
+    # Fires with the agent each time a swing is launched from this object (not while waiting on the ground)
     PulledEvent<public><final>:listenable(agent) = MakeProxyListenable(PulledEventInternal)
 
-    # かけられたロープが外れるたびに、外れた人で届く
+    # Fires with the agent each time an attached rope is released
     DetachedEvent<public><final>:listenable(agent) = MakeProxyListenable(DetachedEventInternal)
 
-    # Shatter で壊れ始めたときに 1 回だけ届く（そのあと 1 フレームで entity が消える）
+    # Fires once when Shatter starts breaking it (the entity disappears one frame later)
     ShatteredEvent<public><final>:listenable(tuple()) = MakeProxyListenable(ShatteredEventInternal)
 
-    # 一度でもロープをかけられたなら成功する
+    # Succeeds if a rope has ever been attached
     WasAttached<public>()<decides><transacts>:void =
         Attached?
 
-    # 一度でも振り出されたなら成功する
+    # Succeeds if a swing has ever been launched from it
     WasPulled<public>()<decides><transacts>:void =
         Pulled?
 
-    # Shatter が呼ばれたなら成功する
+    # Succeeds if Shatter has been called
     IsShattered<public>()<decides><transacts>:void =
         Shattered?
 
-    # 今かかっているロープの本数
+    # Number of ropes currently attached
     GetAnchorCount<public>()<transacts>:int =
         Anchors.Length
 
@@ -62,7 +62,7 @@ swing_target_component<public> := class<final_super>(component):
             DetachedEventInternal.Signal(Event.Agent)
         false
 
-    # 壊す：かかっているロープをすべて途切れさせ（swing_anchor_component.Break）、ShatteredEvent を送り、スイング側が Break を受け取るまで 1 フレーム待ってから entity を消す。2 回目以降は何もしない
+    # Break: cuts every attached rope (swing_anchor_component.Break), sends ShatteredEvent, waits one frame so the swing side receives Break, then removes the entity. Does nothing from the second call on
     Shatter<public>()<suspends>:void =
         if (Shattered?):
             return
@@ -74,7 +74,7 @@ swing_target_component<public> := class<final_super>(component):
         TickEvents.PrePhysics.Await()
         Entity.RemoveFromParent()
 
-# InEntity に付いた swing_target_component を返す。同じ entity で同時に足された直後は見つからないことがあるので、見つからなければ 1 フレーム待って探し直す。それでも無ければ false
+# Returns the swing_target_component attached to InEntity. Right after being added together on the same entity it may not be found yet, so if missing, waits one frame and looks again. false if still missing
 (InEntity:entity).AwaitSwingTarget<internal>(Tick:listenable(float))<suspends>:?swing_target_component =
     if (Target := InEntity.GetComponent[swing_target_component]):
         option{Target}

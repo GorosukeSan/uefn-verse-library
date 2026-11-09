@@ -3,18 +3,18 @@ using { /Verse.org/Simulation }
 using { /Verse.org/Verse }
 using { ScheduleSystem.TooltipKit }
 
-# 役割：実時刻（エポック秒）の時計。区画（または世界）に 1 つ。登録されたスケジュール（schedule_component）をまとめて、整数秒の境目のすぐあとに 1 回ずつ評価し、結果を配る。ループを持つのはこの component だけ（スケジュールごとのループは無い）
-# 置き方：エディターで entity に付ける。区画（game_scope_component の配下）か世界に 1 つ（schedule_component が FindScopedComponent で探す）
-# 知らせ：SecondEvent（毎秒 1 回、評価に使った時刻）。スケジュールの状態の知らせは、同じ tick の中で SecondEvent より先に配られる
-# 外から：GetNowEpochSeconds / GetTimeZoneOffsetSeconds / GetDayIndex / GetSecondsOfDay。デバッグで時刻をずらすなら SetDebugOffsetSeconds / JumpTo（1 か所にだけある。公開する島では利用者の判断で止める）
-# 前提・注意：
-#   - GetSecondsSinceEpoch は同じトランザクションの中では同じ値を返す（1 tick の中で全スケジュールの時刻がそろう）
-#   - 実時刻は止められない（一時停止が要るものは CountdownSystem などシミュレーション時間のものを使う）
-#   - 時計（OS）が逆に戻っても GetNowEpochSeconds は戻らない（前回の値を保つ）。デバッグのずらしで戻すのは別で、戻せる
-#   - 毎フレームの処理は無い。1 秒に 1 回起きて、スケジュールの数だけ計算する
+# Role: a real-time (epoch seconds) clock. One per scope (or world). Evaluates all registered schedules (schedule_component) together, once right after each whole-second boundary, and delivers the results. This is the only component with a loop (there is no loop per schedule)
+# Placement: attach to an entity in the editor. One per scope (under game_scope_component) or world (schedule_component finds it with FindScopedComponent)
+# Notifies: SecondEvent (once per second, with the time used for evaluation). The schedules' state notifications are delivered before SecondEvent within the same tick
+# From outside: GetNowEpochSeconds / GetTimeZoneOffsetSeconds / GetDayIndex / GetSecondsOfDay. To shift time for debugging, SetDebugOffsetSeconds / JumpTo (in one place only. On a published island, disable at your discretion)
+# Requirements / notes:
+#   - GetSecondsSinceEpoch returns the same value within one transaction (all schedules share the same time within a tick)
+#   - Real time cannot be stopped (for things that need pausing, use simulation-time Systems such as CountdownSystem)
+#   - GetNowEpochSeconds never goes backward even if the OS clock does (it keeps the previous value). Going back with the debug offset is separate and allowed
+#   - No per-frame work. Wakes once per second and computes once per schedule
 realtime_clock_component<public> := class<final_super>(component):
 
-    # 現地時刻と UTC のずれ（秒）。既定 32400（日本標準時 +9 時間）。夏時間は考えない
+    # Offset between local time and UTC (seconds). Default 32400 (Japan Standard Time, +9 hours). Daylight saving time is not considered
     @editable_number(int):
         ToolTip := ClockTimeZoneOffsetToolTip
         Categories := array{ScheduleClockCategory}
@@ -22,7 +22,7 @@ realtime_clock_component<public> := class<final_super>(component):
         MaxValue := option{50400}
     TimeZoneOffsetSeconds<public>:int = DefaultTimeZoneOffsetSeconds
 
-    # 整数秒の境目から、どれだけ遅れて起きるか（秒）。小さすぎると 1 秒ずれることがある。既定 0.02
+    # How long after the whole-second boundary to wake (seconds). Too small may drift by 1 second. Default 0.02
     @editable_number(float):
         ToolTip := ClockWakeMarginToolTip
         Categories := array{ScheduleClockCategory}
@@ -30,20 +30,20 @@ realtime_clock_component<public> := class<final_super>(component):
         MaxValue := option{0.5}
     WakeMarginSeconds<public>:float = 0.02
 
-    # デバッグで時刻にずらしている秒数（0.0 なら実時刻のまま）
+    # Seconds the time is shifted for debugging (0.0 means real time)
     var<private> DebugOffsetSeconds<public>:float = 0.0
-    # OS の時計が最後に返した値（逆に戻ったときに保つため）
+    # The last value returned by the OS clock (kept in case it goes backward)
     var<private> LastRawSeconds:float = 0.0
-    # 最後に評価した整数秒（同じ秒で 2 回評価しないため）。まだなら -1
+    # The last whole second evaluated (so the same second is not evaluated twice). -1 until then
     var<private> LastTickedSecond:int = -1
     var<private> Schedules:[]schedule_component = array{}
 
     SecondEventInternal<private><final>:event(float) = event(float){}
 
-    # 整数秒の境目のすぐあとに、毎秒 1 回、評価に使った時刻（GetNowEpochSeconds）で届く。同じ tick で登録されたスケジュールの知らせを配ったあとに届く（Await / Subscribe する。外から Signal はできない）
+    # Fires once per second, right after the whole-second boundary, with the time used for evaluation (GetNowEpochSeconds). Arrives after the registered schedules' notifications of the same tick (Await / Subscribe; cannot be Signaled from outside)
     SecondEvent<public><final>:listenable(float) = MakeProxyListenable(SecondEventInternal)
 
-    # 評価をやり直したい（デバッグで時刻を動かした）ことをループに伝える
+    # Tells the loop to re-evaluate (the time was moved for debugging)
     WakeEvent<private>:event() = event(){}
 
     OnEndSimulation<override>():void =
@@ -51,7 +51,7 @@ realtime_clock_component<public> := class<final_super>(component):
         (super:)OnEndSimulation()
 
     OnSimulate<override>()<suspends>:void =
-        # 同じ木の component がみな OnBeginSimulation を終えて（スケジュールが登録を済ませて）から最初の評価をする
+        # First evaluation after every component in the tree has finished OnBeginSimulation (the schedules have registered)
         TickEvents.PrePhysics.Await()
         loop:
             T := GetNowEpochSeconds()
@@ -59,57 +59,57 @@ realtime_clock_component<public> := class<final_super>(component):
             if (Second <> LastTickedSecond):
                 set LastTickedSecond = Second
                 Tick(T)
-            # 次の整数秒の境目の少しあとに起きる（Sleep はフレーム単位なので、少し遅れて起きることはあっても早く起きることはない前提。早く起きたら上の判定で評価せず待ち直す）
+            # Wake a little after the next whole-second boundary (Sleep is frame-based, so it may wake late but is assumed never to wake early. If it wakes early, the check above skips evaluation and waits again)
             WaitSeconds := Max((Second + 1) * 1.0 - T + WakeMarginSeconds, 0.0)
             race:
                 Sleep(WaitSeconds)
                 WakeEvent.Await()
 
-    # 今の時刻（エポック秒 ＋ デバッグのずらし）。同じトランザクションの中では同じ値。OS の時計が逆に戻っても前の値を保つ
+    # The current time (epoch seconds + debug offset). The same value within one transaction. Keeps the previous value if the OS clock goes backward
     GetNowEpochSeconds<public>()<transacts>:float =
         Raw := GetSecondsSinceEpoch()
         Clamped := if (Raw > LastRawSeconds) then Raw else LastRawSeconds
         set LastRawSeconds = Clamped
         Clamped + DebugOffsetSeconds
 
-    # この時計の時間帯のずれ（秒）
+    # This clock's time zone offset (seconds)
     GetTimeZoneOffsetSeconds<public>()<computes>:int =
         TimeZoneOffsetSeconds
 
-    # EpochSeconds の時点が、この時計の時間帯で「何日目」か（現地 0 時で切り替わる）
+    # The "day number" of EpochSeconds in this clock's time zone (changes at local midnight)
     GetDayIndex<public>(EpochSeconds:float)<transacts>:int =
         ScheduleSystem.GetDayIndex(EpochSeconds, TimeZoneOffsetSeconds)
 
-    # EpochSeconds の時点の、この時計の時間帯での現地 0 時からの経過秒
+    # Seconds since local midnight of EpochSeconds in this clock's time zone
     GetSecondsOfDay<public>(EpochSeconds:float)<transacts>:float =
         ScheduleSystem.GetSecondsOfDay(EpochSeconds, TimeZoneOffsetSeconds)
 
-    # 時刻を OffsetSeconds 秒ずらす（デバッグ用。マイナスで過去へ）。その場で全スケジュールを評価し直す（途中の変化は再生せず、「飛んだ」として今の状態だけが配られる）
+    # Shift the time by OffsetSeconds seconds (for debugging; negative goes to the past). Re-evaluates all schedules immediately (the intermediate changes are not replayed; only the current state is delivered, as a "jump")
     SetDebugOffsetSeconds<public>(OffsetSeconds:float):void =
         set DebugOffsetSeconds = OffsetSeconds
         set LastTickedSecond = -1
         WakeEvent.Signal()
 
-    # 今の時刻が EpochSeconds になるようにずらす（デバッグ用）。SetDebugOffsetSeconds と同じく、その場で評価し直す
+    # Shift so that the current time becomes EpochSeconds (for debugging). Re-evaluates immediately, like SetDebugOffsetSeconds
     JumpTo<public>(EpochSeconds:float):void =
         SetDebugOffsetSeconds(EpochSeconds - (GetNowEpochSeconds() - DebugOffsetSeconds))
 
-    # 登録されているスケジュール（並び順は登録順）
+    # The registered schedules (in registration order)
     GetSchedules<public>()<transacts>:[]schedule_component =
         Schedules
 
-    # スケジュールを登録する（schedule_component が OnBeginSimulation で呼ぶ）。次の整数秒から評価される。もう登録されていれば何もしない
+    # Register a schedule (called by schedule_component in OnBeginSimulation). Evaluated from the next whole second. Does nothing when already registered
     Register<internal>(Schedule:schedule_component):void =
         for (Existing : Schedules, Existing = Schedule):
             return
         set Schedules += array{Schedule}
 
-    # 登録を外す（schedule_component が OnEndSimulation で呼ぶ）
+    # Unregister (called by schedule_component in OnEndSimulation)
     Unregister<internal>(Schedule:schedule_component):void =
         set Schedules = for (Existing : Schedules, Existing <> Schedule):
             Existing
 
-    # 1 秒に 1 回。全スケジュールの状態の変化を配ってから、全スケジュールの SecondEvent、最後に自分の SecondEvent
+    # Once per second. Delivers every schedule's state change, then every schedule's SecondEvent, and finally its own SecondEvent
     Tick<private>(T:float):void =
         Current := Schedules
         for (Schedule : Current):

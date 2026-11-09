@@ -6,34 +6,34 @@ using { SceneGraphSystem }
 using { PickupSystem }
 using { PickupSystem.TooltipKit }
 
-# ステージへの合図の種類
+# Kind of stage signal
 pickup_stage_signal<public> := enum:
-    # 起動の合図（activated_event）を送る（隠れた足場を出す・仕掛けを動かすなど）
+    # Sends the activate signal (activated_event) (reveal hidden platforms, start a mechanism, etc.)
     Activate
-    # 停止の合図（deactivated_event）を送る（ハザードを止める・仕掛けを止めるなど）
+    # Sends the deactivate signal (deactivated_event) (stop a hazard, stop a mechanism, etc.)
     Deactivate
 
-# ステージへの合図を送る相手を探す範囲
+# Where to look for the targets of a stage signal
 pickup_stage_scope<public> := enum:
-    # 拾った物（オーブ。効果の外なら、この entity）の一番上の祖先（レベルの最上位の entity）の中。マップを最上位の entity に分けたゲームなら、そのマップの中
+    # Inside the topmost ancestor (the level's top-level entity) of the picked-up object (the orb; this entity when outside an effect). In a game whose maps are top-level entities, inside that map
     SourceRoot
-    # 拾った物の区画（祖先の game_scope_component）の中。区画が無ければ世界
+    # Inside the picked-up object's scope (ancestor game_scope_component). The world if there is no scope
     SourceScope
-    # 世界全体
+    # The whole world
     World
 
-# ステージへの合図を受ける entity の目印のタグ。pickup_stage_target_component が開始時に自分の entity に付け、止まると外す
+# Marker tag for entities that receive stage signals. pickup_stage_target_component adds it to its own entity at start and removes it when stopped
 pickup_stage_target_tag<public> := class(tag):
 
-# 役割：ステージへの合図（pickup_stage_signal_component）を受ける entity の目印。Group が同じ合図を受けると、この entity とその子孫へ起動・停止の合図を送る
-#   合図を受けた entity の部品（ActivationSystem の enable_on_activation_component、ゲームの隠れた足場、仕掛けなど）が、起動・停止の合図で動く
-#   元に戻す合図（効果が終わったとき）は数える：同じ合図を 2 つの効果から受けたら、2 つとも終わったときに逆の合図を送る
-# 置き方：エディターで、合図で動かしたい entity（隠れた足場・ハザードなど）に付ける。Group に名前を入れる（効果の側の Group と同じ名前）
-# タグ：この entity に pickup_stage_target_tag（合図を送る側がこのタグで探す）
-# 外から：Hold / Release / Pulse（pickup_stage_signal_component が呼ぶ。コードからも使える）、IsHeld
+# Role: marker for an entity that receives stage signals (pickup_stage_signal_component). When a signal with the same Group is received, sends the activate / deactivate signal to this entity and its descendants
+#   The parts on the receiving entity (ActivationSystem's enable_on_activation_component, the game's hidden platforms, mechanisms, etc.) react to the activate / deactivate signals
+#   Revert signals (when an effect ends) are counted: if the same signal came from two effects, the opposite signal is sent when both have ended
+# Placement: attach in the editor to the entity the signal should drive (hidden platform, hazard, etc.). Enter a name in Group (the same name as the Group on the effect side)
+# Tags: pickup_stage_target_tag on this entity (the sender finds targets by this tag)
+# From outside: Hold / Release / Pulse (called by pickup_stage_signal_component; also usable from code), IsHeld
 pickup_stage_target_component<public> := class<final_super>(component):
 
-    # 合図のグループの名前。合図を送る側（pickup_stage_signal_component）の Group と同じなら受ける。空なら受けない。既定 空
+    # Name of the signal group. Receives if it matches the Group of the sender (pickup_stage_signal_component). Empty receives nothing. Default empty
     @editable:
         ToolTip := StageTargetGroupToolTip
         Categories := array{PickupStageCategory}
@@ -54,7 +54,7 @@ pickup_stage_target_component<public> := class<final_super>(component):
         set DeactivateHolds = 0
         (super:)OnEndSimulation()
 
-    # Signal を「持つ」：最初の 1 つ目で Signal の合図をこの entity と子孫へ送る（Activator がいれば、その人が起こした起動の合図）。Release で放す
+    # "Hold" Signal: the first hold sends the Signal to this entity and its descendants (an activate signal raised by Activator, if given). Release with Release
     Hold<public>(Signal:pickup_stage_signal, Activator:?agent):void =
         if (Signal = pickup_stage_signal.Activate):
             set ActivateHolds += 1
@@ -65,7 +65,7 @@ pickup_stage_target_component<public> := class<final_super>(component):
             if (DeactivateHolds = 1):
                 Send(Signal, Activator)
 
-    # Hold した Signal を 1 つ放す。だれも持たなくなったら、逆の合図を送る（もう一方の合図を持っている人がいれば、そちらを送り直す）
+    # Release one Hold of Signal. When nobody holds it any more, sends the opposite signal (or re-sends the other signal if someone holds that one)
     Release<public>(Signal:pickup_stage_signal):void =
         if (Signal = pickup_stage_signal.Activate):
             if (ActivateHolds > 0):
@@ -78,11 +78,11 @@ pickup_stage_target_component<public> := class<final_super>(component):
                 if (DeactivateHolds = 0):
                     Send(if (ActivateHolds > 0) then pickup_stage_signal.Activate else Opposite(Signal), false)
 
-    # 数えずに、Signal の合図を 1 回だけ送る（元に戻さない合図）
+    # Sends the Signal once without counting (a signal that is not reverted)
     Pulse<public>(Signal:pickup_stage_signal, Activator:?agent):void =
         Send(Signal, Activator)
 
-    # だれかが Signal を持っていれば成功する
+    # Succeeds if someone holds Signal
     IsHeld<public>(Signal:pickup_stage_signal)<decides><transacts>:void =
         if (Signal = pickup_stage_signal.Activate) then ActivateHolds > 0 else DeactivateHolds > 0
 
@@ -98,31 +98,31 @@ pickup_stage_target_component<public> := class<final_super>(component):
     Opposite<private>(Signal:pickup_stage_signal)<transacts>:pickup_stage_signal =
         if (Signal = pickup_stage_signal.Activate) then pickup_stage_signal.Deactivate else pickup_stage_signal.Activate
 
-# 役割：起動の合図を受けたら、範囲（Scope）の中の、Group が同じ pickup_stage_target_component（タグ pickup_stage_target_tag で探す）へ Signal の合図を送る。RevertOnEnd なら、停止の合図を受けたとき（効果が終わったとき）に元に戻す
-#   効果のプレハブ（PickupSystem の pickup_effect_component）の中に置くと、範囲の基準は拾った物（オーブ）。例：「そのマップの隠れた足場を 10 秒出す」「そのマップのハザードを 5 秒止める」
-#   効果の外（起動の合図が届くほかの場所）に置いてもよい。そのときの範囲の基準はこの entity
-# 置き方：エディターで、効果のプレハブの根か子に付ける（Group ごとに entity を分ける）
-# いつ：起動の合図を受けたとき・停止の合図を受けたとき。止まるときにも元に戻す（RevertOnEnd のとき）
-# 外から：Apply / Revert / GetTargetCount
-# 前提・注意：相手は合図を送るときに 1 回だけ探す（あとから増えた相手には送らない）。同じ相手を同じマップのほかの人も見る（ステージは共有）
+# Role: on the activate signal, sends the Signal to every pickup_stage_target_component with the same Group within Scope (found by the pickup_stage_target_tag tag). With RevertOnEnd, reverts on the deactivate signal (when the effect ends)
+#   Placed inside an effect prefab (PickupSystem's pickup_effect_component), the scope is based on the picked-up object (the orb). Examples: "reveal that map's hidden platforms for 10 s", "stop that map's hazards for 5 s"
+#   It may also be placed outside an effect (anywhere the activate signal is delivered). The scope is then based on this entity
+# Placement: attach in the editor to the root or a child of the effect prefab (one entity per Group)
+# When: on the activate signal and on the deactivate signal. Also reverts when stopped (with RevertOnEnd)
+# From outside: Apply / Revert / GetTargetCount
+# Requirements / notes: targets are searched once when the signal is sent (targets added later do not receive it). Other players on the same map see the same targets (the stage is shared)
 pickup_stage_signal_component<public> := class<final_super>(component):
 
-    # 合図を送る相手のグループの名前（pickup_stage_target_component の Group）。空なら送らない。既定 空
+    # Group name of the targets (Group of pickup_stage_target_component). Empty sends nothing. Default empty
     @editable:
         ToolTip := StageSignalGroupToolTip
         Categories := array{PickupStageCategory}
     Group<public>:string = ""
-    # 送る合図（Activate = 起動 / Deactivate = 停止）。既定 Activate
+    # Signal to send (Activate = activate / Deactivate = deactivate). Default Activate
     @editable:
         ToolTip := StageSignalSignalToolTip
         Categories := array{PickupStageCategory}
     Signal<public>:pickup_stage_signal = pickup_stage_signal.Activate
-    # 相手を探す範囲（SourceRoot = 拾った物の最上位の entity の中 / SourceScope = 拾った物の区画 / World = 世界）。既定 SourceRoot
+    # Where to look for targets (SourceRoot = inside the picked-up object's top-level entity / SourceScope = the picked-up object's scope / World = the world). Default SourceRoot
     @editable:
         ToolTip := StageSignalScopeToolTip
         Categories := array{PickupStageCategory}
     Scope<public>:pickup_stage_scope = pickup_stage_scope.SourceRoot
-    # オンなら、停止の合図を受けたとき（効果が終わったとき）に元に戻す。オフなら送ったまま（やり直しは相手の部品に任せる）。既定オン
+    # When on, reverts on the deactivate signal (when the effect ends). When off, leaves the signal as sent (resetting is up to the target's parts). Default on
     @editable:
         ToolTip := StageSignalRevertToolTip
         Categories := array{PickupStageCategory}
@@ -142,14 +142,14 @@ pickup_stage_signal_component<public> := class<final_super>(component):
         Revert()
         (super:)OnEndSimulation()
 
-    # 範囲の中の相手へ合図を送る（RevertOnEnd なら、Revert まで持つ）。もう送っていれば何もしない
+    # Sends the signal to the targets within the scope (with RevertOnEnd, holds it until Revert). Does nothing if already sent
     Apply<public>(Activator:?agent):void =
         if (Applied? or Group = ""):
             return
         set Applied = true
         Targets := FindTargets()
         if (Targets.Length = 0):
-            Print("[pickup_stage_signal_component] Group「{Group}」の相手（pickup_stage_target_component）が範囲の中に見つかりません")
+            Print("[pickup_stage_signal_component] No target (pickup_stage_target_component) with Group '{Group}' found within the scope")
         for (Target : Targets):
             if (RevertOnEnd?):
                 Target.Hold(Signal, Activator)
@@ -158,7 +158,7 @@ pickup_stage_signal_component<public> := class<final_super>(component):
         if (RevertOnEnd?):
             set Held = Targets
 
-    # 送った合図を元に戻す（RevertOnEnd のとき。送っていなければ何もしない）
+    # Reverts the sent signal (with RevertOnEnd; does nothing if not sent)
     Revert<public>():void =
         if (not Applied?):
             return
@@ -167,7 +167,7 @@ pickup_stage_signal_component<public> := class<final_super>(component):
             Target.Release(Signal)
         set Held = array{}
 
-    # 今の範囲の中の相手の数（探し直す）
+    # Number of targets currently within the scope (searches again)
     GetTargetCount<public>()<transacts>:int =
         FindTargets().Length
 
@@ -185,7 +185,7 @@ pickup_stage_signal_component<public> := class<final_super>(component):
         else:
             array{}
 
-# InEntity の一番上の祖先（simulation entity のすぐ下。レベルの最上位の entity）。InEntity が最上位なら InEntity
+# The topmost ancestor of InEntity (directly under the simulation entity; the level's top-level entity). InEntity itself if it is top-level
 (InEntity:entity).FindTopEntity<public>()<transacts>:entity =
     var Current:entity = InEntity
     loop:

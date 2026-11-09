@@ -6,13 +6,13 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：EnergySystem の動作確認。energy_component（量の増減・丸め・Spend[]・SetAmount・StartFull・SetMax・知らせ）と、FindEnergy / FindEnergyFor、energy_restore_ability_component（コードからの RestoreFor・付与・押して回復）を確かめる
-# テストのレベル：
-#   - player_manager_component を付けた entity を 1 つ
-#   - テスト用の entity に energy_system_test_component だけを付ける（energy_component や能力はテストが実行時に子として作る）
-# 人の操作：最後に「射撃のボタンを押す」と出たら、20 秒以内に押す（押さなければその項目だけ [FAIL]）
-# 前提・注意：プレイヤー（agent の entity）に energy_component を一時的に付けて、プレイヤーごとのエネルギーを確かめる（終わったら外す）
-# 結果：出力ログの [TEST] EnergySystem
+# Role: verification of EnergySystem. Checks energy_component (adding / subtracting, rounding, Spend[], SetAmount, StartFull, SetMax, notifications), FindEnergy / FindEnergyFor, and energy_restore_ability_component (RestoreFor from code, granting, restore on press)
+# Test level:
+#   - one entity with player_manager_component
+#   - the test entity carries only energy_system_test_component (energy_component and abilities are created by the test at runtime as children)
+# Human input: when "press the fire button" appears at the end, press it within 20 seconds (otherwise only that item is [FAIL])
+# Requirements / Notes: temporarily attaches an energy_component to the player (the agent's entity) to check per-player energy (removed afterwards)
+# Result: [TEST] EnergySystem in the output log
 energy_system_test_component<public> := class<final_super>(component):
 
     var<private> ChangedCount:int = 0
@@ -92,7 +92,7 @@ energy_system_test_component<public> := class<final_super>(component):
         Results.Check("Spend 21 with 20 fails", if (Energy.Spend[21.0]) then false else true)
         Results.Check("Spend negative fails", if (Energy.Spend[-1.0]) then false else true)
         Results.CheckFloat("failed Spend keeps amount", Energy.CurrentAmount, 20.0, 0.001)
-        # 失敗した Spend は量を変えない（if の中で巻き戻る）。2 つまとめて成功しなければ両方とも戻る
+        # A failed Spend does not change the amount (rolled back inside the if). If both do not succeed together, both are rolled back
         Results.Check("Spend 15 + 15 with 20 fails as a whole", if (Energy.Spend[15.0], Energy.Spend[15.0]) then false else true)
         Results.CheckFloat("rolled back Spend keeps amount", Energy.CurrentAmount, 20.0, 0.001)
         TickEvents.PrePhysics.Await()

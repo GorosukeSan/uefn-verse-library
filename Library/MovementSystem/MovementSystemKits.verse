@@ -1,4 +1,4 @@
-# MovementSystem の Kit をライブラリの外（利用者のコード）から使えるように public にする。
-# フォルダから作られるモジュールは既定で internal なので、宣言しないと外から using できない。
-# エディターに出す説明（message）
+# Make the MovementSystem Kits public so they can be used from outside the library (your code).
+# Modules created from folders are internal by default, so they cannot be used from outside unless declared.
+# Descriptions shown in the editor (message)
 TooltipKit<public> := module {}

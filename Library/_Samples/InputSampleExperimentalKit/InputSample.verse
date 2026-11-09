@@ -14,44 +14,44 @@ using { InputSystem }
 using { PlayerSystem }
 using { SceneGraphSystem }
 
-# 画面の文言
-InputSampleTitle<localizes>:message = "入力サンプル"
-InputSampleStepMessage<localizes>(Index:int, Total:int, Action:string):message = "{Index} / {Total}　{Action}"
+# Screen texts
+InputSampleTitle<localizes>:message = "Input sample"
+InputSampleStepMessage<localizes>(Index:int, Total:int, Action:string):message = "{Index} / {Total}   {Action}"
 InputSampleMappingMessage<localizes>(Mapping:string):message = "Mapping: {Mapping}"
-InputSampleKeyMessage<localizes>(Key:string):message = "キー: {Key}（既定の割り当て。設定で変えていると違う）"
+InputSampleKeyMessage<localizes>(Key:string):message = "Key: {Key} (default binding; differs if changed in the settings)"
 InputSampleNoteMessage<localizes>(Note:string):message = "{Note}"
-InputSampleWaiting<localizes>(Seconds:int):message = "入力: この入力を押してください（{Seconds} 秒ごとに次へ切り替わります）"
-InputSampleDetected<localizes>:message = "入力: 検知しました"
-InputSampleNotDetectable<localizes>:message = "入力: この Mapping には Verse から検知できる入力アクションがありません"
+InputSampleWaiting<localizes>(Seconds:int):message = "Input: press this input (switches to the next every {Seconds} s)"
+InputSampleDetected<localizes>:message = "Input: detected"
+InputSampleNotDetectable<localizes>:message = "Input: this Mapping has no input action that Verse can detect"
 InputSampleButtonMessage<localizes>(Mapping:string, Action:string):message = "{Mapping}\n{Action}"
-InputSampleButtonWaiting<localizes>:message = "ボタン: 左のボタンの Click を待っています（フォーカスなし。TriggeringInputAction で押せます）"
-InputSampleButtonClicked<localizes>:message = "ボタン: Click を検知しました"
-InputSampleButtonNoAction<localizes>:message = "ボタン: この入力はボタンに割り当てられません（logic の input_action だけ）"
+InputSampleButtonWaiting<localizes>:message = "Button: waiting for a Click on the button at the left (no focus; TriggeringInputAction can press it)"
+InputSampleButtonClicked<localizes>:message = "Button: Click detected"
+InputSampleButtonNoAction<localizes>:message = "Button: this input cannot be assigned to a button (logic input_actions only)"
 
-# 役割：input_sample_component が順に確かめる入力 1 つ分。LogicAction か VectorAction のどちらか 1 つを持つ（どちらも無ければ表示だけ）
+# Role: one input that input_sample_component checks in turn. Holds either LogicAction or VectorAction (display only when neither)
 input_sample_step<public> := class:
-    # 画面に出す入力アクション名
+    # Input action name shown on screen
     Label<public>:string
-    # 画面に出す Mapping 名
+    # Mapping name shown on screen
     MappingLabel<public>:string
-    # 押すキーの名前（キーボード / パッド）。今の割り当ては Verse から読めないので、既定のキーを書く
+    # Name of the key to press (keyboard / gamepad). The current binding cannot be read from Verse, so the default key is written
     KeyName<public>:string = ""
-    # 補足
+    # Extra note
     Note<public>:string = ""
-    # この番のあいだ足す Mapping。キャラクター操作の Mapping は既定で有効なので足さない
+    # Mapping added during this step. Character-control Mappings are enabled by default, so they are not added
     Mapping<public>:?input_mapping = false
-    # 番が終わったら Mapping を外すか。既定で有効か分からない Mapping（InteractMapping）は外さない
+    # Whether to remove the Mapping when the step ends. A Mapping whose default state is unknown (InteractMapping) is not removed
     RemoveMappingAfter<public>:logic = false
-    # 押して検知する入力（logic。BeginDetectEvent = 押した瞬間を待つ）
+    # Input detected by a press (logic; BeginDetectEvent = waits for the moment of the press)
     LogicAction<public>:?input_action(logic) = false
-    # 値が vector3 の入力（Move・PointerSelect・PointerZoom。TriggerActivationEvent を待つ）
+    # Input whose value is a vector3 (Move, PointerSelect, PointerZoom; waits for TriggerActivationEvent)
     VectorAction<public>:?input_action((/Verse.org/SpatialMath:)vector3) = false
 
-    # 検知できる入力があるか
+    # Whether there is a detectable input
     IsDetectable<public>()<decides><transacts>:void =
         LogicAction? or VectorAction?
 
-    # 入力が届くまで待つ。検知できる入力が無ければ戻らない
+    # Wait until the input arrives. Never returns when there is no detectable input
     AwaitTrigger<public>(PlayerInput:player_input)<suspends>:void =
         if (Action := LogicAction?):
             PlayerInput.AwaitPressed(Action)
@@ -60,7 +60,7 @@ input_sample_step<public> := class:
         else:
             Sleep(Inf)
 
-# 役割：1 人分の確認画面（Widget Blueprint を使わない Verse UI）。入力モードは None（HUD）のままなので、フォーカスの無い画面で button_loud の TriggeringInputAction が効くかも確かめられる
+# Role: one player's check screen (Verse UI without a Widget Blueprint). The input mode stays None (HUD), so it also checks whether button_loud's TriggeringInputAction works on a screen without focus
 input_sample_widget<public> := class:
 
     StepText<public>:text_block = text_block{DefaultTextColor := NamedColors.White}
@@ -69,13 +69,13 @@ input_sample_widget<public> := class:
     NoteText<public>:text_block = text_block{DefaultTextColor := NamedColors.White}
     ResultText<public>:text_block = text_block{DefaultTextColor := NamedColors.White}
     ButtonResultText<public>:text_block = text_block{DefaultTextColor := NamedColors.White}
-    # 文字は Mapping と入力アクション。TriggeringInputAction は番ごとに入れ替える
+    # The text is the Mapping and the input action. TriggeringInputAction is swapped per step
     ActionButton<public>:button_loud = button_loud{}
 
     Root<private>:canvas = canvas{}
     var<private> Built:logic = false
 
-    # 画面に出す widget（毎回同じものを返す）
+    # The widget shown on screen (returns the same one every time)
     GetWidget<public>():widget =
         if (not Built?):
             set Built = true
@@ -116,79 +116,79 @@ input_sample_widget<public> := class:
             SizeToContent := true
             Widget := ActionButton
 
-# 役割：標準の入力アクション（/Fortnite.com/Input と /Verse.org/Input のすべて）を StepSeconds ごとに 1 つずつ画面に出し、押されたら「検知しました」と出す見本。logic の入力は押した瞬間（BeginDetectEvent）、vector3 の入力（Move・PointerSelect・PointerZoom）は TriggerActivationEvent で検知する。PointerSelect / PointerZoom の番では TouchMapping を足して Virtual Pointer を出す。左の button_loud には同じ入力を TriggeringInputAction に入れ、フォーカスの無い画面でもキーで Click が起きることを確かめる
-# 置き方：エディターで空の entity に付ける。区画（または世界）に player_manager_component を 1 つ置く
-# 試し方：セッションを始めると（StartOnBegin）、画面上部に「n / 総数　アクション名」「Mapping」「キー」が出る。書かれたキーを押すと「検知しました」に変わり、出力ログにも出る。StepSeconds ごとに次の入力へ進み、最後まで行くと先頭へ戻る
-# いつ：StartOnBegin が true ならシミュレーション開始から。false なら起動の合図（activated_event）から停止の合図（deactivated_event）まで
-# 前提・注意：キャラクター操作の Mapping は外さない（外すと動けなくなる）。UI 用の Mapping は番のあいだだけ足して外す。今のキー割り当ては Verse から読めないので、画面のキー名は既定のもの
+# Role: sample that shows the standard input actions (all of /Fortnite.com/Input and /Verse.org/Input) on screen one at a time, every StepSeconds, and shows "detected" when pressed. logic inputs are detected at the moment of the press (BeginDetectEvent), vector3 inputs (Move, PointerSelect, PointerZoom) with TriggerActivationEvent. In the PointerSelect / PointerZoom steps, TouchMapping is added to show the Virtual Pointer. The button_loud at the left gets the same input as TriggeringInputAction, to check that a key causes a Click even on a screen without focus
+# Placement: attach to an empty entity in the editor. Place one player_manager_component in the scope (or the world)
+# Try it: when the session starts (StartOnBegin), the top of the screen shows "n / total   action name", "Mapping" and "Key". Pressing the listed key changes it to "detected" and also prints to the output log. Advances to the next input every StepSeconds, wrapping to the first after the last
+# When: with StartOnBegin true, from the start of the simulation. With false, from the activate signal (activated_event) to the deactivate signal (deactivated_event)
+# Requirements / notes: character-control Mappings are never removed (removing them makes the player unable to move). UI Mappings are added only for the step and then removed. The current key bindings cannot be read from Verse, so the key names on screen are the defaults
 input_sample_component<public> := class<final_super>(component):
 
-    # オンなら、シミュレーション開始から始める。オフなら起動の合図を待つ
+    # When on, starts from the start of the simulation. When off, waits for the activate signal
     @editable
     StartOnBegin<public>:logic = true
 
-    # 次の入力へ切り替える間隔（秒）
+    # Interval between inputs (seconds)
     @editable
     StepSeconds<public>:float = 6.0
 
     Views<private>:player_view_set = player_view_set{}
 
-    # 順に確かめる入力
+    # The inputs checked in turn
     Steps<public>:[]input_sample_step = array:
-        # --- /Fortnite.com/Input/Character（既定で有効。Mapping は触らない） ---
+        # --- /Fortnite.com/Input/Character (enabled by default; the Mapping is not touched) ---
         input_sample_step{Label := "Reload", KeyName := "R / X", MappingLabel := "Character.RangedWeaponMapping", LogicAction := option{Character.Reload}}
-        input_sample_step{Label := "WeaponPrimary", KeyName := "左クリック / RT", MappingLabel := "Character.RangedWeaponMapping", LogicAction := option{Character.WeaponPrimary}}
-        input_sample_step{Label := "WeaponSecondary", KeyName := "右クリック / LT", MappingLabel := "Character.RangedWeaponMapping", LogicAction := option{Character.WeaponSecondary}}
-        input_sample_step{Label := "Crouch", KeyName := "左Ctrl / 右スティック押し込み", MappingLabel := "Character.TraversalMapping", LogicAction := option{Character.Crouch}}
-        input_sample_step{Label := "Sprint", KeyName := "左Shift / 左スティック押し込み", MappingLabel := "Character.TraversalMapping", LogicAction := option{Character.Sprint}}
+        input_sample_step{Label := "WeaponPrimary", KeyName := "Left click / RT", MappingLabel := "Character.RangedWeaponMapping", LogicAction := option{Character.WeaponPrimary}}
+        input_sample_step{Label := "WeaponSecondary", KeyName := "Right click / LT", MappingLabel := "Character.RangedWeaponMapping", LogicAction := option{Character.WeaponSecondary}}
+        input_sample_step{Label := "Crouch", KeyName := "Left Ctrl / Right stick press", MappingLabel := "Character.TraversalMapping", LogicAction := option{Character.Crouch}}
+        input_sample_step{Label := "Sprint", KeyName := "Left Shift / Left stick press", MappingLabel := "Character.TraversalMapping", LogicAction := option{Character.Sprint}}
         input_sample_step{Label := "Jump", KeyName := "Space / A", MappingLabel := "Character.TraversalMapping", LogicAction := option{Character.Jump}}
-        # @experimental。InteractMapping が既定で有効か分からないので、足すだけで外さない
+        # @experimental. Unknown whether InteractMapping is enabled by default, so it is only added and not removed
         input_sample_step:
-            Label := "Interact（experimental）"
+            Label := "Interact (experimental)"
             KeyName := "E / X"
-            MappingLabel := "Character.InteractMapping（experimental）"
-            Note := "この番で InteractMapping を足します（外しません）"
+            MappingLabel := "Character.InteractMapping (experimental)"
+            Note := "This step adds InteractMapping (not removed)"
             Mapping := option{Character.InteractMapping}
             LogicAction := option{Character.Interact}
-        # @experimental。所属する Mapping は API に出ていない
-        input_sample_step{Label := "Move（experimental）", KeyName := "W A S D / 左スティック", MappingLabel := "Character（所属 Mapping は API に無し）", VectorAction := option{Character.Move}}
+        # @experimental. The Mapping it belongs to is not exposed in the API
+        input_sample_step{Label := "Move (experimental)", KeyName := "W A S D / Left stick", MappingLabel := "Character (owning Mapping not in the API)", VectorAction := option{Character.Move}}
 
-        # --- /Verse.org/Input/Gameplay（検知できるアクションが無い） ---
-        input_sample_step{Label := "（アクション無し）", MappingLabel := "Gameplay.HotbarMapping", KeyName := "（なし）"}
+        # --- /Verse.org/Input/Gameplay (no detectable action) ---
+        input_sample_step{Label := "(no action)", MappingLabel := "Gameplay.HotbarMapping", KeyName := "(none)"}
 
-        # --- /Verse.org/Input/UI（この番だけ Mapping を足し、終わったら外す） ---
+        # --- /Verse.org/Input/UI (the Mapping is added only for this step and removed afterwards) ---
         input_sample_step{Label := "NextTab", KeyName := "E / RB", MappingLabel := "UI.MenuNavigationMapping", Mapping := option{MenuNavigationMapping}, RemoveMappingAfter := true, LogicAction := option{NextTab}}
         input_sample_step{Label := "PreviousTab", KeyName := "Q / LB", MappingLabel := "UI.MenuNavigationMapping", Mapping := option{MenuNavigationMapping}, RemoveMappingAfter := true, LogicAction := option{PreviousTab}}
         input_sample_step{Label := "NextPage", KeyName := "C / RT", MappingLabel := "UI.MenuNavigationMapping", Mapping := option{MenuNavigationMapping}, RemoveMappingAfter := true, LogicAction := option{NextPage}}
         input_sample_step{Label := "PreviousPage", KeyName := "Z / LT", MappingLabel := "UI.MenuNavigationMapping", Mapping := option{MenuNavigationMapping}, RemoveMappingAfter := true, LogicAction := option{PreviousPage}}
-        input_sample_step{Label := "Back", KeyName := "Escape / Back", MappingLabel := "UI.MenuNavigationMapping", Mapping := option{MenuNavigationMapping}, RemoveMappingAfter := true, LogicAction := option{Back}, Note := "Esc は Fortnite のメニューに取られて届かないことがあります"}
+        input_sample_step{Label := "Back", KeyName := "Escape / Back", MappingLabel := "UI.MenuNavigationMapping", Mapping := option{MenuNavigationMapping}, RemoveMappingAfter := true, LogicAction := option{Back}, Note := "Esc may be taken by the Fortnite menu and never arrive"}
         input_sample_step{Label := "Use", KeyName := "F / Y", MappingLabel := "UI.InventoryMenuMapping", Mapping := option{InventoryMenuMapping}, RemoveMappingAfter := true, LogicAction := option{Use}}
         input_sample_step{Label := "Inspect", KeyName := "I / X", MappingLabel := "UI.InventoryMenuMapping", Mapping := option{InventoryMenuMapping}, RemoveMappingAfter := true, LogicAction := option{Inspect}}
-        input_sample_step{Label := "Sort", KeyName := "V / 右スティック押し込み", MappingLabel := "UI.InventoryMenuMapping", Mapping := option{InventoryMenuMapping}, RemoveMappingAfter := true, LogicAction := option{Sort}}
-        input_sample_step{Label := "Drop", KeyName := "X / 左スティック押し込み", MappingLabel := "UI.InventoryMenuMapping", Mapping := option{InventoryMenuMapping}, RemoveMappingAfter := true, LogicAction := option{Drop}}
+        input_sample_step{Label := "Sort", KeyName := "V / Right stick press", MappingLabel := "UI.InventoryMenuMapping", Mapping := option{InventoryMenuMapping}, RemoveMappingAfter := true, LogicAction := option{Sort}}
+        input_sample_step{Label := "Drop", KeyName := "X / Left stick press", MappingLabel := "UI.InventoryMenuMapping", Mapping := option{InventoryMenuMapping}, RemoveMappingAfter := true, LogicAction := option{Drop}}
         input_sample_step{Label := "Craft", KeyName := "F / Y", MappingLabel := "UI.CraftingMenuMapping", Mapping := option{CraftingMenuMapping}, RemoveMappingAfter := true, LogicAction := option{Craft}}
         input_sample_step{Label := "Inspect", KeyName := "I / X", MappingLabel := "UI.CraftingMenuMapping", Mapping := option{CraftingMenuMapping}, RemoveMappingAfter := true, LogicAction := option{Inspect}}
-        input_sample_step{Label := "Favorite", KeyName := "V / 右スティック押し込み", MappingLabel := "UI.CraftingMenuMapping", Mapping := option{CraftingMenuMapping}, RemoveMappingAfter := true, LogicAction := option{Favorite}}
-        input_sample_step{Label := "Scrap", KeyName := "X / 左スティック押し込み", MappingLabel := "UI.CraftingMenuMapping", Mapping := option{CraftingMenuMapping}, RemoveMappingAfter := true, LogicAction := option{Scrap}}
+        input_sample_step{Label := "Favorite", KeyName := "V / Right stick press", MappingLabel := "UI.CraftingMenuMapping", Mapping := option{CraftingMenuMapping}, RemoveMappingAfter := true, LogicAction := option{Favorite}}
+        input_sample_step{Label := "Scrap", KeyName := "X / Left stick press", MappingLabel := "UI.CraftingMenuMapping", Mapping := option{CraftingMenuMapping}, RemoveMappingAfter := true, LogicAction := option{Scrap}}
         input_sample_step{Label := "Track", KeyName := "F / Y", MappingLabel := "UI.MapMenuMapping", Mapping := option{MapMenuMapping}, RemoveMappingAfter := true, LogicAction := option{Track}}
         input_sample_step{Label := "PlaceMarker", KeyName := "P / X", MappingLabel := "UI.MapMenuMapping", Mapping := option{MapMenuMapping}, RemoveMappingAfter := true, LogicAction := option{PlaceMarker}}
-        input_sample_step{Label := "Reset", KeyName := "R / 左スティック押し込み", MappingLabel := "UI.MapMenuMapping", Mapping := option{MapMenuMapping}, RemoveMappingAfter := true, LogicAction := option{Reset}}
-        input_sample_step{Label := "ToggleView", KeyName := "V / 右スティック押し込み", MappingLabel := "UI.MapMenuMapping", Mapping := option{MapMenuMapping}, RemoveMappingAfter := true, LogicAction := option{ToggleView}}
+        input_sample_step{Label := "Reset", KeyName := "R / Left stick press", MappingLabel := "UI.MapMenuMapping", Mapping := option{MapMenuMapping}, RemoveMappingAfter := true, LogicAction := option{Reset}}
+        input_sample_step{Label := "ToggleView", KeyName := "V / Right stick press", MappingLabel := "UI.MapMenuMapping", Mapping := option{MapMenuMapping}, RemoveMappingAfter := true, LogicAction := option{ToggleView}}
         input_sample_step{Label := "ZoomIn", KeyName := "Z / LT", MappingLabel := "UI.MapMenuMapping", Mapping := option{MapMenuMapping}, RemoveMappingAfter := true, LogicAction := option{ZoomIn}}
         input_sample_step{Label := "ZoomOut", KeyName := "X / RT", MappingLabel := "UI.MapMenuMapping", Mapping := option{MapMenuMapping}, RemoveMappingAfter := true, LogicAction := option{ZoomOut}}
-        # TouchMapping を足すと Virtual Pointer（画面のカーソル）が出る
+        # Adding TouchMapping shows the Virtual Pointer (the on-screen cursor)
         input_sample_step:
             Label := "PointerSelect"
-            KeyName := "タッチ / クリック"
+            KeyName := "Touch / Click"
             MappingLabel := "UI.TouchMapping"
-            Note := "TouchMapping を足すと画面にポインターが出ます。クリック位置（画面座標 cm）が値で届きます"
+            Note := "Adding TouchMapping shows a pointer on screen. The click position (screen coordinates, cm) arrives as the value"
             Mapping := option{TouchMapping}
             RemoveMappingAfter := true
             VectorAction := option{PointerSelect}
         # @experimental
         input_sample_step:
-            Label := "PointerZoom（experimental）"
-            KeyName := "ピンチ / ホイール"
+            Label := "PointerZoom (experimental)"
+            KeyName := "Pinch / Wheel"
             MappingLabel := "UI.TouchMapping"
             Mapping := option{TouchMapping}
             RemoveMappingAfter := true
@@ -207,23 +207,23 @@ input_sample_component<public> := class<final_super>(component):
         Views.Deactivate()
         (super:)OnEndSimulation()
 
-    # 全員（途中参加も）に確認画面を出して巡回を始める。もう始めていれば何もしない
+    # Show the check screen to everyone (late joiners too) and start cycling. Does nothing when already started
     Activate<public>():void =
         Views.Activate(Entity, CreateView)
 
-    # 全員の確認画面を消して巡回をやめる
+    # Remove everyone's check screen and stop cycling
     Deactivate<public>():void =
         Views.Deactivate()
 
-    # 動いているあいだ成功する
+    # Succeeds while running
     IsActive<public>()<decides><transacts>:void =
         Views.IsActive[]
 
     CreateView<private>(ViewEntity:entity, Slot:player_slot_component):component =
         input_sample_view_component{Entity := ViewEntity, Source := Self, Player := Slot.Player}
 
-# 役割：1 人分の巡回。Source の Steps を先頭から順に表示し、入力とボタンの Click を待つ
-# 置き方：実行時に input_sample_component が作る（エディターでは置かない）
+# Role: one player's cycle. Shows Source.Steps in order from the first, waiting for the input and for the button Click
+# Placement: created at runtime by input_sample_component (never placed in the editor)
 input_sample_view_component<public> := class<final_super>(component):
 
     Source<public>:input_sample_component
@@ -242,14 +242,14 @@ input_sample_view_component<public> := class<final_super>(component):
                     RunStep(PlayerInput, Step, Index)
                 set Index = if (Index + 1 < Source.Steps.Length) then Index + 1 else 0
         else:
-            Print("[input_sample] この人の入力（player_input）が取れません")
+            Print("[input_sample] Cannot get this player's input (player_input)")
 
     OnEndSimulation<override>():void =
         Hide()
         (super:)OnEndSimulation()
 
-    # 1 つの入力を StepSeconds のあいだ表示する。入力と、同じ入力を TriggeringInputAction に入れた左のボタンの Click を別々に待ち、届いたほうから「検知」に変える
-    # 途中で止められても（view が消える）、defer で Mapping を戻す
+    # Show one input for StepSeconds. Waits separately for the input and for a Click on the button at the left (which has the same input as TriggeringInputAction), switching whichever arrives to "detected"
+    # Even when stopped midway (the view disappears), defer restores the Mapping
     RunStep<private>(PlayerInput:player_input, Step:input_sample_step, Index:int)<suspends>:void =
         Widget.StepText.SetText(InputSampleStepMessage(Index + 1, Source.Steps.Length, Step.Label))
         Widget.MappingText.SetText(InputSampleMappingMessage(Step.MappingLabel))
@@ -278,12 +278,12 @@ input_sample_view_component<public> := class<final_super>(component):
             block:
                 Step.AwaitTrigger(PlayerInput)
                 Widget.ResultText.SetText(InputSampleDetected)
-                Print("[input_sample] 入力を検知: {Step.MappingLabel} > {Step.Label}")
+                Print("[input_sample] Input detected: {Step.MappingLabel} > {Step.Label}")
                 Sleep(Inf)
             block:
                 Clicked := Widget.ActionButton.OnClick().Await()
                 Widget.ButtonResultText.SetText(InputSampleButtonClicked)
-                Print("[input_sample] ボタンの Click を検知: {Step.MappingLabel} > {Step.Label}")
+                Print("[input_sample] Button Click detected: {Step.MappingLabel} > {Step.Label}")
                 Sleep(Inf)
 
     Show<private>():void =

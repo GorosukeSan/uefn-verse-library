@@ -5,9 +5,9 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：LoadoutSystem の動作確認。ApplyTo で slot の下にロードアウトができ（持ち主が決まる）、2 回目は増えない、同じ Group のほかのロードアウトは外れる、RemoveFrom で消えることを確かめる
-# テストのレベル：player_manager_component を付けた entity を 1 つと、この component を付けた entity を 1 つ。プレイヤー 1 人以上で始める（参加を最大 10 秒待つ）
-# 結果：出力ログの [TEST] LoadoutSystem
+# Role: verification of LoadoutSystem. Checks that ApplyTo creates a loadout under the slot (with an owner), that a second ApplyTo does not add another, that other loadouts of the same Group are removed, and that RemoveFrom removes it
+# Test level: one entity with player_manager_component and one entity with this component. Start with at least one player (waits up to 10 seconds for them to join)
+# Result: [TEST] LoadoutSystem in the output log
 loadout_system_test_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =
@@ -25,7 +25,7 @@ loadout_system_test_component<public> := class<final_super>(component):
         if (Results.Finish[]) {}
 
     Run<private>(Results:test_log, Agent:agent):void =
-        # 同じ型の component は 1 つの entity に 1 つまでなので、ロードアウトごとに entity を分ける
+        # Only one component of a type per entity, so each loadout gets its own entity
         Holder := entity{}
         FirstEntity := entity{}
         SecondEntity := entity{}

@@ -4,43 +4,43 @@ using { ActivationSystem }
 using { SceneGraphSystem }
 using { ModeSystem.TooltipKit }
 
-# 選ばれているモードが変わった知らせ（決まった・変わった・取り消された）
-# 方向：区画全体（SendScoped。区画が無ければ世界全体）
-# 送り手：mode_select_component。受け手：mode_selected_condition_component・モードを出す画面など。消費しない
+# Notification that the selected mode changed (decided, changed or cleared)
+# Direction: the whole scope (SendScoped; the whole world without a scope)
+# Sender: mode_select_component. Receivers: mode_selected_condition_component, screens that show the mode, etc. Not consumed
 mode_changed_event<public> := class(scene_event):
-    # 送った mode_select_component
+    # The mode_select_component that sent it
     Selector<public>:mode_select_component
-    # 新しく選ばれたモード。取り消されたときは false
+    # The newly selected mode. false when cleared
     Mode<public>:?game_mode_component
 
-# 役割：選べるモード（子の game_mode_component）を持ち、受け付けているあいだに TrySelect で決まったモードを覚える。決まる・変わる・取り消されると mode_changed_event を区画全体へ送る。受け付けをやめると選びは消える
-# 置き方：エディターで entity に付ける。区画（または世界）に 1 つ（条件と画面から FindScopedComponent で探される）
-# 子：game_mode_component を付けた entity を、直下に 1 つずつ（候補の順番は各モードの Order）
-# いつ受け付けるか：起動の合図（activated_event）から停止の合図（deactivated_event）まで。ActiveOnBegin が true ならシミュレーション開始から。コードから Activate / Deactivate を呼んでもよい
-# 決め方：AllowReselect が false なら、最初に決まったモードのまま（取り消すまで次の TrySelect は効かない）。true なら、あとの TrySelect で選び直せる。多数決で決めるなら、同じ entity に mode_vote_component を置く（VoteKit）
-# 知らせ：mode_changed_event を区画全体へ送り、SelectedEvent に届ける
-# 外から：TrySelect / Clear / Activate / Deactivate。IsActive / FindSelected / IsSelected / GetModes で今の状態を問い合わせる
+# Role: holds the selectable modes (child game_mode_components) and remembers the mode decided by TrySelect while accepting. Sends mode_changed_event to the whole scope when decided, changed or cleared. The selection is cleared when accepting ends
+# Placement: attach to an entity in the editor. One per scope (or world) (conditions and screens find it with FindScopedComponent)
+# Children: entities with game_mode_component, one each directly under it (the candidate order is each mode's Order)
+# When it accepts: from the activation signal (activated_event) to the deactivation signal (deactivated_event). From the start of the simulation when ActiveOnBegin is true. Activate / Deactivate can also be called from code
+# How it decides: when AllowReselect is false, the first decided mode stays (later TrySelect calls do nothing until cleared). When true, a later TrySelect can change it. To decide by majority vote, place mode_vote_component on the same entity (VoteKit)
+# Notifies: sends mode_changed_event to the whole scope and fires SelectedEvent
+# From outside: TrySelect / Clear / Activate / Deactivate. Query the current state with IsActive / FindSelected / IsSelected / GetModes
 mode_select_component<public> := class<final_super>(component):
 
-    # true ならシミュレーション開始から受け付ける。false なら起動の合図から。既定 false
+    # true accepts from the start of the simulation. false waits for the activation signal. Default false
     @editable:
         ToolTip := ModeActiveOnBeginToolTip
         Categories := array{ModeCategory}
     ActiveOnBegin<public>:logic = false
 
-    # true なら、決まったあとも TrySelect で選び直せる。false なら最初に決まったモードのまま。既定 false
+    # true lets TrySelect change the mode after it is decided. false keeps the first decided mode. Default false
     @editable:
         ToolTip := ModeAllowReselectToolTip
         Categories := array{ModeCategory}
     AllowReselect<public>:logic = false
 
-    # 選ばれているモード。決まっていなければ false
+    # The selected mode. false when not decided
     var<private> Selected<public>:?game_mode_component = false
     var<private> Active:logic = false
 
     SelectedEventInternal<private><final>:event(?game_mode_component) = event(?game_mode_component){}
 
-    # モードが決まった・変わったとき（option{Mode}）と、選びが消えたとき（false）に届く（Await / Subscribe する。外から Signal はできない）
+    # Fires when a mode is decided or changed (option{Mode}) and when the selection is cleared (false) (Await / Subscribe; cannot be signaled from outside)
     SelectedEvent<public><final>:listenable(?game_mode_component) = MakeProxyListenable(SelectedEventInternal)
 
     OnBeginSimulation<override>():void =
@@ -60,32 +60,32 @@ mode_select_component<public> := class<final_super>(component):
         Clear()
         (super:)OnEndSimulation()
 
-    # 受け付けを始める（TrySelect が効くようになる）。もう受け付けていれば何もしない
+    # Starts accepting (TrySelect takes effect). Does nothing if already accepting
     Activate<public>():void =
         set Active = true
 
-    # 受け付けをやめ、選びを消す（決まっていれば mode_changed_event{Mode := false} を送る）
+    # Stops accepting and clears the selection (sends mode_changed_event{Mode := false} if a mode was decided)
     Deactivate<public>():void =
         set Active = false
         Clear()
 
-    # 受け付けているあいだ（Activate から Deactivate まで）成功する
+    # Succeeds while accepting (from Activate to Deactivate)
     IsActive<public>()<decides><transacts>:void =
         Active?
 
-    # 選ばれているモード。決まっていなければ失敗する
+    # The selected mode. Fails when not decided
     FindSelected<public>()<decides><transacts>:game_mode_component =
         Selected?
 
-    # Mode が選ばれていれば成功する
+    # Succeeds if Mode is selected
     IsSelected<public>(Mode:game_mode_component)<decides><transacts>:void =
         Selected? = Mode
 
-    # 選べるモードの一覧。直下の子の game_mode_component を Order の小さい順で返す（孫は見ない。同じ Order どうしの順番は決まらない）
+    # List of selectable modes. Returns the game_mode_components of the direct children by ascending Order (grandchildren ignored; the order among equal Orders is unspecified)
     GetModes<public>()<transacts>:[]game_mode_component =
         SortModesByOrder(Entity.GetChildComponents(game_mode_component))
 
-    # 受け付けているあいだに Mode に決め、mode_changed_event{Mode := option{Mode}} を区画全体へ送る。効いたら true。受け付けていない・もう決まっていて AllowReselect が false・もう Mode に決まっているときは何もせず false
+    # While accepting, decides on Mode and sends mode_changed_event{Mode := option{Mode}} to the whole scope. true if it took effect. Does nothing and returns false when not accepting, when already decided and AllowReselect is false, or when Mode is already selected
     TrySelect<public>(Mode:game_mode_component):logic =
         if (not Active?):
             return false
@@ -97,14 +97,14 @@ mode_select_component<public> := class<final_super>(component):
         SelectedEventInternal.Signal(Selected)
         true
 
-    # 選びを取り消す（決まっていなければ何もしない）。取り消すと mode_changed_event{Mode := false} を区画全体へ送る。受け付けているあいだなら、そのあと TrySelect でまた決められる
+    # Clears the selection (does nothing when not decided). Sends mode_changed_event{Mode := false} to the whole scope. While accepting, TrySelect can decide again afterwards
     Clear<public>():void =
         if (Selected?):
             set Selected = false
             Entity.SendScoped(mode_changed_event{Selector := Self, Mode := false})
             SelectedEventInternal.Signal(false)
 
-# Modes を Order の小さい順に並べ替える（同じ Order どうしの順番は保つ）
+# Sorts Modes by ascending Order (keeps the order among equal Orders)
 SortModesByOrder<internal>(Modes:[]game_mode_component)<transacts>:[]game_mode_component =
     var Sorted:[]game_mode_component = array{}
     for (Mode : Modes):

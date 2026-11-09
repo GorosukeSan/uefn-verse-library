@@ -7,30 +7,30 @@ using { SceneGraphSystem }
 using { SpawnSystem }
 using { SpawnSystem.TooltipKit }
 
-# spawn_prefab_component が直下の spawn_point_component をどの順に使うか
+# The order in which spawn_prefab_component uses its direct-child spawn_point_components
 spawn_point_order<public> := enum:
-    # Order の小さい順に 1 つずつ使い、最後まで行ったら最初に戻る
+    # Use them one by one by ascending Order, back to the first after the last
     InOrder
-    # 毎回ランダムに 1 つ選ぶ
+    # Pick one at random each time
     Random
 
-# 役割：Prefab を出してこの entity の子にし、出したものを数え、まとめて消す。起動の合図で SpawnOnActivate 個を出し、停止の合図で（DespawnOnDeactivate なら）全部消す
-# 出す場所：直下の子に spawn_point_component があればその位置と向き（PointOrder の順）、無ければこの entity の位置と向き。そこから ScatterHalfSizeCm の箱の中にランダムにずらす（向きの軸で。0 ならずらさない）。大きさは 1。TrySpawnAt なら好きな場所に出せる
-# 数：MaxCount が 0 より大きければ、出ている数がそれに届くとそれ以上出さない
-# 置き方：エディターで entity に付ける
-# 親：起動の合図が届く場所（ゲームの流れなら、ノードの entity かその子孫）。起動の合図を使わないなら、どこでもよい（コードから Spawn / TrySpawnAt を呼ぶ）
-# 子：出す場所の目印（spawn_point_component）。出したもの（prefab_spawned_component が付く）もこの entity の子になる
-# 知らせ：出したとき SpawnedEvent、出したものが世界から外れたとき（Despawn・DespawnAll・停止の合図・ほかのコードが消した）DespawnedEvent
-# 外から：Spawn / TrySpawnAt / Despawn / DespawnAll、GetSpawned / GetSpawnedCount / GetSpawnPoints / IsFull
+# Role: spawns Prefab as children of this entity, counts the spawned items and removes them in bulk. Spawns SpawnOnActivate items on the activation signal and removes everything on the deactivation signal (when DespawnOnDeactivate)
+# Where: the position and rotation of a direct-child spawn_point_component if there is one (in PointOrder order), otherwise this entity's position and rotation. From there, offset at random inside a box of ScatterHalfSizeCm (along the rotation's axes; 0 means no offset). Scale is 1. TrySpawnAt spawns at any place
+# Count: when MaxCount is greater than 0, nothing more is spawned once the spawned count reaches it
+# Placement: attach to an entity in the editor
+# Parent: wherever the activation signal reaches (in a game flow, the node's entity or a descendant). Anywhere if the activation signal is not used (call Spawn / TrySpawnAt from code)
+# Children: spawn point markers (spawn_point_component). Spawned items (with prefab_spawned_component attached) also become children of this entity
+# Notifies: SpawnedEvent on spawn, DespawnedEvent when a spawned item leaves the world (Despawn, DespawnAll, the deactivation signal, removed by other code)
+# From outside: Spawn / TrySpawnAt / Despawn / DespawnAll, GetSpawned / GetSpawnedCount / GetSpawnPoints / IsFull
 spawn_prefab_component<public> := class<final_super>(component):
 
-    # 出す prefab。既定の entity のままだと、何も無い entity を出すだけ
+    # The prefab to spawn. Left at the default entity, only an empty entity is spawned
     @editable:
         ToolTip := SpawnPrefabToolTip
         Categories := array{SpawnPrefabCategory}
     Prefab<public>:concrete_subtype(entity) = entity
 
-    # 起動の合図（activated_event）が届くたびに出す数。0 なら起動の合図では出さない（コードから Spawn / TrySpawnAt を呼ぶ）。既定 1
+    # Number spawned each time the activation signal (activated_event) arrives. 0 spawns nothing on the signal (call Spawn / TrySpawnAt from code). Default 1
     @editable_number(int):
         ToolTip := SpawnPrefabOnActivateToolTip
         Categories := array{SpawnPrefabCategory}
@@ -38,7 +38,7 @@ spawn_prefab_component<public> := class<final_super>(component):
         MaxValue := option{100}
     SpawnOnActivate<public>:int = 1
 
-    # 同時に出しておける数の上限。届いたらそれ以上出さない。0 なら上限なし（既定）
+    # Maximum number that can exist at once. Once reached, nothing more is spawned. 0 means no limit (default)
     @editable_number(int):
         ToolTip := SpawnPrefabMaxCountToolTip
         Categories := array{SpawnPrefabCategory}
@@ -46,19 +46,19 @@ spawn_prefab_component<public> := class<final_super>(component):
         MaxValue := option{1000}
     MaxCount<public>:int = 0
 
-    # 直下の spawn_point_component をどの順に使うか。既定 InOrder（Order の小さい順に 1 つずつ）
+    # The order in which the direct-child spawn_point_components are used. Default InOrder (one by one by ascending Order)
     @editable:
         ToolTip := SpawnPrefabPointOrderToolTip
         Categories := array{SpawnPrefabCategory}
     PointOrder<public>:spawn_point_order = spawn_point_order.InOrder
 
-    # 出す場所（点かこの entity）から、前・左・上それぞれ ± この長さ（センチメートル）の箱の中にランダムにずらす（点の向きの軸で）。0 の軸はずらさない。既定 0
+    # From the spawn place (a point or this entity), offset at random inside a box of +/- this length (centimeters) forward, left and up (along the point's rotation axes). An axis set to 0 is not offset. Default 0
     @editable:
         ToolTip := SpawnPrefabScatterToolTip
         Categories := array{SpawnPrefabCategory}
     ScatterHalfSizeCm<public>:vector3 = vector3{}
 
-    # オンなら停止の合図（deactivated_event）で出したものを全部消す（既定）。オフなら停止の合図では消さない（DespawnAll か、シミュレーションの終わりで消える）
+    # When on, every spawned item is removed on the deactivation signal (deactivated_event) (default). When off, the deactivation signal removes nothing (removed by DespawnAll or at the end of the simulation)
     @editable:
         ToolTip := SpawnPrefabDespawnOnDeactivateToolTip
         Categories := array{SpawnPrefabCategory}
@@ -66,15 +66,15 @@ spawn_prefab_component<public> := class<final_super>(component):
 
     SpawnedEventInternal<private><final>:event(entity) = event(entity){}
 
-    # 1 つ出して置いたあとに、出した entity で届く（Await / Subscribe する。外から Signal はできない）
+    # Delivered with the spawned entity after one item is spawned and placed (Await / Subscribe to it; it cannot be Signaled from outside)
     SpawnedEvent<public><final>:listenable(entity) = MakeProxyListenable(SpawnedEventInternal)
 
     DespawnedEventInternal<private><final>:event(entity) = event(entity){}
 
-    # 出したものが世界から外れたときに、その entity で届く（Despawn・DespawnAll・停止の合図・ほかのコードが消したとき。Await / Subscribe する。外から Signal はできない）
+    # Delivered with the entity when a spawned item leaves the world (Despawn, DespawnAll, the deactivation signal, removed by other code. Await / Subscribe to it; it cannot be Signaled from outside)
     DespawnedEvent<public><final>:listenable(entity) = MakeProxyListenable(DespawnedEventInternal)
 
-    # PointOrder が InOrder のとき、次に使う点の番号
+    # Index of the next point to use when PointOrder is InOrder
     var<private> NextPoint:int = 0
 
     OnReceive<override>(SceneEvent:scene_event):logic =
@@ -89,7 +89,7 @@ spawn_prefab_component<public> := class<final_super>(component):
         DespawnAll()
         (super:)OnEndSimulation()
 
-    # 決めた場所（直下の spawn_point_component か、この entity の位置。ScatterHalfSizeCm でずらす）に Count 個出し、出したものを返す。MaxCount に届いたらそこでやめる（返る数は Count より少ない）
+    # Spawns Count items at the chosen places (a direct-child spawn_point_component or this entity's position, offset by ScatterHalfSizeCm) and returns them. Stops when MaxCount is reached (returns fewer than Count)
     Spawn<public>(Count:int):[]entity =
         var Result:[]entity = array{}
         var Left:int = Count
@@ -104,7 +104,7 @@ spawn_prefab_component<public> := class<final_super>(component):
                 break
         Result
 
-    # 世界での位置・向き・大きさを Transform にして 1 つ出し、出したものを返す。MaxCount に届いているときは出さずに false（出すと世界が変わるので <decides> にしない）
+    # Spawns one item with its world position / rotation / scale set to Transform and returns it. False without spawning when MaxCount is reached (not <decides> because spawning changes the world)
     TrySpawnAt<public>(Transform:transform):?entity =
         if (IsFull[]):
             return false
@@ -115,38 +115,38 @@ spawn_prefab_component<public> := class<final_super>(component):
         SpawnedEventInternal.Signal(Spawned)
         option{Spawned}
 
-    # Spawned がこの component の出したものなら、すぐ消す（DespawnedEvent が届く）。ほかのものなら何もしない
+    # If Spawned was spawned by this component, removes it right away (DespawnedEvent is delivered). Does nothing for anything else
     Despawn<public>(Spawned:entity):void =
         if (Marker := Spawned.GetComponent[prefab_spawned_component], Marker.Source = Self):
             Marker.Remove()
 
-    # 出したものを全部すぐ消す（1 つずつ DespawnedEvent が届く）
+    # Removes every spawned item right away (DespawnedEvent is delivered one by one)
     DespawnAll<public>():void =
         for (Marker : GetMarkers()):
             Marker.Remove()
 
-    # 今出ているもの（消しはじめたものは除く）。この entity の直下の子だけを見る。並び順は決まっていない
+    # Items currently spawned (excluding those being removed). Looks only at the direct children of this entity. Order is undefined
     GetSpawned<public>()<reads>:[]entity =
         for (Marker : GetMarkers()):
             Marker.Entity
 
-    # 今出ているものの数（GetSpawned の数）
+    # Number of items currently spawned (the count of GetSpawned)
     GetSpawnedCount<public>()<reads>:int =
         GetMarkers().Length
 
-    # MaxCount が 0 より大きく、出ている数がそれに届いていれば成功する
+    # Succeeds if MaxCount is greater than 0 and the spawned count has reached it
     IsFull<public>()<decides><reads>:void =
         MaxCount > 0
         GetSpawnedCount() >= MaxCount
 
-    # 直下の子の spawn_point_component を Order の小さい順に返す（Order が同じものどうしの順は決まらない）
+    # Returns the direct-child spawn_point_components by ascending Order (the order among equal Orders is undefined)
     GetSpawnPoints<public>()<transacts>:[]spawn_point_component =
         var Sorted:[]spawn_point_component = array{}
         for (Point : Entity.GetChildComponents(spawn_point_component)):
             set Sorted = InsertSpawnPointByOrder(Sorted, Point)
         Sorted
 
-    # prefab_spawned_component が世界から外れるときに呼ぶ
+    # Called by prefab_spawned_component when it leaves the world
     NotifyDespawned<internal>(Spawned:entity):void =
         DespawnedEventInternal.Signal(Spawned)
 
@@ -154,7 +154,7 @@ spawn_prefab_component<public> := class<final_super>(component):
         for (Marker : Entity.GetChildComponents(prefab_spawned_component), Marker.Source = Self, not Marker.IsLeaving[]):
             Marker
 
-    # 次に出す場所。点があれば PointOrder で選んだ点、無ければこの entity。そこから ScatterHalfSizeCm の箱の中にずらす（向きの軸で）。大きさは 1
+    # The next spawn place. The point chosen by PointOrder if there are points, otherwise this entity. Offset from there inside a box of ScatterHalfSizeCm (along the rotation's axes). Scale is 1
     NextTransform<private>()<transacts>:transform =
         Points := GetSpawnPoints()
         Base := if (Point := Points[NextPointIndex(Points.Length)]) then Point.Entity.GetGlobalTransform() else Entity.GetGlobalTransform()
@@ -167,7 +167,7 @@ spawn_prefab_component<public> := class<final_super>(component):
             Rotation := Base.Rotation
             Scale := vector3{Forward := 1.0, Left := 1.0, Up := 1.0}
 
-    # 使う点の番号（点が無ければ -1）。InOrder なら 1 つずつ進める
+    # Index of the point to use (-1 if there are no points). InOrder advances one at a time
     NextPointIndex<private>(Count:int)<transacts>:int =
         if (Count <= 0):
             -1
@@ -181,20 +181,20 @@ spawn_prefab_component<public> := class<final_super>(component):
     RandomWithin<private>(Half:float)<transacts>:float =
         if (Half > 0.0) then GetRandomFloat(-Half, Half) else 0.0
 
-# 役割：spawn_prefab_component が出した entity に付く目印。spawn_prefab_component はこれが付いた直下の子だけを数える（消しはじめたものは数えない）。世界から外れるときに出した component へ知らせる
-# 置き方：実行時に spawn_prefab_component が付ける（エディターでは置かない）
+# Role: marker attached to an entity spawned by spawn_prefab_component. spawn_prefab_component counts only direct children carrying this (items being removed are not counted). Notifies the spawning component when leaving the world
+# Placement: attached at runtime by spawn_prefab_component (not placed in the editor)
 prefab_spawned_component<public> := class<final_super>(component):
 
-    # 出した spawn_prefab_component
+    # The spawn_prefab_component that spawned it
     Source<public>:spawn_prefab_component
 
     var<private> Leaving:logic = false
 
-    # 消しはじめていれば成功する
+    # Succeeds if removal has started
     IsLeaving<public>()<decides><reads>:void =
         Leaving?
 
-    # 消しはじめた印を付けてから、世界から外す（同じフレームで数えなおしても数に入らないように）
+    # Marks removal as started, then removes from the world (so a recount in the same frame does not include it)
     Remove<internal>():void =
         if (not Leaving?):
             set Leaving = true

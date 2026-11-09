@@ -8,10 +8,10 @@ using { SpawnSystem }
 using { SpawnSystem.PrefabKit }
 using { _Test }
 
-# 役割：SpawnSystem の動作確認。spawner（中身は prefab_spawn_factory_component、基準は spawner 自身の位置）が、起動で Count 個を出して保つこと、出したものが帯の中にあり、グリッドの借用と数が合うこと、出した・消えたの知らせ、消えた分を RefillNow ですぐ足すこと、ClearAll / Stop で消えて借用が返ること、起動・停止の合図で動き出す・止まることを確かめる。
-#   PrefabKit の spawn_prefab_component が、出す場所（spawn_point_component の Order の順）に出すこと、起動の合図で SpawnOnActivate 個、MaxCount で止まること、TrySpawnAt、Despawn / DespawnAll と知らせ、停止の合図で消えることと、関数の SpawnPrefab を確かめる
-# テストのレベル：このテストの component を、まわり 10 メートルに何も無い entity に付けるだけ（区画・グリッド・spawner・spawn_prefab_component はテストが自分の子に作る。出すものは見た目の無い entity）
-# 結果：出力ログの [TEST] SpawnSystem
+# Role: verification of SpawnSystem. Checks that the spawner (contents prefab_spawn_factory_component, origin the spawner's own position) spawns and keeps Count on activation, that spawned things lie inside the band and match the grid borrows and the count, spawned / despawned notifications, that RefillNow immediately replaces despawned ones, that ClearAll / Stop remove them and return the borrows, and that the activate / deactivate signals start / stop it.
+#   Checks that PrefabKit's spawn_prefab_component spawns at the spawn points (in spawn_point_component Order), SpawnOnActivate on the activate signal, stopping at MaxCount, TrySpawnAt, Despawn / DespawnAll and their notifications, despawning on the deactivate signal, and the SpawnPrefab function
+# Test level: just attach this test component to an entity with nothing within 10 meters (the scope, grid, spawner and spawn_prefab_component are created by the test under its children; spawned things are invisible entities)
+# Result: [TEST] SpawnSystem in the output log
 spawn_system_test_component<public> := class<final_super>(component):
 
     SpawnCount<private>:int = 3
@@ -109,7 +109,7 @@ spawn_system_test_component<public> := class<final_super>(component):
         Results.Check("deactivated_event stops the spawner", if (Spawner.IsRunning[]) then false else true)
         Results.CheckInt("deactivated_event removes everything", Spawner.GetSpawnedCount(), 0)
 
-    # Seconds 秒待つ（DeltaTime の足し合わせ）
+    # Waits Seconds (sum of DeltaTime)
     WaitSeconds<private>(Seconds:float)<suspends>:void =
         var Left:float = Seconds
         loop:
@@ -117,12 +117,12 @@ spawn_system_test_component<public> := class<final_super>(component):
                 break
             set Left -= TickEvents.PrePhysics.Await()
 
-    # PrefabKit の spawn_prefab_component と、関数の SpawnPrefab
+    # PrefabKit's spawn_prefab_component and the SpawnPrefab function
     TestPrefab<private>(Results:test_log, Root:entity, Origin:vector3)<suspends>:void =
         PrefabEntity := entity{}
         Prefabs := spawn_prefab_component{Entity := PrefabEntity, SpawnOnActivate := 2, MaxCount := 3}
         PrefabEntity.AddComponents(array{Prefabs})
-        # 並び順が最初にならないように、Order 1 の点を先に足す
+        # Add the Order 1 point first so that insertion order is not what makes it first
         LaterPoint := entity{}
         LaterPoint.AddComponents(array{spawn_point_component{Entity := LaterPoint, Order := 1}})
         FirstPoint := entity{}

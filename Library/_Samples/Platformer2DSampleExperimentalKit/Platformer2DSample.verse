@@ -12,32 +12,32 @@ using { ActivationSystem }
 using { SceneGraphSystem }
 using { VolumeSystem }
 
-# 役割：独自キャラクター（CharacterSystem）の見本。横スクロールの 2D で、移動・ジャンプ・ゴールだけがある
-#   StartOnBegin なら参加した人ごと（オフなら、ボタンなど だれが起こしたかの分かる起動の合図を受けた人だけ）に、その人の slot の下に独自キャラクター（character_motor_component・walk・jump・owner_stasis・camera）を作る。作るのはこの component の位置（スタート）
-#   動きは左右（世界の前後。AxisLock = Left）とジャンプ（2 段ジャンプ・短く押すと低い）。見た目は Fortnite のキャラクター（隠さずに体へ付いていかせる）。カメラは横から見る正射影
-#   Fortnite のラウンドが始まるたびに、全員をスタートへ戻す。ゴール（この entity から GoalOffsetCm の位置、GoalSizeCm の箱）に入ると、Print して、スタートへ戻す
-# 置き方：エディターで、床（当たり判定のあるメッシュ）の上の空の entity に付ける。前（Forward）の向きに床・足場を並べ、GoalOffsetCm の先に着地できる場所を作る。区画（または世界）に player_manager_component を 1 つ置く
-# 試し方：左右（移動の入力）で動き、ジャンプで跳ぶ。ゴールに着くと「ゴール」と出てスタートに戻る
-# 前提・注意：移動の入力 Character.Move と、カメラ（CameraExperimentalKit）は @experimental。この見本は島を公開できない（VerseShare では「実験的を含む」のプロジェクトにだけ配る）
-# ⚠ 未検証：カメラの向き（YawDegrees）。横から写らないときは CameraYawDegrees の符号を変える
+# Role: custom character (CharacterSystem) sample. A side-scrolling 2D game with only movement, jumping and a goal
+#   With StartOnBegin, for every player who joins (when off, only for the player who sent an activate signal that knows who triggered it, such as a button), creates a custom character (character_motor_component, walk, jump, owner_stasis, camera) under that player's slot. Created at this component's position (the start)
+#   Movement is left / right (world forward / back; AxisLock = Left) and jumping (double jump; a short press jumps lower). The look is the Fortnite character (not hidden; it follows the body). The camera is an orthographic side view
+#   Every time a Fortnite round starts, everyone is returned to the start. Entering the goal (a box of GoalSizeCm at GoalOffsetCm from this entity) Prints and returns the player to the start
+# Placement: attach in the editor to an empty entity above a floor (a mesh with collision). Arrange floors and platforms in the forward direction, and make a landable place beyond GoalOffsetCm. Place one player_manager_component in the scope (or the world)
+# Try it: move left / right (the move input) and jump. Reaching the goal shows "Goal!" and returns you to the start
+# Requirements / notes: the move input Character.Move and the camera (CameraExperimentalKit) are @experimental. An island with this sample cannot be published (VerseShare distributes it only to projects marked "includes experimental")
+# ⚠ Unverified: the camera facing (YawDegrees). If it is not a side view, flip the sign of CameraYawDegrees
 platformer_2d_sample_component<public> := class<final_super>(component):
 
-    # 左右の入力（方向の入力）。既定は Fortnite の移動（@experimental）
+    # Left / right input (a directional input). Default is Fortnite's move (@experimental)
     @editable
     MoveAction<public>:input_action(vector3) = Character.Move
-    # ゴールの位置（この entity からのずらし、cm）。既定は前に 3000
+    # Goal position (offset from this entity, cm). Default 3000 forward
     @editable
     GoalOffsetCm<public>:vector3 = vector3{Forward := 3000.0}
-    # ゴールの箱の大きさ（cm）。既定 300
+    # Size of the goal box (cm). Default 300
     @editable
     GoalSizeCm<public>:float = 300.0
-    # カメラの水平の向き（度）。横から写らないときは符号を変える。既定 -90
+    # Horizontal camera facing (degrees). Flip the sign if it is not a side view. Default -90
     @editable
     CameraYawDegrees<public>:float = -90.0
-    # オンなら、開始から全員に独自キャラクターを作る。オフなら、だれが起こしたかの分かる起動の合図（ボタン・ボリュームの入り口など）を受けた人にだけ作る。既定オン
+    # When on, creates a custom character for everyone from the start. When off, only for the player who sent an activate signal that knows who triggered it (button, volume entrance, ...). Default on
     @editable
     StartOnBegin<public>:logic = true
-    # オンなら、ゴールでその人の独自キャラクターを消す（操作が Fortnite のキャラクターに戻る）。オフならスタートへ戻す。既定オフ
+    # When on, deletes the player's custom character at the goal (control returns to the Fortnite character). When off, returns them to the start. Default off
     @editable
     ExitOnGoal<public>:logic = false
 
@@ -49,7 +49,7 @@ platformer_2d_sample_component<public> := class<final_super>(component):
     OnBeginSimulation<override>():void =
         (super:)OnBeginSimulation()
         MakeGoal()
-        # Fortnite のラウンドが始まるたびに、全員をスタートへ戻す
+        # Every time a Fortnite round starts, return everyone to the start
         Rounds.Start(Entity, OnRoundStarted, OnRoundEnded)
         if (Manager := Entity.FindScopedComponent[player_manager_component]):
             set Subscriptions += array{Manager.PlayerRemovedEvent.Subscribe(OnPlayerRemoved)}
@@ -58,7 +58,7 @@ platformer_2d_sample_component<public> := class<final_super>(component):
                 for (Slot : Manager.GetSlots()):
                     Spawn(Slot)
         else:
-            Print("[platformer_2d_sample_component] player_manager_component が見つかりません")
+            Print("[platformer_2d_sample_component] player_manager_component not found")
 
     OnEndSimulation<override>():void =
         for (Subscription : Subscriptions):
@@ -90,7 +90,7 @@ platformer_2d_sample_component<public> := class<final_super>(component):
             Pawn.RemoveFromParent()
             set Characters = Characters.RemoveKey(Agent)
 
-    # 1 人分の独自キャラクターを、その人の slot の下に作る（slot の下なので、持ち主はその人になる）
+    # Create one player's custom character under that player's slot (under the slot, so the owner is that player)
     Spawn<private>(Slot:player_slot_component):void =
         if (Characters[Slot.Player]):
             return
@@ -113,7 +113,7 @@ platformer_2d_sample_component<public> := class<final_super>(component):
         Slot.Entity.AddEntities(array{Pawn})
         if (set Characters[Slot.Player] = Pawn) {}
 
-    # ゴールの箱を作る（player_volume_component。入ったら OnGoal）
+    # Create the goal box (player_volume_component; OnGoal on entry)
     MakeGoal<private>():void =
         GoalEntity := entity{}
         GoalEntity.SetGlobalTransform(MakeTranslationTransform(GetStart() + GoalOffsetCm))
@@ -125,10 +125,10 @@ platformer_2d_sample_component<public> := class<final_super>(component):
 
     OnGoal<private>(Agent:agent):void =
         if (ExitOnGoal?):
-            Print("[platformer_2d_sample_component] ゴール！", ?Duration := 3.0)
+            Print("[platformer_2d_sample_component] Goal!", ?Duration := 3.0)
             OnPlayerRemoved(Agent)
             return
-        Print("[platformer_2d_sample_component] ゴール！スタートに戻ります", ?Duration := 3.0)
+        Print("[platformer_2d_sample_component] Goal! Returning to the start", ?Duration := 3.0)
         if (Pawn := Characters[Agent], Motor := Pawn.GetComponent[character_motor_component]):
             Motor.SetVelocity(vector3{})
             Motor.TeleportTo(GetStart())

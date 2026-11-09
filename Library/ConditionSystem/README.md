@@ -1,73 +1,73 @@
 # ConditionSystem
 
-「〜なら」を表す条件の基底（`condition_component`）と、条件を組み合わせる `condition_all` / `condition_any`（GroupKit）、届いた scene_event で満たす `event_received_condition_component`（EventKit）の System です。条件は満たしているかを答え、変わったかもしれないときに上へ知らせます。ゲームの流れ（GameSequenceSystem）の遷移、能力の付与（`ability_grant_condition_component`）、スイングの倍率（`swing_modifier_condition_component`）が使います。
+The System of conditions ("if ..."): the base class `condition_component`, the combinators `condition_all` / `condition_any` (GroupKit), and `event_received_condition_component`, satisfied by a received scene_event (EventKit). A condition answers whether it is satisfied and notifies upward when that may have changed. Used by the transitions of the game flow (GameSequenceSystem), ability granting (`ability_grant_condition_component`) and swing multipliers (`swing_modifier_condition_component`).
 
-## 置き方
+## Setup (placement)
 
-| component | 置く場所 | すること |
+| component | Where to place | What it does |
 |---|---|---|
-| `condition_component` の派生 | `game_transition_component` か `condition_all` / `condition_any` の entity の直下（ほかに `ability_grant_condition_component` / `swing_modifier_condition_component` の entity の直下）。直接は置かない（派生を置く） | 満たしているかを答え、変わったかもしれないときに `condition_changed_event` を上へ送り、`ChangedEvent` に届ける |
-| `condition_all_component`（GroupKit） | 同上 | 直下の子の条件をすべて満たしたときに満たす（子が無ければ満たす） |
-| `condition_any_component`（GroupKit） | 同上 | 直下の子の条件のどれか 1 つを満たしたときに満たす（子が無ければ満たさない） |
-| `event_received_condition_component`（EventKit） | 同上。待つ型を `EventType` で選ぶ | 起動してから（起動の合図 `activated_event` を受けてから。合図が来なければ開始から）、`EventType` の scene_event（派生も）がこの entity に届いたら満たす。起動の合図か `Reset` で戻る |
+| a `condition_component` subclass | Directly under the entity of a `game_transition_component` or `condition_all` / `condition_any` (also under an `ability_grant_condition_component` / `swing_modifier_condition_component` entity). Never placed directly (place a subclass) | Answers whether it is satisfied; when that may have changed, sends `condition_changed_event` upward and delivers to `ChangedEvent` |
+| `condition_all_component` (GroupKit) | Same as above | Satisfied when every condition on its direct children is satisfied (satisfied if there are no children) |
+| `condition_any_component` (GroupKit) | Same as above | Satisfied when at least one condition on its direct children is satisfied (not satisfied if there are no children) |
+| `event_received_condition_component` (EventKit) | Same as above. Choose the type to wait for in `EventType` | Once activated (after receiving the activation signal `activated_event`; from the start if no signal comes), satisfied when a scene_event of `EventType` (or a subclass) reaches this entity. Returns on the activation signal or `Reset` |
 
-条件の派生はほかの System にあります：`countdown_finished_condition_component`（CountdownSystem）、`player_count_condition_component` / `player_group_count_condition_component`（PlayerSystem / ConditionKit）、`player_state_condition_component`（PlayerSystem / MotionKit）、`interacted_condition_component`（InteractSystem）、`player_in_volume_condition_component`（VolumeSystem）、`all_players_ready_condition_component`（InputSystem / ReadyKit）、`mode_selected_condition_component`（ModeSystem）、`schedule_active_condition_component`（ScheduleSystem）、`character_motor_condition_component`（CharacterSystem）。
+Other condition subclasses live in other Systems: `countdown_finished_condition_component` (CountdownSystem), `player_count_condition_component` / `player_group_count_condition_component` (PlayerSystem / ConditionKit), `player_state_condition_component` (PlayerSystem / MotionKit), `interacted_condition_component` (InteractSystem), `player_in_volume_condition_component` (VolumeSystem), `all_players_ready_condition_component` (InputSystem / ReadyKit), `mode_selected_condition_component` (ModeSystem), `schedule_active_condition_component` (ScheduleSystem), `character_motor_condition_component` (CharacterSystem).
 
-例：「2 人以上いて、ボタンが押されたか、だれかが中に入ったら次へ」
+Example: "advance when there are 2 or more players and either the button was pressed or someone entered"
 ```
-次へ（game_transition_component）
-└ すべて（condition_all_component）
-  ├ 2 人以上（player_count_condition_component）
-  └ どれか（condition_any_component）
-    ├ 押された（interacted_condition_component）
-    └ 中にいる（player_in_volume_condition_component）
+Next (game_transition_component)
+└ All (condition_all_component)
+  ├ 2 or more players (player_count_condition_component)
+  └ Any (condition_any_component)
+    ├ Pressed (interacted_condition_component)
+    └ Inside (player_in_volume_condition_component)
 ```
-子は直下に 1 つずつ置きます（並び順は関係ない）。
+Place children one each directly below (order does not matter).
 
-## 設定（@editable）
-- `event_received_condition_component.EventType : subtype(scene_event) = no_scene_event` — 待つ scene_event の型（その派生も合う）。既定の `no_scene_event` はどこからも送られないので、選ぶまで満たさない。コードからは `event_received_condition_component{Entity := E, EventType := my_event}` で作る。
-- `condition_all_component` / `condition_any_component` に設定はありません。
+## Settings (@editable)
+- `event_received_condition_component.EventType : subtype(scene_event) = no_scene_event` — type of the scene_event to wait for (subclasses match too). The default `no_scene_event` is never sent by anyone, so the condition is not satisfied until you pick a type. From code, create it with `event_received_condition_component{Entity := E, EventType := my_event}`.
+- `condition_all_component` / `condition_any_component` have no settings.
 
-## イベント
-- `condition_changed_event`（scene_event、SendUp）: `Condition : condition_component`（送った条件）。条件の entity から根へ。送り手は `condition_component` の派生（`NotifyChanged`）。受け手は祖先の `game_node_component`（遷移を調べ直す。消費しない）と `condition_all` / `condition_any`（自分以外からのものを受け取って消費し、自分の知らせを送り直す）。
-- `condition_component.ChangedEvent : listenable(logic)` — 満たしているかが変わったかもしれないときに、今の結果（満たしていれば true）で届く。外から Signal はできない。`ability_grant_condition_component`・`swing_modifier_condition_component` はこれを購読する。
-- 受けるもの: `condition_all_component` / `condition_any_component` は子孫からの `condition_changed_event`。`event_received_condition_component` は、この entity に届く scene_event すべて（`activated_event` で戻し、`EventType` に合えば満たす。消費しない）。
+## Events
+- `condition_changed_event` (scene_event, SendUp): `Condition : condition_component` (the condition that sent it). From the condition's entity to the root. Senders are `condition_component` subclasses (`NotifyChanged`). Receivers are the ancestor `game_node_component` (re-checks its transitions; does not consume) and `condition_all` / `condition_any` (receive and consume the ones not from themselves, then resend their own notification).
+- `condition_component.ChangedEvent : listenable(logic)` — delivered with the current result (true if satisfied) when the satisfied state may have changed. Cannot be Signaled from outside. `ability_grant_condition_component` and `swing_modifier_condition_component` subscribe to it.
+- Received: `condition_all_component` / `condition_any_component` receive `condition_changed_event` from descendants. `event_received_condition_component` receives every scene_event that reaches this entity (resets on `activated_event`, satisfied when the event matches `EventType`; does not consume).
 
-## 公開 API
+## Public API
 ```verse
 condition_changed_event<public> := class(scene_event):
     Condition<public>:condition_component
 
 condition_component<public> := class<abstract><final_super>(component):
-    IsSatisfied<public>()<decides><transacts>:void         # 派生が実装する。状態を変えない（副作用を持たない）こと
+    IsSatisfied<public>()<decides><transacts>:void         # Implemented by the subclass. Must not change state (no side effects)
     ChangedEvent<public><final>:listenable(logic)
-    NotifyChanged<protected>():void                        # 派生が、変わったかもしれないときに呼ぶ
+    NotifyChanged<protected>():void                        # Called by the subclass when the result may have changed
 
-(InEntity:entity).AreChildConditionsSatisfied<public>()<decides><transacts>:void    # 直下の子の条件をすべて満たせば成功。子が無ければ成功
-(InEntity:entity).IsAnyChildConditionSatisfied<public>()<decides><transacts>:void   # どれか 1 つでも満たせば成功。子が無ければ失敗
+(InEntity:entity).AreChildConditionsSatisfied<public>()<decides><transacts>:void    # Succeeds if every direct child condition is satisfied. Succeeds with no children
+(InEntity:entity).IsAnyChildConditionSatisfied<public>()<decides><transacts>:void   # Succeeds if at least one is satisfied. Fails with no children
 
 # GroupKit
 condition_all_component<public> := class<final_super>(condition_component):
 condition_any_component<public> := class<final_super>(condition_component):
 
 # EventKit
-no_scene_event<public> := class(scene_event):                 # EventType の既定。どこからも送られない
+no_scene_event<public> := class(scene_event):                 # Default of EventType. Never sent by anyone
 event_received_condition_component<public> := class<final_super>(condition_component):
-    EventType<public>:subtype(scene_event)                    # 待つ型（派生も合う）
-    Reset<public>():void                                      # 満たさない状態に戻す
-    FindReceivedEvent<public>()<decides><transacts>:scene_event   # 満たしたときに受けたもの。まだなら失敗
+    EventType<public>:subtype(scene_event)                    # Type to wait for (subclasses match too)
+    Reset<public>():void                                      # Return to the unsatisfied state
+    FindReceivedEvent<public>()<decides><transacts>:scene_event   # The event received when it became satisfied. Fails if none yet
 ```
 
-## 前提・注意
-- 派生は `IsSatisfied` だけを書き、満たしているかが変わったかもしれないときに `NotifyChanged` を呼びます。`IsSatisfied` は `<transacts>` で何度も呼ばれるので、状態を変えません。
-- 見るのは直下の子の条件だけです（孫は見ない）。入れ子にするときは `condition_all` / `condition_any` を挟みます。
-- `NotifyChanged` は「変わったかもしれない」の知らせで、実際に変わっていなくても送ってよいです。受け手は `IsSatisfied` を問い直します。
-- `event_received_condition_component` が見るのは、この entity に届く scene_event だけです（祖先からの `SendDown`、区画全体への `SendScoped`、世界全体への `SendGlobal`、子孫からの `SendUp`）。ほかの枝で `SendUp` された知らせは届きません。届かない知らせを待つときは、送り手を区画全体へ送る形（`SendScoped`）にするか、条件の派生を書きます。
-- `event_received_condition_component` は、起動してから最初に合った 1 つで満たし、2 つ目以降では知らせを送り直しません（`FindReceivedEvent` は最初のもの）。
-- 型を `@editable` にするとき、`castable_subtype` は使えない（3604）ので `subtype(scene_event)` にしています。絞り込み（`EventType[SceneEvent]`）は standalone の型チェックと新しい VM の実行で動くことを確かめています。
-- ⚠ 未検証（EventReceivedConditionComponent.verse）：`subtype(scene_event)` の `@editable` が UEFN のエディターで型を選べるか（`scene_event` は interface。`subtype(component)` は選べることを確かめ済み）と、型の値での絞り込みが UEFN で動くか。
-- `@experimental` の API は使っていません。
+## Requirements, caveats and limits
+- A subclass writes only `IsSatisfied` and calls `NotifyChanged` when the satisfied state may have changed. `IsSatisfied` is called many times in `<transacts>`, so it must not change state.
+- Only the conditions on direct children are looked at (not grandchildren). To nest, put a `condition_all` / `condition_any` in between.
+- `NotifyChanged` means "may have changed"; it is fine to send it even when nothing actually changed. Receivers ask `IsSatisfied` again.
+- `event_received_condition_component` only sees scene_events that reach this entity (`SendDown` from an ancestor, `SendScoped` to the whole scope, `SendGlobal` to the whole world, `SendUp` from a descendant). Events `SendUp`'d on another branch do not reach it. To wait for an event that does not reach it, have the sender send to the whole scope (`SendScoped`) or write a condition subclass.
+- `event_received_condition_component` becomes satisfied on the first matching event since activation and does not resend the notification for the second and later ones (`FindReceivedEvent` returns the first).
+- When making the type `@editable`, `castable_subtype` cannot be used (3604), so it is `subtype(scene_event)`. Narrowing (`EventType[SceneEvent]`) is confirmed to work in the standalone type check and when run in the new VM.
+- ⚠ Unverified (EventReceivedConditionComponent.verse): whether an `@editable` of `subtype(scene_event)` lets you pick a type in the UEFN editor (`scene_event` is an interface; `subtype(component)` is confirmed to work), and whether narrowing by a type value works in UEFN.
+- No `@experimental` API is used.
 
-## 確かめ方
-- テスト：`_Test/ConditionSystemTest/` の `condition_system_test_component`。この component を付けた entity を 1 つ置くだけ（条件の entity はテストが実行時に作る。プレイヤーは要らない）。`condition_all` / `condition_any` の組み合わせ（並び順に関係しないこと）、入れ子（孫の変化が外側の `ChangedEvent` に 1 回ずつ届くこと）、`ChangedEvent` の回数と値、子が無いときの `AreChildConditionsSatisfied` / `IsAnyChildConditionSatisfied`、`event_received_condition_component`（ほかの型では満たさない、合う型・派生で満たす、2 つ目では知らせない、`activated_event` と `Reset` で戻る、既定の `no_scene_event` では満たさない）を確かめます。すぐ終わります。結果は出力ログの `[TEST] ConditionSystem`。同じファイルの `test_condition_component`（`SetSatisfied` で切り替える条件）は、ほかの System のテストからも使います。
-- 見本（`_Samples/`）はありません。
+## Verifying
+- Test: `condition_system_test_component` in `_Test/ConditionSystemTest/`. Just place one entity with this component (the test creates the condition entities at runtime; no player needed). It checks the `condition_all` / `condition_any` combinations (independence from order), nesting (a grandchild change reaches the outer `ChangedEvent` exactly once), the count and values of `ChangedEvent`, `AreChildConditionsSatisfied` / `IsAnyChildConditionSatisfied` with no children, and `event_received_condition_component` (not satisfied by other types, satisfied by the matching type and its subclasses, no notification on the second event, returns on `activated_event` and `Reset`, not satisfied with the default `no_scene_event`). It finishes right away. Results are in the output log under `[TEST] ConditionSystem`. `test_condition_component` in the same file (a condition toggled with `SetSatisfied`) is also used by the tests of other Systems.
+- There is no sample (`_Samples/`).

@@ -5,43 +5,50 @@ using { /Verse.org/Colors }
 using { WidgetSystem }
 using { WidgetSystem.TooltipKit }
 
-# 役割：この entity をカードで見せるときの情報（名前・説明・札・画像・色・並び順）を持つ。カードの画面（card_menu_component や、ゲームの選択画面）は、この component を取って GetCard でカードを作る
-#   名前や並び順の持ち主はこの component だけにする（ほかの component に同じ値を持たせない）。人ごとに変わる文字（記録など）は持たない（出すときに WithSubtitle / WithBadge で足す）
-# 置き方：エディターで、カードで選ばせたい entity（マップの根・モード・品物など）に付ける
-# 外から：GetCard(Id) / GetTitle()。並べるときは SortCards（Order の小さい順）
+# Role: holds the info used to show this entity as a card (name, description, badge, image, color, sort order). Card screens (card_menu_component, or a game's selection screen) take this component and build the card with GetCard
+#   This component is the only owner of the name and sort order (do not keep the same values on other components). It does not hold per-person text (records, etc.); add that with WithSubtitle / WithBadge when showing
+# Placement: in the editor, attach to the entity to be chosen as a card (a map root, a mode, an item, etc.)
+# From outside: GetCard(Id) / GetTitle() / GetCardId(). To sort, SortCards (ascending Order)
 card_info_component<public> := class<final_super>(component):
 
-    # 名前（空なら、GetTitle は Fallback を返す）
+    # ID used when pressing from code (the button ID in card_menu_component; also used by MCPSystem's widget.press). Empty means Title; if that is also empty, an index the menu decides
+    #   Set it here when a presser (tests, MCP) uses it, so the ID does not change when the name is renamed or translated
+    @editable:
+        ToolTip := CardIdToolTip
+        Categories := array{CardInfoCategory}
+    CardId<public>:string = ""
+
+    # Name (if empty, GetTitle returns Fallback)
     @editable:
         ToolTip := CardTitleToolTip
         Categories := array{CardInfoCategory}
     Title<public>:string = ""
-    # 名前の下の 1 行（空なら出さない）
+    # One line under the name (not shown if empty)
     @editable:
         ToolTip := CardSubtitleToolTip
         Categories := array{CardInfoCategory}
     Subtitle<public>:string = ""
-    # 説明（折り返して出す。空なら出さない）
+    # Description (shown wrapped. Not shown if empty)
     @editable:
         ToolTip := CardDescriptionToolTip
         Categories := array{CardInfoCategory}
     Description<public>:string = ""
-    # 右上の小さい札（難しさ・新着など。空なら出さない）
+    # Small badge at the top right (difficulty, new, etc. Not shown if empty)
     @editable:
         ToolTip := CardBadgeToolTip
         Categories := array{CardInfoCategory}
     Badge<public>:string = ""
-    # 上の画像（無ければ AccentColor の帯）
+    # Image at the top (an AccentColor band if none)
     @editable:
         ToolTip := CardThumbnailToolTip
         Categories := array{CardInfoCategory}
     Thumbnail<public>:?texture = false
-    # カードの色（画像が無いときの帯・札の地）
+    # Card color (the band when there is no image, and the badge background)
     @editable:
         ToolTip := CardAccentColorToolTip
         Categories := array{CardInfoCategory}
     AccentColor<public>:color = NamedColors.SkyBlue
-    # 並び順（小さいほど先）。同じ値どうしの順は決まらない
+    # Sort order (smaller comes first). The order among equal values is undefined
     @editable_number(int):
         ToolTip := CardOrderToolTip
         Categories := array{CardInfoCategory}
@@ -49,11 +56,15 @@ card_info_component<public> := class<final_super>(component):
         MaxValue := option{100000}
     Order<public>:int = 0
 
-    # 名前。空なら Fallback
+    # Name. Fallback if empty
     GetTitle<public>(?Fallback:string = "")<transacts>:string =
         if (Title = "") then Fallback else Title
 
-    # カード 1 枚分のデータ（Id はコードから押すときの ID。名前が空なら Id を名前にする）
+    # ID used when pressing from code. CardId, or Title if empty, or Fallback if that is also empty
+    GetCardId<public>(?Fallback:string = "")<transacts>:string =
+        if (CardId <> "") then CardId else GetTitle(?Fallback := Fallback)
+
+    # Data for one card (Id is the ID used when pressing from code. If the name is empty, Id becomes the name)
     GetCard<public>(Id:string)<transacts>:widget_card =
         widget_card:
             Id := Id
@@ -64,7 +75,7 @@ card_info_component<public> := class<final_super>(component):
             Image := Thumbnail
             AccentColor := AccentColor
 
-# Infos を Order の小さい順に並べる（挿入ソート。同じ Order は先に見つけた順。数十まで）
+# Sort Infos by ascending Order (insertion sort. Equal Order keeps the order found. Up to a few dozen)
 SortCards<public>(Infos:[]card_info_component)<transacts>:[]card_info_component =
     var Sorted:[]card_info_component = array{}
     for (Info : Infos):

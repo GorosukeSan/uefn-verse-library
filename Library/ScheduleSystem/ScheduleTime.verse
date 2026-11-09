@@ -1,63 +1,63 @@
-# 実時刻（エポック秒）を扱うための、状態を持たない補助。整数で計算し、float の精度に頼らない
-# 「日」は常に 86400 秒（暦の月・年は使わない。残り日数を年月日に分けてから足し戻すと 1〜2 日ずれるため）
+# Stateless helpers for real time (epoch seconds). Computed with integers, without relying on float precision
+# A "day" is always 86400 seconds (calendar months and years are not used: splitting the remaining days into y/m/d and adding them back drifts by 1-2 days)
 
-# 1 日の秒数
+# Seconds in a day
 SecondsPerDay<public>:int = 86400
-# 1 時間の秒数
+# Seconds in an hour
 SecondsPerHour<public>:int = 3600
-# 1 分の秒数
+# Seconds in a minute
 SecondsPerMinute<public>:int = 60
-# 時間帯の既定のずれ（秒）。日本標準時 = UTC+9 時間（夏時間は無い）
+# Default time zone offset (seconds). Japan Standard Time = UTC+9 hours (no daylight saving time)
 DefaultTimeZoneOffsetSeconds<public>:int = 32400
 
-# Value を切り捨てた整数。Floor が失敗する値（無限・NaN）は 0
+# Value rounded down to an integer. 0 for values where Floor fails (infinity, NaN)
 FloorToInt<internal>(Value:float)<transacts>:int =
     Floor[Value] or 0
 
-# Value を切り上げた整数。ほぼ整数の値（誤差 0.001 未満）はその整数にする。Ceil が失敗する値は 0
+# Value rounded up to an integer. Values that are almost integers (error under 0.001) become that integer. 0 where Ceil fails
 CeilToInt<internal>(Value:float)<transacts>:int =
     Ceil[Value - 0.001] or 0
 
-# 残り秒数（小数）を切り上げた整数（表示に使う値）にする。0 以下は 0（残り 0.3 秒は「1」と出す。0 になった瞬間に終わる）。名前の決まり：小数の秒は …Seconds、切り上げた整数の秒は …WholeSeconds
+# Remaining seconds (fraction) rounded up to an integer (the value used for display). 0 or less gives 0 (0.3 s remaining shows "1"; it ends the moment it reaches 0). Naming rule: fractional seconds are ...Seconds, rounded-up integer seconds are ...WholeSeconds
 ToWholeSeconds<public>(Seconds:float)<transacts>:int =
     if (Seconds <= 0.0):
         0
     else:
         CeilToInt(Seconds)
 
-# EpochSeconds の時点が、時間帯 TimeZoneOffsetSeconds での「何日目」か（1970-01-01 の現地 0 時からの日数）。現地の 0 時で切り替わる
+# The "day number" of EpochSeconds in time zone TimeZoneOffsetSeconds (days since local midnight of 1970-01-01). Changes at local midnight
 GetDayIndex<public>(EpochSeconds:float, TimeZoneOffsetSeconds:int)<transacts>:int =
     FloorToInt((EpochSeconds + TimeZoneOffsetSeconds * 1.0) / (SecondsPerDay * 1.0))
 
-# EpochSeconds の時点の、時間帯 TimeZoneOffsetSeconds での現地 0 時からの経過秒（0 以上 86400 未満）
+# Seconds since local midnight (0 up to but excluding 86400) of EpochSeconds in time zone TimeZoneOffsetSeconds
 GetSecondsOfDay<public>(EpochSeconds:float, TimeZoneOffsetSeconds:int)<transacts>:float =
     Local := EpochSeconds + TimeZoneOffsetSeconds * 1.0
     Local - GetDayIndex(EpochSeconds, TimeZoneOffsetSeconds) * (SecondsPerDay * 1.0)
 
-# 現地の「何日目」DayIndex の現地 0 時を、エポック秒で返す
+# Local midnight of local day number DayIndex, in epoch seconds
 GetDayStartSeconds<public>(DayIndex:int, TimeZoneOffsetSeconds:int)<computes>:float =
     DayIndex * (SecondsPerDay * 1.0) - TimeZoneOffsetSeconds * 1.0
 
-# FromSeconds から ToSeconds までの丸 1 日の数（86400 秒ごとに 1。切り捨て）。45 日と少しなら 45
+# Number of whole days from FromSeconds to ToSeconds (1 per 86400 seconds, rounded down). 45 days and a bit gives 45
 DaysBetween<public>(FromSeconds:float, ToSeconds:float)<transacts>:int =
     FloorToInt((ToSeconds - FromSeconds) / (SecondsPerDay * 1.0))
 
-# 時・分・秒を現地の 0 時からの秒数にする（20:00:00 なら 72000）
+# Hour, minute and second as seconds since local midnight (20:00:00 gives 72000)
 MakeSecondsOfDay<public>(Hour:int, Minute:int, Second:int)<computes>:int =
     Hour * SecondsPerHour + Minute * SecondsPerMinute + Second
 
-# TotalSeconds 秒を日・時・分・秒に分ける（すべて 0 以上の整数。負の値は 0 として扱う）
+# TotalSeconds split into days, hours, minutes and seconds (all non-negative integers; negative values are treated as 0)
 split_seconds<public> := struct:
-    # 丸 1 日の数
+    # Number of whole days
     Days<public>:int = 0
-    # 日を除いた時（0〜23）
+    # Hours excluding the days (0-23)
     Hours<public>:int = 0
-    # 分（0〜59）
+    # Minutes (0-59)
     Minutes<public>:int = 0
-    # 秒（0〜59）
+    # Seconds (0-59)
     Seconds<public>:int = 0
 
-# TotalSeconds 秒を日・時・分・秒に分ける。負の値は 0 とする
+# Split TotalSeconds into days, hours, minutes and seconds. Negative values count as 0
 SplitSeconds<public>(TotalSeconds:int)<transacts>:split_seconds =
     Total := Max(TotalSeconds, 0)
     Days := Quotient[Total, SecondsPerDay] or 0
@@ -68,47 +68,47 @@ SplitSeconds<public>(TotalSeconds:int)<transacts>:split_seconds =
     Seconds := Mod[Rest2, SecondsPerMinute] or 0
     split_seconds{Days := Days, Hours := Hours, Minutes := Minutes, Seconds := Seconds}
 
-# 0〜99 を 2 桁の文字列にする（7 → "07"）。100 以上はそのまま
+# 0-99 as a two-digit string (7 -> "07"). 100 and above are left as is
 PadTwoDigits<internal>(Value:int)<computes>:string =
     if (Value >= 0 and Value < 10):
         "0{Value}"
     else:
         "{Value}"
 
-# TotalSeconds 秒を "HH:MM:SS" にする（時は 24 を超えてもそのまま。負の値は 0 秒）
+# TotalSeconds as "HH:MM:SS" (hours may exceed 24; negative values are 0 seconds)
 FormatHoursMinutesSeconds<public>(TotalSeconds:int)<transacts>:string =
     Split := SplitSeconds(TotalSeconds)
     Hours := Split.Days * 24 + Split.Hours
     "{PadTwoDigits(Hours)}:{PadTwoDigits(Split.Minutes)}:{PadTwoDigits(Split.Seconds)}"
 
-# TotalSeconds 秒を "MM:SS" にする（分は 60 を超えてもそのまま。負の値は 0 秒）
+# TotalSeconds as "MM:SS" (minutes may exceed 60; negative values are 0 seconds)
 FormatMinutesSeconds<public>(TotalSeconds:int)<transacts>:string =
     Split := SplitSeconds(TotalSeconds)
     Minutes := (Split.Days * 24 + Split.Hours) * 60 + Split.Minutes
     "{PadTwoDigits(Minutes)}:{PadTwoDigits(Split.Seconds)}"
 
-# TotalSeconds 秒を "Dd HH:MM:SS" にする（1 日と 1 時間 1 分 1 秒なら "1d 01:01:01"。負の値は 0 秒）
+# TotalSeconds as "Dd HH:MM:SS" (1 day, 1 hour, 1 minute and 1 second gives "1d 01:01:01"; negative values are 0 seconds)
 FormatDaysHoursMinutesSeconds<public>(TotalSeconds:int)<transacts>:string =
     Split := SplitSeconds(TotalSeconds)
     "{Split.Days}d {PadTwoDigits(Split.Hours)}:{PadTwoDigits(Split.Minutes)}:{PadTwoDigits(Split.Seconds)}"
 
-# TotalSeconds 秒を丸 1 日の数にする（切り捨て。負の値は 0）。「あと N 日」の N
+# TotalSeconds as a number of whole days (rounded down; negative values are 0). The N of "N days left"
 FormatDays<public>(TotalSeconds:int)<transacts>:string =
     "{SplitSeconds(TotalSeconds).Days}"
 
-# 10 の Exponent 乗（Exponent が 0 以下なら 1）。整数のまま計算する
+# 10 to the power Exponent (1 when Exponent is 0 or less). Computed in integers
 PowerOfTen<internal>(Exponent:int)<transacts>:int =
     var Result:int = 1
     for (Index := 0..Exponent - 1):
         set Result *= 10
     Result
 
-# Value の Digit 桁目（1 = 一の位、2 = 十の位）の数字（0〜9）。Value が負なら絶対値で見る
+# The digit (0-9) at position Digit of Value (1 = ones, 2 = tens). A negative Value is taken as its absolute value
 GetDigit<public>(Value:int, Digit:int)<transacts>:int =
     Divisor := PowerOfTen(Digit - 1)
     Mod[Quotient[Abs(Value), Divisor] or 0, 10] or 0
 
-# Value の Digit 桁目が「先頭の 0」（それより上の桁も含めて値が無い）なら成功する。一の位は失敗する
+# Succeeds when digit position Digit of Value is a "leading zero" (no value in that position or above). The ones position fails
 IsLeadingZero<public>(Value:int, Digit:int)<decides><transacts>:void =
     Digit > 1
     Abs(Value) < PowerOfTen(Digit - 1)

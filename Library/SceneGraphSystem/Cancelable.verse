@@ -1,13 +1,13 @@
-# 役割：複数の cancelable をまとめて 1 つの cancelable として扱う。作るときに Cancelables に入れるか、あとから Add で足す。Cancel で全部まとめて Cancel する（2 回目以降は何もしない）
+# Role: treats several cancelables as one cancelable. Pass them in Cancelables when creating it, or add them later with Add. Cancel cancels all of them at once (does nothing the second time and later)
 cancelable_group<public> := class(cancelable):
 
-    # 作るときに渡す、まとめて Cancel するもの（あとから足すものは Add で）
+    # Passed at creation: the cancelables to Cancel together (use Add for ones added later)
     Cancelables<public>:[]cancelable = array{}
 
     var<private> Added:[]cancelable = array{}
     var<private> Canceled:logic = false
 
-    # あとから 1 つ足す。もう Cancel 済みなら、足したものをその場で Cancel する
+    # Add one later. If already Canceled, the added one is Canceled on the spot
     Add<public>(Cancelable:cancelable)<transacts>:void =
         if (Canceled?):
             Cancelable.Cancel()
@@ -21,7 +21,7 @@ cancelable_group<public> := class(cancelable):
         for (Cancelable : Cancelables + Added):
             Cancelable.Cancel()
 
-# 中身があれば Cancel する。false なら何もしない
+# Cancels the content if there is one. Does nothing if false
 (Subscription:?cancelable).CancelIfSet<public>()<transacts>:void =
     if (Active := Subscription?):
         Active.Cancel()

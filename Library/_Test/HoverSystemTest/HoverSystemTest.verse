@@ -6,12 +6,12 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：HoverSystem の動作確認。hover_ability_component をコードから付与・剥奪し、人の操作でホバーするとイベントが届きエネルギーが減ることを確かめる（チェックポイントでの回復は CheckpointSystem の EnergyKit に移したので CheckpointSystemTest で確かめる）
-# テストのレベル：
-#   - player_manager_component を付けた entity を 1 つ
-#   - テスト用の entity に hover_system_test_component だけを付ける（能力とエネルギーはテストが実行時に子として作る）
-# 人の操作：「jump and hold jump in the air」と出たら、30 秒以内にジャンプし、空中でジャンプを 1 秒ほど押し続けて離す
-# 結果：出力ログの [TEST] HoverSystem
+# Role: verification of HoverSystem. Grants / revokes hover_ability_component from code and checks that hovering by human input delivers the events and drains energy (refill at checkpoints moved to CheckpointSystem's EnergyKit, so it is checked in CheckpointSystemTest)
+# Test level:
+#   - one entity with player_manager_component
+#   - the test entity carries only hover_system_test_component (the ability and the energy are created by the test at runtime as children)
+# Human input: when "jump and hold jump in the air" appears, jump within 30 seconds, hold jump in the air for about 1 second, then release
+# Result: [TEST] HoverSystem in the output log
 hover_system_test_component<public> := class<final_super>(component):
 
     var<private> HoverSceneEventCount:int = 0
@@ -69,7 +69,7 @@ hover_system_test_component<public> := class<final_super>(component):
         Hover.Revoke(Agent)
         Results.Check("Revoke from code", if (Hover.IsGranted[Agent]) then false else true)
 
-    # Hover の HoverChangedEvent で、状態が Active になるまで Seconds 秒まで待つ。なれば true
+    # Waits up to Seconds for Hover's HoverChangedEvent to report the Active state. True when it does
     AwaitHoverChange<private>(Hover:hover_ability_component, Active:logic, Seconds:float)<suspends>:logic =
         race:
             block:

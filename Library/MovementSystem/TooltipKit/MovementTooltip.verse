@@ -1,2 +1,2 @@
-TeleportCategory<public><localizes>:message = "ワープ"
-TeleportOffsetToolTip<public><localizes>:message = "この entity の位置からのずらし（cm）です。キャラクターの原点は体の真ん中なので、床の上なら上に 100 くらいにします。既定は上に 100"
+TeleportCategory<public><localizes>:message = "Teleport"
+TeleportOffsetToolTip<public><localizes>:message = "Offset from this entity's position (cm). The character origin is the middle of the body, so use about 100 up when on a floor. Default is 100 up"

@@ -7,11 +7,11 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：MovementSystem の動作確認。最初に参加したプレイヤーで、FindGlobalTranslation が取れること、LiftBy で真上へ指定のセンチメートルだけ動くこと、GetViewDirection が長さ 1 であること、GetViewOrigin がキャラクターの近く（3 メートル以内）にあることを確かめる（Verse の座標への変換の向きが逆だと、視点がキャラクターから離れる）
-# テストのレベル：
-#   - player_manager_component を付けた entity を 1 つ
-#   - このテストの component を、どこかの entity に付ける。プレイヤーの頭の上 3 メートルは空けておく
-# 結果：出力ログの [TEST] MovementSystem
+# Role: verification of MovementSystem. With the first player that joined, checks that FindGlobalTranslation works, that LiftBy moves straight up by the given centimeters, that GetViewDirection has length 1, and that GetViewOrigin is near the character (within 3 meters) (if the conversion to Verse coordinates is the wrong way round, the view point ends up far from the character)
+# Test level:
+#   - one entity with player_manager_component
+#   - attach this test component to any entity. Keep 3 meters above the player's head clear
+# Result: [TEST] MovementSystem in the output log
 movement_system_test_component<public> := class<final_super>(component):
 
     LiftCm<private>:float = 200.0

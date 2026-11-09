@@ -6,63 +6,63 @@ using { SceneGraphSystem }
 using { CharacterSystem }
 using { CharacterSystem.TooltipKit }
 
-# 独自キャラクターと面（character_surface_component）の触れ方
+# How a custom character touches a surface (character_surface_component)
 character_surface_contact<public> := enum:
-    # 触れ始めた（体の箱と面の箱が TouchMarginCm の余白込みで重なった）
+    # Started touching (the body's box and the surface's box overlap, including the TouchMarginCm margin)
     Touched
-    # 離れた（重ならなくなった・面が無効になった・探す範囲から外れた）
+    # Stopped touching (no longer overlapping, the surface was deactivated, or it left the search range)
     Untouched
-    # 上に乗った（接地していて、足元が面の上面にある）
+    # Stepped on (grounded, with the feet on the top face of the surface)
     SteppedOn
-    # 上から降りた
+    # Stepped off
     SteppedOff
 
-# 面の箱（世界の軸にそろえた直方体。cm）。回転した面は、回転したあとの箱を囲む直方体になる
+# The surface's box (a world-axis-aligned cuboid, cm). A rotated surface becomes the cuboid enclosing its rotated box
 character_surface_box<public> := struct<computes>:
-    # 小さい側の角（世界の位置、cm）
+    # Corner on the low side (world position, cm)
     MinCm<public>:vector3 = vector3{}
-    # 大きい側の角（世界の位置、cm）
+    # Corner on the high side (world position, cm)
     MaxCm<public>:vector3 = vector3{}
 
-# 面に触れた・乗った知らせ。方向：面の entity から根へ（SendUp）
-# 送り手：character_touch_component（同じ知らせを Surface の ContactEvent にも届ける）。受け手：面の entity と祖先の component（マップの根・ギミック）。消費しない
+# Notification of touching / stepping on a surface. Direction: from the surface entity to the root (SendUp)
+# Sender: character_touch_component (the same notification also goes to the Surface's ContactEvent). Receivers: the surface entity and ancestor components (map root, gimmicks). Not consumed
 character_surface_contact_event<public> := class(scene_event):
-    # 触れられた面（知らせの送り元の entity に付いている）
+    # The surface touched (attached to the entity that sent the notification)
     Surface<public>:character_surface_component
-    # 触れた独自キャラクターの体
+    # The body of the custom character that touched it
     Motor<public>:character_motor_component
-    # 体の持ち主。持ち主のいない体なら false
+    # The body's owner. false for a body without an owner
     Agent<public>:?agent
-    # 触れ方
+    # How it was touched
     Contact<public>:character_surface_contact
 
-# 独自キャラクターが触れられる面の目印のタグ。character_surface_component が開始時にこの entity に付け、止まると外す（character_touch_component はこのタグで面を探す）
+# Marker tag for surfaces a custom character can touch. character_surface_component attaches it to the entity at start and removes it when stopped (character_touch_component finds surfaces by this tag)
 character_surface_tag<public> := class(tag):
 
-# 役割：独自キャラクター（CharacterSystem）が「触れた・乗った」を知れる面（箱）。entity の位置・回転・大きさから箱を決める
-#   独自キャラクターは自前のカプセルで動くので、メッシュの重なりの知らせ（EntityEnteredEvent）が来ない。この component が箱を持ち、キャラクターの側の character_touch_component が毎フレーム箱と体を比べる
-#   箱の大きさ：SizeCm がすべて 0 より大きければそれ（entity の大きさは見ない）。そうでなければ entity の大きさ（Scale）× MeshSizeCm（100 cm の立方体のメッシュなら 100）。PivotAtBottom なら entity の位置を箱の底面の真ん中、オフなら箱の真ん中とする
-# 置き方：エディターで、足場・壁・ギミックの entity（当たり判定のあるメッシュと同じ entity）に付ける。触れるだけの物（ゴールの結晶など）は当たり判定の無いメッシュでもよい
-# いつ：開始から止まるまで。SetActive(false) のあいだは触れない（消える足場など）
-# 知らせ：ContactEvent（触れ始めた・離れた・乗った・降りた）と character_surface_contact_event（SendUp）。送るのは character_touch_component
-# タグ：この entity に character_surface_tag を付ける
-# 外から：GetBox / SetActive / IsActive
-# 前提・注意：動く面（MoverSystem）も、毎フレームの位置で比べる。⚠ 未検証：keyframed_movement_component で動かしている entity の GetGlobalTransform が、毎フレーム動いた位置を返すか
+# Role: a surface (box) that a custom character (CharacterSystem) can "touch" or "step on". The box is derived from the entity's position, rotation and scale
+#   A custom character moves with its own capsule, so mesh overlap notifications (EntityEnteredEvent) never arrive. This component holds the box, and character_touch_component on the character compares the box with the body every frame
+#   Box size: SizeCm if all its components are above 0 (the entity's scale is ignored). Otherwise the entity's scale (Scale) x MeshSizeCm (100 for a 100 cm cube mesh). With PivotAtBottom, the entity's position is the center of the box's bottom face; off, the center of the box
+# Placement: in the editor, attach to the entity of a platform, wall or gimmick (the same entity as the collidable mesh). Touch-only objects (a goal crystal, etc.) may use a mesh without collision
+# When: from start until stopped. Not touchable during SetActive(false) (vanishing platforms, etc.)
+# Notifications: ContactEvent (started touching, stopped touching, stepped on, stepped off) and character_surface_contact_event (SendUp). Sent by character_touch_component
+# Tags: attaches character_surface_tag to this entity
+# From outside: GetBox / SetActive / IsActive
+# Requirements / notes: moving surfaces (MoverSystem) are also compared at their position every frame. ⚠ Unverified: whether GetGlobalTransform of an entity driven by keyframed_movement_component returns the moved position every frame
 character_surface_component<public> := class<final_super>(component):
 
-    # 箱の大きさ（cm。前後・左右・上下）。すべて 0 より大きければこれを使う（entity の大きさは見ない）。既定 0（entity の大きさ × MeshSizeCm）
+    # Box size (cm. Forward / back, left / right, up / down). Used if all components are above 0 (the entity's scale is ignored). Default 0 (entity scale x MeshSizeCm)
     @editable:
         ToolTip := SurfaceSizeToolTip
         Categories := array{CharacterSurfaceCategory}
     SizeCm<public>:vector3 = vector3{}
-    # 大きさ 1 のときのメッシュの一辺（cm）。SizeCm を使わないとき、entity の大きさに掛ける。既定 100
+    # Edge length of the mesh at scale 1 (cm). Multiplied by the entity's scale when SizeCm is not used. Default 100
     @editable_number(float):
         ToolTip := SurfaceMeshSizeToolTip
         Categories := array{CharacterSurfaceCategory}
         MinValue := option{1.0}
         MaxValue := option{100000.0}
     MeshSizeCm<public>:float = 100.0
-    # オンなら entity の位置を箱の底面の真ん中とする（底が原点のメッシュ）。オフなら箱の真ん中。既定オン
+    # When on, the entity's position is the center of the box's bottom face (a mesh with its origin at the bottom). When off, the center of the box. Default on
     @editable:
         ToolTip := SurfacePivotAtBottomToolTip
         Categories := array{CharacterSurfaceCategory}
@@ -70,7 +70,7 @@ character_surface_component<public> := class<final_super>(component):
 
     ContactEventInternal<private><final>:event(tuple(character_motor_component, character_surface_contact)) = event(tuple(character_motor_component, character_surface_contact)){}
 
-    # 独自キャラクターが触れ始めた・離れた・乗った・降りたときに、（その体, 触れ方）で届く（Await / Subscribe する。外から Signal はできない）
+    # Arrives as (that body, contact kind) when a custom character starts touching, stops touching, steps on or steps off (Await / Subscribe. Cannot be Signaled from outside)
     ContactEvent<public><final>:listenable(tuple(character_motor_component, character_surface_contact)) = MakeProxyListenable(ContactEventInternal)
 
     var<private> Active:logic = true
@@ -85,7 +85,7 @@ character_surface_component<public> := class<final_super>(component):
         set TagKey = false
         (super:)OnEndSimulation()
 
-    # 今の箱（世界の位置、cm）。毎回 entity の位置から計算する
+    # The current box (world position, cm). Computed from the entity's position every call
     GetBox<public>()<transacts>:character_surface_box =
         Transform := Entity.GetGlobalTransform()
         Size := GetLocalSizeCm(Transform.Scale)
@@ -101,15 +101,15 @@ character_surface_component<public> := class<final_super>(component):
             Up := Abs(AxisForward.Up) * Half.Forward + Abs(AxisLeft.Up) * Half.Left + Abs(AxisUp.Up) * Half.Up
         character_surface_box{MinCm := Center - Extent, MaxCm := Center + Extent}
 
-    # 触れられるかを切り替える（false のあいだは、触れている体にも「離れた」が届き、乗れない）。当たり判定・見た目は変えない
+    # Toggles whether it can be touched (while false, touching bodies receive "stopped touching" and nothing can step on it). Collision and visuals are unchanged
     SetActive<public>(Value:logic):void =
         set Active = Value
 
-    # 触れられる（SetActive(false) にしていない）なら成功する
+    # Succeeds if touchable (not SetActive(false))
     IsActive<public>()<decides><transacts>:void =
         Active?
 
-    # character_touch_component から呼ばれる：触れ方を ContactEvent と character_surface_contact_event（SendUp）で知らせる
+    # Called from character_touch_component: reports the contact on ContactEvent and character_surface_contact_event (SendUp)
     NotifyContact<internal>(Motor:character_motor_component, Contact:character_surface_contact):void =
         ContactEventInternal.Signal((Motor, Contact))
         Owner:?agent = if (Player := Motor.FindOwner[]) then option{Player} else false
@@ -121,41 +121,41 @@ character_surface_component<public> := class<final_super>(component):
         else:
             vector3{Forward := Abs(Scale.Forward) * MeshSizeCm, Left := Abs(Scale.Left) * MeshSizeCm, Up := Abs(Scale.Up) * MeshSizeCm}
 
-# 役割：独自キャラクターが面（character_surface_component）に触れた・乗ったを毎フレーム決めて知らせる
-#   体（同じ entity の character_motor_component）が動いたあと（PostMoveEvent）、体の箱（足元を底にした、直径 RadiusCm × 2・高さ HeightCm の箱に TouchMarginCm の余白）と、近くの面の箱を比べる
-#   乗っている面：体が接地の掃引で立っている entity（体の GetGroundEntity）に、使える面が付いていればその面（箱の大きさ・原点の設定がずれていても乗っているになる。触れているにも入れる）
-#     付いていなければ箱で決める：接地していて、足元の高さが面の上面から StandToleranceCm 以内、足元が面の上（横に RadiusCm まではみ出してよい）。いくつも当てはまるときは、足元に一番近い面（同じなら高い面）
-#   面の候補は RefreshSeconds ごとに探し直す（SearchRoot の子孫、無ければ世界から character_surface_tag で探し、足元から SearchRadiusCm 以内の箱だけを覚える。毎フレーム世界を探さない）
-# 置き方：エディターで、character_motor_component と同じ entity に付ける
-# 同じ entity：character_motor_component（必須）。動く面に乗せる character_ride_component は、この部品が無くても動く
-# いつ：開始から止まるまで。止まるとき、触れていた面に「離れた」「降りた」を知らせる
-# 知らせ：ContactEvent（触れた面, 触れ方）。面の ContactEvent と character_surface_contact_event（SendUp）にも同じ知らせが届く。順番は 降りた → 離れた → 触れ始めた → 乗った
-# 外から：SetSearchRoot（探す場所を絞る。例 今遊んでいるマップの根）、GetTouchingSurfaces、IsTouching、FindStandingSurface
-# 前提・注意：比べるのは世界の軸にそろえた箱どうし（回転した面は囲む箱になる）。速すぎて 1 フレームで面を通り抜けると触れない（薄い面は厚くする）
+# Role: decides every frame whether the custom character touches / steps on surfaces (character_surface_component) and reports it
+#   After the body (character_motor_component on the same entity) moves (PostMoveEvent), compares the body's box (a box with its bottom at the feet, diameter RadiusCm x 2, height HeightCm, plus the TouchMarginCm margin) with the boxes of nearby surfaces
+#   The surface stood on: if the entity the body stands on by the ground sweep (the body's GetGroundEntity) carries an active surface, that surface (counts as stood on even if the box size / origin settings are off. Also counted as touching)
+#     Otherwise decided by boxes: grounded, the feet within StandToleranceCm of the surface's top face, and the feet over the surface (may overhang sideways up to RadiusCm). If several match, the one nearest the feet (the higher one on a tie)
+#   Candidate surfaces are refreshed every RefreshSeconds (descendants of SearchRoot, or the world by character_surface_tag if none, keeping only boxes within SearchRadiusCm of the feet. The world is not searched every frame)
+# Placement: in the editor, attach to the same entity as character_motor_component
+# Same entity: character_motor_component (required). character_ride_component for riding moving surfaces works without this component
+# When: from start until stopped. When stopping, reports "stopped touching" and "stepped off" to the surfaces being touched
+# Notifications: ContactEvent (surface touched, contact kind). The same notification also reaches the surface's ContactEvent and character_surface_contact_event (SendUp). Order: stepped off -> stopped touching -> started touching -> stepped on
+# From outside: SetSearchRoot (narrow the search, e.g. the root of the map being played), GetTouchingSurfaces, IsTouching, FindStandingSurface
+# Requirements / notes: compares world-axis-aligned boxes (a rotated surface becomes its enclosing box). Moving so fast that a surface is passed within one frame does not touch it (make thin surfaces thicker)
 character_touch_component<public> := class<final_super>(component):
 
-    # 体の箱に足す余白（cm）。体は面の手前 2 cm で止まるので、それより大きくする。既定 8
+    # Margin added to the body's box (cm). The body stops 2 cm short of surfaces, so make it larger than that. Default 8
     @editable_number(float):
         ToolTip := TouchMarginToolTip
         Categories := array{CharacterSurfaceCategory}
         MinValue := option{0.0}
         MaxValue := option{500.0}
     TouchMarginCm<public>:float = 8.0
-    # 足元の高さが面の上面からこの距離（cm）以内なら「乗っている」。既定 15
+    # "Standing on" when the feet are within this distance (cm) of the surface's top face. Default 15
     @editable_number(float):
         ToolTip := TouchStandToleranceToolTip
         Categories := array{CharacterSurfaceCategory}
         MinValue := option{1.0}
         MaxValue := option{200.0}
     StandToleranceCm<public>:float = 15.0
-    # 足元からこの距離（cm）以内の面だけを候補にする。既定 3000
+    # Only surfaces within this distance (cm) of the feet are candidates. Default 3000
     @editable_number(float):
         ToolTip := TouchSearchRadiusToolTip
         Categories := array{CharacterSurfaceCategory}
         MinValue := option{100.0}
         MaxValue := option{100000.0}
     SearchRadiusCm<public>:float = 3000.0
-    # 候補の面を探し直す間隔（秒）。既定 0.5
+    # Interval for refreshing the candidate surfaces (seconds). Default 0.5
     @editable_number(float):
         ToolTip := TouchRefreshToolTip
         Categories := array{CharacterSurfaceCategory}
@@ -165,7 +165,7 @@ character_touch_component<public> := class<final_super>(component):
 
     ContactEventInternal<private><final>:event(tuple(character_surface_component, character_surface_contact)) = event(tuple(character_surface_component, character_surface_contact)){}
 
-    # 面に触れ始めた・離れた・乗った・降りたときに、（その面, 触れ方）で届く（Await / Subscribe する。外から Signal はできない）
+    # Arrives as (that surface, contact kind) when starting to touch, stopping, stepping on or stepping off a surface (Await / Subscribe. Cannot be Signaled from outside)
     ContactEvent<public><final>:listenable(tuple(character_surface_component, character_surface_contact)) = MakeProxyListenable(ContactEventInternal)
 
     var<private> Motor:?character_motor_component = false
@@ -182,7 +182,7 @@ character_touch_component<public> := class<final_super>(component):
             set Motor = option{Found}
             set Subscription = option{Found.PostMoveEvent.Subscribe(OnPostMove)}
         else:
-            Print("[character_touch_component] character_motor_component が見つかりません（同じ entity に置いてください）")
+            Print("[character_touch_component] character_motor_component not found (place it on the same entity)")
 
     OnEndSimulation<override>():void =
         Subscription.CancelIfSet()
@@ -193,20 +193,20 @@ character_touch_component<public> := class<final_super>(component):
         set Motor = false
         (super:)OnEndSimulation()
 
-    # 面を探す場所を Root の子孫に絞る（false なら世界全体）。次のフレームで探し直す
+    # Narrows the surface search to descendants of Root (false means the whole world). Re-searches on the next frame
     SetSearchRoot<public>(Root:?entity):void =
         set SearchRoot = Root
         set NextRefreshSeconds = 0.0
 
-    # 今触れている面（並び順は決まっていない）
+    # Surfaces currently touched (unordered)
     GetTouchingSurfaces<public>()<transacts>:[]character_surface_component =
         Touching
 
-    # Surface に今触れていれば成功する（最大 1 フレーム遅れる）
+    # Succeeds if Surface is currently touched (up to one frame late)
     IsTouching<public>(Surface:character_surface_component)<decides><transacts>:void =
         Touching.Find[Surface]
 
-    # 今乗っている面。乗っていなければ失敗する（最大 1 フレーム遅れる）
+    # The surface currently stood on. Fails if none (up to one frame late)
     FindStandingSurface<public>()<decides><transacts>:character_surface_component =
         Standing?
 
@@ -221,7 +221,7 @@ character_touch_component<public> := class<final_super>(component):
             BodyMin := Feet - vector3{Forward := Reach, Left := Reach, Up := TouchMarginCm}
             BodyMax := Feet + vector3{Forward := Reach, Left := Reach, Up := Found.HeightCm + TouchMarginCm}
             Grounded := if (Found.IsGrounded[]) then true else false
-            # 立っている entity に面が付いていれば、それが乗っている面（箱では決めない）
+            # If the entity stood on carries a surface, that is the surface stood on (not decided by boxes)
             GroundSurface:?character_surface_component = if (Ground := Found.GetGroundEntity[], OnGround := Ground.GetComponent[character_surface_component], OnGround.IsActive[]) then option{OnGround} else false
             var NowTouching:[]character_surface_component = array{}
             var NowStanding:?character_surface_component = GroundSurface
@@ -241,7 +241,7 @@ character_touch_component<public> := class<final_super>(component):
                             set BestTop = Box.MaxCm.Up
             Update(Found, NowTouching, NowStanding)
 
-    # 前のフレームと比べて、変わった分を知らせる
+    # Compares with the previous frame and reports the differences
     Update<private>(Found:character_motor_component, NowTouching:[]character_surface_component, NowStanding:?character_surface_component):void =
         Before := Touching
         WasStanding := Standing
@@ -269,12 +269,12 @@ character_touch_component<public> := class<final_super>(component):
         else:
             set Candidates = array{}
 
-# Surface が Maybe の中身と同じなら成功する
+# Succeeds if Surface is the same as the content of Maybe
 IsSame<internal>(Surface:character_surface_component, Maybe:?character_surface_component)<decides><transacts>:void =
     Other := Maybe?
     Other = Surface
 
-# 体の箱（Low〜High）と Box が重なれば成功する
+# Succeeds if the body's box (Low..High) overlaps Box
 Overlaps<internal>(Low:vector3, High:vector3, Box:character_surface_box)<decides><transacts>:void =
     Low.Forward <= Box.MaxCm.Forward
     High.Forward >= Box.MinCm.Forward
@@ -283,75 +283,75 @@ Overlaps<internal>(Low:vector3, High:vector3, Box:character_surface_box)<decides
     Low.Up <= Box.MaxCm.Up
     High.Up >= Box.MinCm.Up
 
-# Point から Box までの距離（cm。中なら 0）
+# Distance from Point to Box (cm. 0 if inside)
 DistanceToBox<internal>(Point:vector3, Box:character_surface_box)<transacts>:float =
     DF := Max(Max(Box.MinCm.Forward - Point.Forward, 0.0), Point.Forward - Box.MaxCm.Forward)
     DL := Max(Max(Box.MinCm.Left - Point.Left, 0.0), Point.Left - Box.MaxCm.Left)
     DU := Max(Max(Box.MinCm.Up - Point.Up, 0.0), Point.Up - Box.MaxCm.Up)
     Sqrt(DF * DF + DL * DL + DU * DU)
 
-# Point から Box までの水平の距離（cm。真上・真下なら 0）
+# Horizontal distance from Point to Box (cm. 0 if directly above or below)
 HorizontalDistance<internal>(Point:vector3, Box:character_surface_box)<transacts>:float =
     DF := Max(Max(Box.MinCm.Forward - Point.Forward, 0.0), Point.Forward - Box.MaxCm.Forward)
     DL := Max(Max(Box.MinCm.Left - Point.Left, 0.0), Point.Left - Box.MaxCm.Left)
     Sqrt(DF * DF + DL * DL)
 
-# 役割：動く床に乗った独自キャラクターを、床と一緒に運ぶ。乗っている物は、体（character_motor_component）が接地の掃引で当たった entity（GetGroundEntity。動く床のメッシュの entity か、その親ごと動く子）
-#   毎フレーム 2 回、前に覚えた床の位置・ヨーと今を比べ、動いた分だけ体を運ぶ（体の CarryBy：上下はそのまま、水平は床以外に当たれば手前で止める。速度は変えない）
-#     1 回目：体が動く前（PreMoveEvent）。体は床と同じだけ動いてから、自分の速度で動く（床が上がっても、床にめり込んだまま掃引しない）
-#     2 回目：物理のあと（TickEvents.PostPhysics）。床（MoverSystem の keyframe・Verse で毎フレーム動かす床）が体より後に動いたフレームも、フレームの終わりには床の上にそろえる
-#   FollowYaw なら、床がヨーで回った分だけ、体の位置も床の位置（entity の原点）のまわりに回す（体の向きは変えない）
-#   床の速度（運んだ量 ÷ 秒）を、体の GetGroundVelocity と GetRideVelocity に入れる
-#   離れたとき：上向きに離れた（ジャンプ・打ち上げ）・縁から落ちた・GraceSeconds を過ぎた、なら乗るのをやめる。InheritVelocity なら床の速度（下向きの速さは除く）を体の速度に足す（体の InheritVelocity。walk は空中でこの分を減速しない）
-#     一瞬だけ接地が切れても（上がっていないで、足元から下 50 cm 以内にまだ同じ床があれば）、GraceSeconds 秒は乗っているとして運び続ける
-#   空中から乗ったとき：InheritVelocity なら、体の水平の速度のうち床の動く向きの分を、床の速さまで消す（跳んで同じ床に戻ったときに床の上で滑らない。止まった床から乗ったときは消す分が無い）
-# 置き方：エディターで、character_motor_component と同じ entity に付ける（character_touch_component・床の character_surface_component は要らない。触れた・乗ったの知らせが要るときだけ足す）
-# いつ：開始から止まるまで。乗り換えた最初のフレームは、乗った瞬間の位置を覚えるだけ（その前の動きは運ばない）
-# 外から：FindRidingEntity（今乗って運んでいる物）、GetRideVelocity（その速度）。体の GetGroundVelocity / GetInheritedVelocity でも読める
-# 前提・注意：運ぶのは体の位置だけ（体の向きは変えない。床のピッチ・ロールには合わせない）。床が一瞬で大きく動いた（MaxCarryCm を超えた）フレームは運ばない（ワープ・やり直しで連れて行かれないように）
-#   運ばれて上の天井に挟まれても押し返さない（体は天井にめり込む）。体の AxisLock で縛った軸には運ばない
-# ⚠ 未検証：keyframed_movement_component で動いている床の GetGlobalTransform が、サーバーで毎フレーム動いた位置を返すか。クライアントの見た目で、運ばれる体と床がずれないか（体はサーバーの位置が届き、床はクライアントで再生する）
+# Role: carries a custom character standing on a moving floor along with it. The object ridden is the entity the body (character_motor_component) hit with its ground sweep (GetGroundEntity. The moving floor's mesh entity, or a child moving with its parent)
+#   Twice per frame, compares the floor's remembered position / yaw with the current ones and carries the body by the difference (the body's CarryBy: vertical as is, horizontal stops short on hitting anything other than the floor. Velocity unchanged)
+#     1st: before the body moves (PreMoveEvent). The body first moves as much as the floor, then by its own velocity (no sweeping while penetrating a floor that rose)
+#     2nd: after physics (TickEvents.PostPhysics). On frames where the floor (MoverSystem keyframes, floors moved from Verse every frame) moved after the body, the body is realigned onto the floor at the end of the frame
+#   With FollowYaw, when the floor turns in yaw, the body's position is rotated around the floor's position (the entity's origin) by the same amount (the body's facing is unchanged)
+#   The floor's velocity (amount carried / seconds) is written to the body's GetGroundVelocity and to GetRideVelocity
+#   Leaving: stops riding when leaving upward (jump, launch), falling off the edge, or after GraceSeconds. With InheritVelocity, adds the floor's velocity (excluding downward speed) to the body's velocity (the body's InheritVelocity. walk does not brake this part in the air)
+#     If grounding drops for a moment (not rising, and the same floor is still within 50 cm below the feet), keeps carrying as if riding for GraceSeconds
+#   Landing from the air: with InheritVelocity, removes from the body's horizontal velocity the part along the floor's direction of motion, up to the floor's speed (no sliding on the floor when jumping and landing back on the same floor. Nothing to remove when landing on a stopped floor)
+# Placement: in the editor, attach to the same entity as character_motor_component (character_touch_component and the floor's character_surface_component are not needed. Add them only when touch / step-on notifications are wanted)
+# When: from start until stopped. On the first frame of a new floor, only the position at that moment is remembered (earlier motion is not carried)
+# From outside: FindRidingEntity (the object currently ridden), GetRideVelocity (its velocity). Also readable through the body's GetGroundVelocity / GetInheritedVelocity
+# Requirements / notes: only the body's position is carried (the facing is unchanged. Pitch / roll of the floor are not followed). A frame where the floor jumped a long way (above MaxCarryCm) is not carried (so a warp / reset does not drag the body along)
+#   If carried into a ceiling above, the body is not pushed back (it penetrates the ceiling). Not carried along the axis locked by the body's AxisLock
+# ⚠ Unverified: whether GetGlobalTransform of a floor driven by keyframed_movement_component returns the moved position every frame on the server. Whether the carried body and the floor stay aligned visually on clients (the body arrives at the server position, the floor plays back on the client)
 character_ride_component<public> := class<final_super>(component):
 
-    # 1 フレームにこれ（cm）より大きく動いた床には付いていかない。既定 300
+    # Do not follow a floor that moved more than this (cm) in one frame. Default 300
     @editable_number(float):
         ToolTip := RideMaxCarryToolTip
         Categories := array{CharacterSurfaceCategory}
         MinValue := option{1.0}
         MaxValue := option{10000.0}
     MaxCarryCm<public>:float = 300.0
-    # オンなら、乗っている床がヨーで回ったとき、体の位置も床の位置（entity の原点）のまわりに同じだけ回す（体の向きは変えない）。オフなら床の位置の動きだけを足す。既定オン
+    # When on, when the floor ridden turns in yaw, the body's position is also rotated around the floor's position (the entity's origin) by the same amount (the body's facing is unchanged). When off, only the floor's positional motion is added. Default on
     @editable:
         ToolTip := RideFollowYawToolTip
         Categories := array{CharacterSurfaceCategory}
     FollowYaw<public>:logic = true
-    # 接地が一瞬切れても、足元のすぐ下にまだ同じ床があれば、この秒数までは乗っているとして運び続ける（上向きに離れたときは使わない）。0 で使わない。既定 0.1
+    # If grounding drops for a moment while the same floor is still right below the feet, keeps carrying as if riding for up to this many seconds (not used when leaving upward). 0 disables. Default 0.1
     @editable_number(float):
         ToolTip := RideGraceToolTip
         Categories := array{CharacterSurfaceCategory}
         MinValue := option{0.0}
         MaxValue := option{2.0}
     GraceSeconds<public>:float = 0.1
-    # オンなら、動く床から離れたとき（ジャンプ・縁から落ちた）に床の速度（下向きの速さは除く）を体の速度に足し、空中から乗ったときは受け継いでいた分を消す。オフなら足さない（離れた瞬間に床の動きが無くなる）。既定オン
+    # When on, adds the floor's velocity (excluding downward speed) to the body when leaving a moving floor (jump, falling off the edge), and removes the inherited part when landing from the air. When off, nothing is added (the floor's motion vanishes the moment you leave). Default on
     @editable:
         ToolTip := RideInheritVelocityToolTip
         Categories := array{CharacterSurfaceCategory}
     InheritVelocity<public>:logic = true
 
-    # 接地が一瞬切れたとき、足元から下へ同じ床を探す距離（cm）
+    # Distance to probe down from the feet for the same floor when grounding drops for a moment (cm)
     GraceProbeCm<private>:float = 50.0
 
     var<private> Motor:?character_motor_component = false
     var<private> Subscriptions:[]cancelable = array{}
-    # 乗って運んでいる物と、最後に運んだ（覚えた）ときのその位置・ヨー（ラジアン）
+    # The object ridden, and its position / yaw (radians) when last carried (remembered)
     var<private> Riding:?entity = false
     var<private> LastPosition:vector3 = vector3{}
     var<private> LastYaw:float = 0.0
     var<private> GraceLeft:float = 0.0
-    # 前の PreMoveEvent から運んだ量の合計（cm。床の速度を出す）と、出した床の速度（cm/s）
+    # Total carried since the previous PreMoveEvent (cm. For the floor's velocity) and the derived floor velocity (cm/s)
     var<private> CarriedSinceSample:vector3 = vector3{}
     var<private> RideVelocity:vector3 = vector3{}
-    # 空中から乗ったばかり（次の PreMoveEvent で、床の速度が分かってから受け継いでいた分を消す）
+    # Just landed from the air (on the next PreMoveEvent, once the floor's velocity is known, the inherited part is removed)
     var<private> JustLanded:logic = false
 
     OnBeginSimulation<override>():void =
@@ -360,7 +360,7 @@ character_ride_component<public> := class<final_super>(component):
             set Motor = option{Found}
             set Subscriptions = array{Found.PreMoveEvent.Subscribe(OnPreMove), Found.PostMoveEvent.Subscribe(OnPostMove), TickEvents.PostPhysics.Subscribe(OnPostPhysics)}
         else:
-            Print("[character_ride_component] character_motor_component が見つかりません（同じ entity に置いてください）")
+            Print("[character_ride_component] character_motor_component not found (place it on the same entity)")
 
     OnEndSimulation<override>():void =
         for (Subscription : Subscriptions):
@@ -372,15 +372,15 @@ character_ride_component<public> := class<final_super>(component):
         set RideVelocity = vector3{}
         (super:)OnEndSimulation()
 
-    # 今乗って運んでいる物（体が立っている entity。一瞬離れた GraceSeconds のあいだも）。乗っていなければ失敗する
+    # The object currently ridden (the entity the body stands on. Also during the GraceSeconds of a momentary drop). Fails if not riding
     FindRidingEntity<public>()<decides><transacts>:entity =
         Riding?
 
-    # 今乗っている物の速度（cm/s。世界の向き。回る床なら足元の速度）。乗っていなければ 0
+    # Velocity of the object currently ridden (cm/s, world space. For a rotating floor, the speed at the feet). 0 if not riding
     GetRideVelocity<public>()<transacts>:vector3 =
         RideVelocity
 
-    # 体が動く前：床が動いた分を運び、床の速度を出す。空中から乗ったばかりなら、受け継いでいた速度を消す
+    # Before the body moves: carries by the floor's motion and derives the floor's velocity. If just landed from the air, removes the inherited velocity
     OnPreMove<private>(DeltaTime:float):void =
         if (Found := Motor?, Platform := Riding?):
             Sync(Found, Platform)
@@ -392,12 +392,12 @@ character_ride_component<public> := class<final_super>(component):
                 if (InheritVelocity?):
                     CancelLandingVelocity(Found)
 
-    # 物理のあと：体より後に動いた床の分を運ぶ（フレームの終わりに床の上へそろえる）
+    # After physics: carries by the floor's motion that happened after the body moved (realigns onto the floor at the end of the frame)
     OnPostPhysics<private>(DeltaTime:float):void =
         if (Found := Motor?, Platform := Riding?):
             Sync(Found, Platform)
 
-    # 体が動いたあと：立っている物が変わったら乗り換え、地面から離れたら（一瞬なら GraceSeconds まで待って）乗るのをやめる
+    # After the body moves: switches floors if the entity stood on changed; stops riding when leaving the ground (after waiting up to GraceSeconds for a momentary drop)
     OnPostMove<private>(DeltaTime:float):void =
         if (Found := Motor?):
             if (Ground := Found.GetGroundEntity[]):
@@ -407,14 +407,14 @@ character_ride_component<public> := class<final_super>(component):
                     FromAir := if (Riding?) then false else true
                     Begin(Ground, FromAir)
             else if (Platform := Riding?):
-                # 上向きに離れた（ジャンプ・打ち上げ）なら、すぐやめる。そうでなければ、足元のすぐ下に同じ床があるあいだ GraceSeconds まで待つ
+                # Leaving upward (jump, launch): stop at once. Otherwise wait up to GraceSeconds while the same floor is right below the feet
                 Rising := if (Found.GetVelocity().Up > 1.0) then true else false
                 if (not Rising?, GraceLeft > 0.0, Below := Found.FindGroundEntityBelow[GraceProbeCm], Below = Platform):
                     set GraceLeft -= DeltaTime
                 else:
                     Leave(Found)
 
-    # Ground に乗り始める（今の位置・ヨーを覚えるだけ。運ぶのは次から）。FromAir なら空中から乗った
+    # Starts riding Ground (only remembers the current position / yaw. Carrying starts next time). FromAir means landing from the air
     Begin<private>(Ground:entity, FromAir:logic):void =
         set Riding = option{Ground}
         Remember(Ground.GetGlobalTransform())
@@ -422,7 +422,7 @@ character_ride_component<public> := class<final_super>(component):
         set GraceLeft = GraceSeconds
         set JustLanded = FromAir
 
-    # 乗るのをやめる。InheritVelocity なら、床の速度（下向きの速さは除く）を体の速度に足す
+    # Stops riding. With InheritVelocity, adds the floor's velocity (excluding downward speed) to the body's velocity
     Leave<private>(Found:character_motor_component):void =
         if (InheritVelocity?):
             Found.InheritVelocity(vector3{Forward := RideVelocity.Forward, Left := RideVelocity.Left, Up := Max(RideVelocity.Up, 0.0)})
@@ -433,7 +433,7 @@ character_ride_component<public> := class<final_super>(component):
         set CarriedSinceSample = vector3{}
         set JustLanded = false
 
-    # 前に覚えた床の位置・ヨーから今までに床が動いた分（FollowYaw なら回った分も、体の位置で）を、体に運ばせる。MaxCarryCm を超えたら運ばない。今の位置・ヨーを覚え直す
+    # Has the body carried by how much the floor moved since the remembered position / yaw (with FollowYaw, also the rotation, applied at the body's position). Not carried above MaxCarryCm. Re-remembers the current position / yaw
     Sync<private>(Found:character_motor_component, Platform:entity):void =
         Transform := Platform.GetGlobalTransform()
         Position := Transform.Translation
@@ -450,7 +450,7 @@ character_ride_component<public> := class<final_super>(component):
         set LastPosition = Transform.Translation
         set LastYaw = YawRadiansOf(Transform)
 
-    # 空中から乗ったとき：体の水平の速度のうち、床の動く向きの分を、床の速さまで消す（床から受け継いだ分。逆向き・止まっていれば何もしない）
+    # Landing from the air: removes from the body's horizontal velocity the part along the floor's direction of motion, up to the floor's speed (the part inherited from the floor. Nothing if opposed or stopped)
     CancelLandingVelocity<private>(Found:character_motor_component):void =
         Platform := vector3{Forward := RideVelocity.Forward, Left := RideVelocity.Left}
         PlatformCm := Platform.Length()
@@ -461,12 +461,12 @@ character_ride_component<public> := class<final_super>(component):
             if (Along > 0.0):
                 Found.SetVelocity(Velocity - Direction * Along)
 
-# Transform の前（Forward 軸）の水平の向きのヨー（ラジアン。前 = 0、左へ回ると正）
+# Yaw of the horizontal direction of Transform's forward (Forward axis) (radians. Forward = 0, positive turning left)
 YawRadiansOf<internal>(Transform:transform)<reads>:float =
     Axis := Transform.Rotation.GetForwardAxis()
     ArcTan(Axis.Left, Axis.Forward)
 
-# Offset を上の軸まわりに、前を左へ回す向きに LeftTurnRadians（ラジアン）回す（上の成分は変えない）
+# Rotates Offset around the up axis by LeftTurnRadians (radians), forward turning toward left (the up component is unchanged)
 TurnAroundUp<internal>(Offset:vector3, LeftTurnRadians:float)<reads>:vector3 =
     C := Cos(LeftTurnRadians)
     S := Sin(LeftTurnRadians)

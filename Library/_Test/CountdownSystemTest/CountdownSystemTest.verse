@@ -4,7 +4,7 @@ using { ActivationSystem }
 using { CountdownSystem }
 using { _Test }
 
-# 役割：RemainingChangedEvent などの int の知らせを数える（Subscribe に Record を渡す）
+# Role: counts int notifications such as RemainingChangedEvent (pass Record to Subscribe)
 test_int_recorder<public> := class:
 
     var<private> Count:int = 0
@@ -18,7 +18,7 @@ test_int_recorder<public> := class:
 
     GetLast<public>()<transacts>:int = LastValue
 
-# 役割：祖先で受けた countdown の scene_event を数える（AlsoSendUp の確認用。テストが実行時に親の entity に付ける）
+# Role: counts countdown scene_events received at an ancestor (for checking AlsoSendUp; the test attaches it to the parent entity at runtime)
 test_countdown_event_counter<public> := class<final_super>(component):
 
     var<private> RemainingCount:int = 0
@@ -35,10 +35,10 @@ test_countdown_event_counter<public> := class<final_super>(component):
 
     GetFinishedCount<public>()<transacts>:int = FinishedCount
 
-# 役割：CountdownSystem の動作確認。Start から FinishedEvent までの実時間、残り秒数の知らせの回数と値、Pause / Resume、AddSeconds、Stop、起動の合図での開始とやり直し、Restart（途中・秒数を渡す・1 秒未満）、AlsoSendUp を確かめる
-# テストのレベル：この component を付けた entity を 1 つ置くだけ（countdown_component はテストが実行時に作る）。プレイヤーは要らない
-# かかる時間：約 20 秒
-# 結果：出力ログの [TEST] CountdownSystem
+# Role: verification of CountdownSystem. Checks the real time from Start to FinishedEvent, the count and values of the remaining-seconds notifications, Pause / Resume, AddSeconds, Stop, start and restart on the activate signal, Restart (midway / with seconds / under 1 second), and AlsoSendUp
+# Test level: just one entity with this component (countdown_component is created by the test at runtime). No player needed
+# Duration: about 20 seconds
+# Result: [TEST] CountdownSystem in the output log
 countdown_system_test_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =
@@ -100,7 +100,7 @@ countdown_system_test_component<public> := class<final_super>(component):
         Results.Check("resume: IsRunning", if (Countdown.IsRunning[]) then true else false)
         Arrived2 := AwaitWithin(Countdown.FinishedEvent, 4.0)
         if (Arrived2?):
-            # 3 秒 + 一時停止の 2 秒
+            # 3 seconds + 2 seconds paused
             Results.CheckFloat("resume: finished after 3 s + 2 s paused", GetSimulationElapsedTime() - StartTime, 5.0, 0.2)
         else:
             Results.Fail("resume: FinishedEvent", "not received within 4 s after Resume")
@@ -121,7 +121,7 @@ countdown_system_test_component<public> := class<final_super>(component):
         else:
             Results.Fail("add: FinishedEvent", "not received within 6 s")
         Subscription.Cancel()
-        # 残りより多く減らすと、その場で終わる
+        # Subtracting more than the remainder finishes immediately
         Countdown.Start()
         var Finished:logic = false
         race:
@@ -150,7 +150,7 @@ countdown_system_test_component<public> := class<final_super>(component):
         Results.Check("activation: activated_event starts", if (Countdown.IsRunning[]) then true else false)
         Countdown.Entity.SendDeactivated()
         Results.Check("activation: deactivated_event stops", if (Countdown.IsRunning[]) then false else true)
-        # 数えている途中の起動の合図は、最初から数え直す
+        # An activate signal while counting restarts from the beginning
         Countdown.Entity.SendActivated()
         Countdown.AddSeconds(-3.0)
         Countdown.Entity.SendActivated()
@@ -161,7 +161,7 @@ countdown_system_test_component<public> := class<final_super>(component):
         Countdown := MakeCountdown(3.0, false)
         Countdown.Start()
         Sleep(1.0)
-        # 数えている途中の Start は何もしない
+        # Start while counting does nothing
         Countdown.Start()
         Results.CheckInt("restart: Start while running does nothing", Countdown.GetRemainingWholeSeconds(), 2)
         StartTime := GetSimulationElapsedTime()
@@ -172,7 +172,7 @@ countdown_system_test_component<public> := class<final_super>(component):
             Results.CheckFloat("restart: finished 3 s after Restart", GetSimulationElapsedTime() - StartTime, 3.0, 0.15)
         else:
             Results.Fail("restart: FinishedEvent", "not received within 5 s")
-        # 秒数を渡すと今回だけその長さ（1 秒未満も）
+        # Passing seconds uses that length this time only (under 1 second too)
         HalfStart := GetSimulationElapsedTime()
         Countdown.Restart(?Seconds := option{0.5})
         Results.CheckInt("restart: Restart(0.5) shows 1", Countdown.GetRemainingWholeSeconds(), 1)
@@ -181,7 +181,7 @@ countdown_system_test_component<public> := class<final_super>(component):
             Results.CheckFloat("restart: Restart(0.5) finishes after 0.5 s", GetSimulationElapsedTime() - HalfStart, 0.5, 0.1)
         else:
             Results.Fail("restart: FinishedEvent after Restart(0.5)", "not received within 2 s")
-        # 渡さなければ DurationSeconds に戻る
+        # Without seconds it returns to DurationSeconds
         Countdown.Restart()
         Results.CheckFloat("restart: Restart() uses DurationSeconds again", Countdown.GetRemainingSeconds(), 3.0, 0.05)
         Countdown.Stop()

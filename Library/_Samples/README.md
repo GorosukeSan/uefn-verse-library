@@ -1,34 +1,34 @@
-# _Samples — Library の「置いてすぐ試す」見本
+# _Samples — "place and try" samples of the Library
 
-Library の仕組みを、レベルに置いてすぐ手で触って確かめるための component 置き場。画面や出力ログに日本語で手順を出し、プレイヤーの操作に反応する。公開 API だけで書いているので、使い方の見本も兼ねる。
+A home for components that let you place the Library's mechanisms in a level and try them by hand right away. They show instructions on screen and in the output log and react to player input. Written with the public API only, so they also serve as usage examples.
 
-## _Test との違い
-- `_Test` は自動で進む動作確認。期待どおりかを `[PASS]` / `[FAIL]` でログに出し、人は結果を読むだけ。
-- `_Samples` は人が操作して見る見本。合否は出さず、「今こうなっている」を画面と `Print` で出す。遊びながら仕組みを知る・自分のコードの土台にするためのもの。
-- どちらも配布物に含めるが、利用者のレベルに置くのは確かめるときだけ。
+## Difference from _Test
+- `_Test` is automated verification. It logs whether things behave as expected as `[PASS]` / `[FAIL]`, and a person only reads the result.
+- `_Samples` are samples a person operates and watches. They give no pass / fail; they show "this is what is happening now" on screen and with `Print`. They are for learning the mechanisms while playing and as a base for your own code.
+- Both ship with the distribution, but place them in your level only while checking.
 
-## 使い方
-1. レベル（または区画）に `player_manager_component` を付けた entity を 1 つ置く（ほとんどの見本が前提にする）。
-2. 見たい見本の component を entity に付ける（置き方は各ファイルの先頭のコメント）。
-3. セッションを始める。画面の文字と出力ログ（`[input_sample]` などの頭）を見ながら操作する。
+## Usage
+1. Place one entity with `player_manager_component` in the level (or the scope) (most samples require it).
+2. Attach the component of the sample you want to see to an entity (placement is in the header comment of each file).
+3. Start the session. Operate while watching the on-screen text and the output log (prefixes such as `[input_sample]`).
 
-## 見本の一覧
+## List of samples
 
-| フォルダ | component | 見せるもの | 置き方 |
+| Folder | component | What it shows | Placement |
 |---|---|---|---|
-| `InputSampleExperimentalKit/` | `input_sample_component` | 標準の入力アクション／Mapping（`/Fortnite.com/Input` と `/Verse.org/Input` の全部）を `StepSeconds` ごとに 1 つずつ画面に出し、押すと「検知しました」。logic の入力は押した瞬間（`BeginDetectEvent`）、vector3 の入力（Move・PointerSelect・PointerZoom）は `TriggerActivationEvent`。PointerSelect / PointerZoom の番では `TouchMapping` で Virtual Pointer が出る。左の `button_loud` に同じ入力を `TriggeringInputAction` に入れ、フォーカス無しでも Click が起きることを確かめる | 空の entity に付ける。`StartOnBegin` オフなら起動の合図（`activated_event`）で始まる |
-| `VirtualPointerSampleExperimentalKit/` | `virtual_pointer_sample_component` | Virtual Pointer：`TouchMapping` + `PointerSelect` → `DeprojectViewportToWorld` で光線 → `FindSweepHits` で当たった場所を Print（LUF cm）。`TeleportOnClick` でそこへ移動、`UseOverheadCamera` で真上の `perspective_camera_component` を `camera_director_component.AddCamera` で足す。`ClickedEvent`（人, 世界座標）をほかの component が購読できる | 空の entity に付ける。カメラは @experimental なので既定はオフ |
-| `Platformer2DSampleExperimentalKit/` | `platformer_2d_sample_component` | 横スクロールの 2D の見本（移動・ジャンプ・ゴール）。参加した人ごとに slot の下へ独自キャラクター（CharacterSystem の `character_motor_component`（`AxisLock = Left`）・walk・jump・body_link・カメラ）を作る。左右に動き、ジャンプ（2 段ジャンプ・短く押すと低い）で跳ぶ。ゴールの箱（`GoalOffsetCm` の先、`GoalSizeCm`）に入ると Print してスタートへ戻す。移動の入力 `Character.Move` と正射影のカメラ（CameraExperimentalKit）は @experimental | 床の上の空の entity に付ける（そこがスタート）。前（Forward）に床・足場を並べ、ゴールの先に着地できる場所を作る。区画（または世界）に `player_manager_component` が要る |
-| `AbilitySample/` | `ability_sample_component` | 同じ entity の能力（`ability_component` の派生）と付与の component を開始時に一覧し、`GrantedEvent` / `RevokedEvent` を Print。`ToggleAction`（既定 E / RB、`MenuNavigationMapping`）で自分への Grant / Revoke を切り替える | 能力の component（swing / jetpack / hover / gravity_point）を付けた entity に付ける。付与の component は任意 |
-| `WidgetSample/` | `widget_sample_component`（Hud）、`menu_sample_component`（Menu・Chosen）、`widget_sample_opener_component` | `player_widget_component` の派生の書き方（`CreateWidget(View)` だけを書く）。HUD は名前・経過時間（1 秒ごとに `SendToWidgets`）・最後に受けた `player_event` を出し、`View.ReceivedEvent` を購読して表示を変える。メニューは `Mode = Menu`・`Audience = Chosen`（開いた人にだけ出る）で、`View.AwaitClick` で `button_loud` を待ち `View.Close` で閉じる。opener は C（RT）で押した人にだけ `ShowFor` し、同じ人の HUD へ `SendToPlayer` で知らせる | HUD の entity に `widget_sample_component` + `activate_on_begin_component`。別の entity に `menu_sample_component`。opener は任意の entity に付け、`MenuEntity` にメニューの entity を入れる |
-| `ScopeSample/` | `scope_sample_component` | 区画（`game_scope_component`）：自分がどの区画に属するか、`FindScopedComponent[player_manager_component]` が区画の中・世界・無しのどれになるかを Print。`OtherEntity` から探した結果が同じ manager かも出す | 区画の中と外に置いて比べる |
+| `InputSampleExperimentalKit/` | `input_sample_component` | Shows the standard input actions / Mappings (all of `/Fortnite.com/Input` and `/Verse.org/Input`) on screen one at a time every `StepSeconds`; pressing shows "detected". logic inputs at the moment of the press (`BeginDetectEvent`), vector3 inputs (Move, PointerSelect, PointerZoom) with `TriggerActivationEvent`. In the PointerSelect / PointerZoom steps, `TouchMapping` shows the Virtual Pointer. The `button_loud` at the left gets the same input as `TriggeringInputAction`, to check that a Click happens even without focus | Attach to an empty entity. With `StartOnBegin` off, starts on the activate signal (`activated_event`) |
+| `VirtualPointerSampleExperimentalKit/` | `virtual_pointer_sample_component` | Virtual Pointer: `TouchMapping` + `PointerSelect` -> a ray with `DeprojectViewportToWorld` -> Prints the hit location found with `FindSweepHits` (LUF cm). `TeleportOnClick` teleports there; `UseOverheadCamera` adds a `perspective_camera_component` straight above with `camera_director_component.AddCamera`. Other components can subscribe to `ClickedEvent` (player, world position) | Attach to an empty entity. The camera is @experimental, so it is off by default |
+| `Platformer2DSampleExperimentalKit/` | `platformer_2d_sample_component` | Side-scrolling 2D sample (movement, jumping, goal). Creates a custom character (CharacterSystem `character_motor_component` (`AxisLock = Left`), walk, jump, body_link, camera) under the slot of every player who joins. Move left / right and jump (double jump; a short press jumps lower). Entering the goal box (at `GoalOffsetCm`, size `GoalSizeCm`) Prints and returns you to the start. The move input `Character.Move` and the orthographic camera (CameraExperimentalKit) are @experimental | Attach to an empty entity above a floor (that is the start). Arrange floors and platforms forward, and make a landable place beyond the goal. Needs `player_manager_component` in the scope (or the world) |
+| `AbilitySample/` | `ability_sample_component` | Lists the abilities (`ability_component` subclasses) and grant components on the same entity at start and Prints `GrantedEvent` / `RevokedEvent`. `ToggleAction` (default E / RB, `MenuNavigationMapping`) toggles your own Grant / Revoke | Attach to an entity with ability components (swing / jetpack / hover / gravity_point). Grant components are optional |
+| `WidgetSample/` | `widget_sample_component` (Hud), `menu_sample_component` (Menu, Chosen), `widget_sample_opener_component` | How to write a `player_widget_component` subclass (only `CreateWidget(View)` is written). The HUD shows the name, the elapsed time (`SendToWidgets` every second) and the last `player_event` received, subscribing to `View.ReceivedEvent` to change the display. The menu is `Mode = Menu`, `Audience = Chosen` (shown only to the opener), awaits a `button_loud` with `View.AwaitClick` and closes with `View.Close`. The opener `ShowFor`s only the player who pressed C (RT) and notifies the same player's HUD with `SendToPlayer` | `widget_sample_component` + `activate_on_begin_component` on the HUD entity. `menu_sample_component` on another entity. Attach the opener to any entity and set the menu entity in `MenuEntity` |
+| `ScopeSample/` | `scope_sample_component` | Scopes (`game_scope_component`): Prints which scope it belongs to and whether `FindScopedComponent[player_manager_component]` finds one inside the scope, in the world, or nothing. Also tells whether the search from `OtherEntity` finds the same manager | Place inside and outside a scope and compare |
 
-## 書き方（見本を足すとき）
-- `@experimental` の API を使う見本は、フォルダ名の最後を `ExperimentalKit` にする（例 `InputSampleExperimentalKit`）。VerseShare は、このフォルダを「実験的を含む」をオンにしたプロジェクトにだけ配る。使うと島を公開できない。
-- 1 見本 1 フォルダ。`_Samples/<名前>Sample/<名前>Sample.verse` に `<名前>_sample_component` を置く（フォルダを本体の System と同じ名前にすると `using` が曖昧になる）。
-- 先頭のコメントに `役割` / `置き方` / `試し方` を書く。プレイヤーに見せる文字は日本語。
-- 1 人ずつの処理は `player_view_set`（PlayerSystem）か `player_widget_component`（WidgetSystem）を使う（基底を継承しない）。
-- 開始の仕方は `@editable StartOnBegin`（既定オン）か、起動の合図（`activated_event`）にそろえる。`player_widget_component` の派生は起動の合図だけなので `activate_on_begin_component` を一緒に置く。
-- 止まるとき（`OnEndSimulation`・停止の合図）は、足した Mapping・画面・カメラ・購読を必ず外す。キャラクター操作の Mapping は外さない。
-- `<suspends>` の呼び出し（`X.Await()` など）を `if (...)` の条件に書かない（先に束縛する）。変数名に `Log` を使わない。
-- 公開 API（`<public>`）だけを使う。内部が要るなら Library 側に公開 API を足す。
+## Conventions (when adding a sample)
+- A sample that uses an `@experimental` API ends its folder name with `ExperimentalKit` (e.g. `InputSampleExperimentalKit`). VerseShare distributes such folders only to projects with "includes experimental" on. Using them prevents publishing the island.
+- One sample per folder. Put `<name>_sample_component` in `_Samples/<Name>Sample/<Name>Sample.verse` (naming the folder the same as the System itself makes `using` ambiguous).
+- Write `Role` / `Placement` / `Try it` in the header comment. Text shown to players is human-readable.
+- Per-player work uses `player_view_set` (PlayerSystem) or `player_widget_component` (WidgetSystem) (no base class inheritance).
+- Starting follows `@editable StartOnBegin` (default on) or the activate signal (`activated_event`). `player_widget_component` subclasses only use the activate signal, so place `activate_on_begin_component` alongside.
+- On stop (`OnEndSimulation`, the deactivate signal), always remove the Mappings, screens, cameras and subscriptions you added. Never remove character-control Mappings.
+- Do not write `<suspends>` calls (`X.Await()` etc.) in an `if (...)` condition (bind them first). Do not use `Log` as a variable name.
+- Use the public API (`<public>`) only. If you need internals, add a public API on the Library side.

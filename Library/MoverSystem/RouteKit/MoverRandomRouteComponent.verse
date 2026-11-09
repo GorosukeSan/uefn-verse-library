@@ -5,26 +5,26 @@ using { /Verse.org/Random }
 using { MoverSystem }
 using { MoverSystem.TooltipKit }
 
-# 役割：動き出したときの位置（Home）から RadiusCm 以内のランダムな点を、次々に行き先にする道のり（終わらない）。行き先は今の位置から MinStepCm 以上先を選び（何回か選んでもだめならそのまま）、Home より MaxDescentCm 以上は下にしない
-# 置き方：エディターで、動かしたい entity（mover_component と同じ entity）に付ける
-# 同じ entity：mover_component（ぶつかって跳ね返したいなら Motion = Physics）
+# Role: a route (never ends) whose targets are random points within RadiusCm of the position where moving started (Home). Targets are chosen at least MinStepCm away from the current position (kept as is when several tries fail) and never more than MaxDescentCm below Home
+# Placement: attach in the editor to the entity to move (the same entity as mover_component)
+# Same entity: mover_component (Motion = Physics to bounce on hits)
 mover_random_route_component<public> := class<final_super>(mover_route_component):
 
-    # 動き出した位置から、行き先を選ぶ半径（センチメートル）。既定 1500
+    # Radius (centimeters) around the start position within which targets are chosen. Default 1500
     @editable_number(float):
         ToolTip := MoverRandomRadiusToolTip
         Categories := array{MoverCategory, MoverRandomCategory}
         MinValue := option{100.0}
         MaxValue := option{50000.0}
     RadiusCm<public>:float = 1500.0
-    # 次の行き先を、今の位置から少なくともこれだけ先にする（センチメートル）。既定 400
+    # The next target is at least this far from the current position (centimeters). Default 400
     @editable_number(float):
         ToolTip := MoverRandomMinStepToolTip
         Categories := array{MoverCategory, MoverRandomCategory}
         MinValue := option{0.0}
         MaxValue := option{10000.0}
     MinStepCm<public>:float = 400.0
-    # 動き出した位置から下へ行ける深さ（センチメートル）。これより下の行き先はこの高さに上げる。0 なら下へは行かない。既定 300
+    # How far below the start position it may go (centimeters). Targets lower than this are lifted to this height. 0 never goes below. Default 300
     @editable_number(float):
         ToolTip := MoverRandomMaxDescentToolTip
         Categories := array{MoverCategory, MoverRandomCategory}
@@ -36,7 +36,7 @@ mover_random_route_component<public> := class<final_super>(mover_route_component
 
     var Picked<private>:int = 0
 
-    # 選んだ回数（mover_target.Index）を 0 に戻す（mover_component の Restart が呼ぶ）
+    # Reset the pick count (mover_target.Index) to 0 (called by mover_component's Restart)
     Reset<override>():void =
         set Picked = 0
 

@@ -6,228 +6,247 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { CharacterSystem.TooltipKit }
 
-# キャラクターに起きたこと（character_motor_component.ActionEvent で届く。EventKit の character_action_trigger_component が見る）
+# Something that happened to the character (arrives on character_motor_component.ActionEvent. EventKit's character_action_trigger_component watches it)
 character_action<public> := enum:
-    # 地面からジャンプした（jump の部品が知らせる）
+    # Jumped from the ground (reported by the jump component)
     Jumped
-    # 空中でジャンプした（2 段目以降。jump の部品が知らせる）
+    # Jumped in the air (2nd jump onward. Reported by the jump component)
     AirJumped
-    # ダッシュした（dash の部品が知らせる）
+    # Kicked off a wall in the air (reported by the jump component through the WallKick of CellKit's action cell)
+    WallKicked
+    # Dashed (reported by the dash component)
     Dashed
-    # 空中から地面に降りた
+    # Came down from the air onto the ground
     Landed
-    # 地面から離れた（ジャンプ・落下）
+    # Left the ground (jump or fall)
     LeftGround
-    # 水平に動き始めた（MovingSpeedCmPerSecond を超えた）
+    # Started moving horizontally (exceeded MovingSpeedCmPerSecond)
     StartedMoving
-    # 水平に止まった（MovingSpeedCmPerSecond を下回った）
+    # Stopped horizontally (dropped below MovingSpeedCmPerSecond)
     StoppedMoving
-    # 壁・天井にぶつかった（動きの向きが変わるほど当たった）
+    # Hit a wall or ceiling (hard enough to change the direction of motion)
     HitWall
+    # Clung to a wall or ceiling (reported by ClingKit's character_cling_component. Not sent when moving from wall to ceiling while still clinging)
+    ClingStart
+    # Left a wall or ceiling (jumped, released, surface gone, grant expired, input stopped, or landed. Reported by the ClingKit component)
+    ClingEnd
 
-# キャラクターの続いている状態（ConditionKit の character_motor_condition_component が見る）
+# Kind of surface being clung to (decided by ClingKit's character_cling_component, remembered by the body)
+character_cling_surface<public> := enum:
+    # Wall (a non-walkable surface that does not face steeply downward). Crawl up / down and sideways
+    Wall
+    # Ceiling (a downward-facing surface). Crawl horizontally
+    Ceiling
+
+# Continuous state of the character (watched by ConditionKit's character_motor_condition_component)
 character_motor_state<public> := enum:
-    # 地面にいる
+    # On the ground
     Grounded
-    # 空中にいる
+    # In the air
     Airborne
-    # 空中で上がっている
+    # In the air and rising
     Rising
-    # 空中で下がっている
+    # In the air and falling
     Falling
-    # 水平に動いている
+    # Moving horizontally
     Moving
-    # 水平に止まっている
+    # Horizontally still
     Still
+    # Clinging to a wall or ceiling (ClingKit. While clinging the body is not grounded, so it is also Airborne)
+    Clinging
 
-# 動ける向きを平面に縛る（横スクロールの 2D など）
+# Restrict movement to a plane (side-scrolling 2D, etc.)
 character_axis_lock<public> := enum:
-    # 縛らない（3D）
+    # No restriction (3D)
     None
-    # 左右（Left）を縛る。前後（Forward）と上下だけで動く（横スクロール）
+    # Lock Left. Move only along Forward and up / down (side-scroller)
     Left
-    # 前後（Forward）を縛る。左右（Left）と上下だけで動く
+    # Lock Forward. Move only along Left and up / down
     Forward
 
-# 左右の入力でどうするか（MoveKit の character_walk_component が持つ。BodyKit の character_face_movement_component が読む）
-#   値を足すときに直す場所（どれも case に _ を書いていないので、直し忘れるとコンパイルが通らない）：
-#     この下の SideInputTurnsBody（walk が使う）、BodyKit の character_face_movement_component.OnPostMove（体をどこへ向けるか）、
-#     MCPSystem の CharacterKit（SideStyleName / SideStyleTitle と、名前から探す一覧）、TooltipKit の WalkSideStyleToolTip・README
-#   体に重ねた変更（character_modifier.SideStyle）がいくつもあるときは、最後に足したものが勝つ（決まり。character_motor_component.GetSideStyleOverride）
+# What to do with side input (held by MoveKit's character_walk_component. Read by BodyKit's character_face_movement_component)
+#   Places to update when adding a value (none of the cases uses _, so forgetting one fails to compile):
+#     SideInputTurnsBody below (used by walk), BodyKit's character_face_movement_component.OnPostMove (where to face the body),
+#     MCPSystem's CharacterKit (SideStyleName / SideStyleTitle and the lookup-by-name list), TooltipKit's WalkSideStyleToolTip, README
+#   When several modifiers on the body (character_modifier.SideStyle) are stacked, the last one added wins (by rule. character_motor_component.GetSideStyleOverride)
 character_side_style<public> := enum:
-    # 左右へ動き、体は動く向きへ回る（既定）
+    # Move sideways; the body turns toward the movement direction (default)
     Turn
-    # 左右へ動くが、体は歩く向きの前（Space = View なら視点の向き）を向いたまま（カニ歩き）
+    # Move sideways, but the body keeps facing the walk's forward (the view direction when Space = View) (crab walk)
     Strafe
-    # 左右では動かず、その場で体を回す。前後は体の向きへ動く（walk の Space は使わない）
+    # Do not move sideways; turn the body in place. Forward / back move along the body's facing (walk's Space is not used)
     TankTurn
 
-# Style のとき、左右の入力が体を回すだけ（左右へは動かず、前後は体の向きへ動く）なら true（walk が使う）
+# True if, for Style, side input only turns the body (no sideways movement; forward / back move along the body's facing) (used by walk)
 SideInputTurnsBody<internal>(Style:character_side_style)<computes>:logic =
     case (Style):
         character_side_style.Turn => false
         character_side_style.Strafe => false
         character_side_style.TankTurn => true
 
-# プレイヤーが独自キャラクターを動かしているあいだ、その人（agent）に付くタグ。character_motor_component が付け外しする
+# Tag attached to the player (agent) while they are driving a custom character. character_motor_component adds and removes it
 custom_character_tag<public> := class(player_state_tag):
 
-# 体の動きに重ねる変更（バフ・能力の付与）。character_motor_component.AddModifier で足し、返った cancelable の Cancel で外す
-#   いくつ重ねてもよい。倍率は掛け合わせ、回数は足し合わせ、ダッシュの許可は 1 つでもあれば許可、左右の入力のしかた（SideStyle）は最後に足したものが勝つ。全部外すと元どおり（各部品の @editable の値）に戻る
-#   BuffKit の character_buff_component / character_move_grant_component がこれを使う（自分で作る部品からも使える）
+# A modifier stacked onto the body's movement (buff / ability grant). Add with character_motor_component.AddModifier, remove with Cancel on the returned cancelable
+#   Any number can be stacked. Multipliers multiply, counts add, dash / cling permission is granted if at least one grants it, the side-input style (SideStyle) is the last one added. Removing all of them restores the originals (the @editable values of each component)
+#   BuffKit's character_buff_component / character_move_grant_component use this (your own components can use it too)
 character_modifier<public> := struct:
-    # 歩く・走る速さの上限に掛ける倍率（walk の MaxSpeedCmPerSecond）。既定 1
+    # Multiplier on the walk / run speed cap (walk's MaxSpeedCmPerSecond). Default 1
     SpeedMultiplier<public>:float = 1.0
-    # 跳ぶ瞬間の上向きの速さに掛ける倍率（jump の JumpSpeedCmPerSecond。高さはおよそ 2 乗で変わる）。既定 1
+    # Multiplier on the upward speed at the moment of jumping (jump's JumpSpeedCmPerSecond. Height changes roughly with the square). Default 1
     JumpMultiplier<public>:float = 1.0
-    # 重力に掛ける倍率（0.5 でふんわり落ちる）。SetGravityScale とは別に掛かる。既定 1
+    # Multiplier on gravity (0.5 for a floaty fall). Applied separately from SetGravityScale. Default 1
     GravityMultiplier<public>:float = 1.0
-    # 空中ジャンプの回数に足す数（jump の AirJumps）。既定 0
+    # Number added to the air jump count (jump's AirJumps). Default 0
     ExtraAirJumps<public>:int = 0
-    # true なら、dash の RequiresGrant がオンでもダッシュできる。既定 false
+    # If true, dashing is allowed even when dash's RequiresGrant is on. Default false
     GrantsDash<public>:logic = false
-    # 重ねているあいだ、walk の左右の入力のしかたをこれにする（walk の基本の SideStyle より優先。いくつもあれば最後に足したもの）。false なら変えない。既定 false
+    # If true, ClingKit's character_cling_component (with RequiresGrant on) can cling to walls and ceilings. Default false
+    GrantsCling<public>:logic = false
+    # While stacked, sets walk's side-input style to this (takes precedence over walk's base SideStyle. With several, the last one added). false leaves it unchanged. Default false
     SideStyle<public>:?character_side_style = false
 
-# 役割：独自キャラクターの体と物理。Fortnite のキャラクターの動きを使わず、この entity を Verse で動かす（キネマティック：速度を自分で積分し、カプセルを掃引して当たりを決める）
-#   毎フレーム（TickEvents.PrePhysics）：PreMoveEvent（同じ entity の動きの部品が速度を決める）→ 重力 → 掃引して当たったら面に沿って滑る（最大 4 回）→ 地面を下へ探して接地を決める → PostMoveEvent
-#   重力：GravityCmPerSecondSquared × SetGravityScale の倍率 × 重ねた変更の GravityMultiplier × このフレームだけの倍率（ScaleGravityThisFrame）× 下がっているときは FallGravityMultiplier。SetGravityScale(0) なら必ず 0（止めておける）
-#   当たったら：面の法線の向きに SkinCm 離れたところで止まり（掃引の向きに SkinCm 戻すのではない）、残りを面に沿わせる
-#     床・坂（歩ける面）と天井：面に沿わせる（着地・頭をぶつけると上下の動きが止まる）
-#     壁（歩けない面で、天井でないもの）：上下の動きは変えず、水平の壁に向かう分だけを消す（壁沿いに落ちる・跳ぶ動きを壁が止めない）
-#     掃引の始めから触れている当たり（距離 0。めり込みかけ）：返る法線を当てにせず（掃引の逆向きになり、落ちていれば床に見える）、押し出してから掃引し直す。押し出せなければ、そのフレームはその物を無視して動く
-#   当たったときの補正（掃引で当たるたびに、面に沿って滑る前に試す）：
-#     角の補正：上がっている途中で頭が天井（下向きの面）の角にかすっただけなら、横へ CornerCorrectionCm までずらして上がり続ける（速度は変えない）
-#     段の補正：地面にいて水平に動いているときに、足元が段の角に当たっただけ（StepUpCm 以下）なら、段の上へ乗り上げる（階段）。空中で下がっているときは LedgeAssistCm 以下の縁だけ（既定 0 で使わない）
-#   接地：地面にいた体は、地面に沿って動いているあいだ（ジャンプ・打ち上げで離れていないあいだ）GroundSnapCm まで下を探して吸い付き、速度を地面に沿わせる（坂を上り下りしても浮かない）
-#   体の形は、この entity の位置を足元（底の中心）にした縦のカプセル（直径 RadiusCm × 2、高さ HeightCm）。当たりは FindSweepHits（自分の entity とその子孫、持ち主の Fortnite キャラクターには当たらない）
-#   動き方（歩く・ジャンプ・ダッシュ・向き・Fortnite キャラクターを合わせる）は、同じ entity に置く MoveKit / BodyKit の部品で足す（この component は入力を知らない）。自分で部品を作るときは PreMoveEvent を購読して AddVelocity / SetVelocity を呼ぶ
-# 置き方：エディターで、独自キャラクターの entity（見た目のメッシュの親）に付ける。プレイヤーごとに動かすなら、この entity をプレハブにして LoadoutSystem の loadout_component の Prefab に入れる（持ち主が決まる）
-# 同じ entity：MoveKit の部品（character_walk_component・character_jump_component など）、BodyKit の部品（character_owner_stasis_component・character_face_movement_component）
-# いつ：シミュレーション開始から動く。SpawnAtOwner なら、開始の 1 フレーム後に持ち主の Fortnite キャラクターの位置へ移る（子の見た目が付いてくるように）。ResetOnRoundStart なら、Fortnite のラウンドが始まるたびに速度を消して持ち主の位置へ移る（fort_round_manager）
-# 知らせ：ActionEvent（character_action）、PreMoveEvent / PostMoveEvent（前のフレームからの秒数）、LandedEvent（着地した瞬間の下向きの速さ）
-# タグ：持ち主に custom_character_tag を付ける（動かしているあいだ）
-# 外から：Entity.FindCharacterMotorFor[Agent] で、その人が動かしている体を探せる。GetVelocity / SetVelocity / AddVelocity / IsGrounded / IsInState / GetGroundNormal / GetGroundEntity / GetGroundVelocity / GetInheritedVelocity / SetGravityScale / ScaleGravityThisFrame / GetLastLandingSpeed / TeleportTo / ReportAction / FindOwner
-#   変更（バフ・能力の付与）：AddModifier（character_modifier を重ね、返った cancelable で外す）、GetSpeedMultiplier / GetJumpMultiplier / GetGravityMultiplier / GetExtraAirJumps / IsDashGranted / GetSideStyleOverride（walk / jump / dash が読む）
-# 前提・注意：登れる段は StepUpCm まで（それより高い段は坂にする）。体だけでは動く床に乗っても一緒には動かない（SurfaceKit の character_ride_component を足すと運ばれる。立っている物は接地の掃引で当たった entity＝GetGroundEntity）
-#   地面にいるとき、地面から離れる向きの速さが GroundStickSpeedCmPerSecond（200 cm/s）以下の上向きの速度は、地面に沿わせて消す（それより速いジャンプ・打ち上げで離れる）
-# ⚠ 未検証：FindSweepHits にカプセルを渡したときの当たり・法線・距離・ContactPosition（角・段の補正が使う）が、説明どおりに返るか（UEFN 43.00 の実機）
+# Role: the body and physics of a custom character. Does not use the Fortnite character's movement; moves this entity from Verse (kinematic: integrates velocity itself and sweeps a capsule to resolve collisions)
+#   Every frame (TickEvents.PrePhysics): PreMoveEvent (movement components on the same entity set the velocity) -> gravity -> sweep and slide along surfaces hit (up to 4 times) -> probe downward for ground and decide grounding -> PostMoveEvent
+#   Gravity: GravityCmPerSecondSquared x the SetGravityScale factor x GravityMultiplier of stacked modifiers x this frame's factor (ScaleGravityThisFrame) x FallGravityMultiplier while falling. SetGravityScale(0) always gives 0 (can hold the body still)
+#   On hit: stop SkinCm away from the surface along its normal (not SkinCm back along the sweep direction), then slide the rest along the surface
+#     Floors / slopes (walkable surfaces) and ceilings: slide along the surface (landing or bumping the head stops vertical motion)
+#     Walls (non-walkable surfaces that are not ceilings): vertical motion is kept; only the horizontal part heading into the wall is removed (a wall does not stop falling or jumping along it)
+#     Hits touching from the start of the sweep (distance 0, about to penetrate): do not trust the returned normal (it is the reverse of the sweep, which looks like a floor when falling); push out and sweep again. If pushing out fails, ignore that object for this frame
+#   Corrections on hit (tried on every sweep hit, before sliding along the surface):
+#     Corner correction: if the head only grazed the corner of a ceiling (downward-facing surface) while rising, shift sideways by up to CornerCorrectionCm and keep rising (velocity unchanged)
+#     Step correction: if, grounded and moving horizontally, the feet only hit the corner of a step (StepUpCm or less), climb onto the step (stairs). While falling in the air, only ledges of LedgeAssistCm or less (default 0, unused)
+#   Grounding: a body that was grounded, while it moves along the ground (not leaving by jump or launch), probes down by GroundSnapCm, snaps to the ground and aligns velocity with it (no floating when walking up or down slopes)
+#   The body shape is a vertical capsule whose feet (bottom center) are at this entity's position (diameter RadiusCm x 2, height HeightCm). Collision uses FindSweepHits (ignores its own entity and descendants, and the owner's Fortnite character)
+#   Ways of moving (walk, jump, dash, facing, syncing the Fortnite character) are added with MoveKit / BodyKit components on the same entity (this component knows nothing about input). To write your own component, subscribe to PreMoveEvent and call AddVelocity / SetVelocity
+# Placement: in the editor, attach to the custom character's entity (the parent of the visual mesh). To drive one per player, make this entity a prefab and put it in the Prefab of LoadoutSystem's loadout_component (which assigns the owner)
+# Same entity: MoveKit components (character_walk_component, character_jump_component, ...), BodyKit components (character_owner_stasis_component, character_face_movement_component)
+# When: runs from the start of simulation. With SpawnAtOwner, moves to the owner's Fortnite character one frame after start (so the visual children follow). With ResetOnRoundStart, clears velocity and moves to the owner whenever a Fortnite round starts (fort_round_manager)
+# Notifications: ActionEvent (character_action), PreMoveEvent / PostMoveEvent (seconds since the previous frame), LandedEvent (downward speed at the moment of landing)
+# Tags: attaches custom_character_tag to the owner (while driving)
+# From outside: Entity.FindCharacterMotorFor[Agent] finds the body a player is driving. GetVelocity / SetVelocity / AddVelocity / IsGrounded / IsInState / GetGroundNormal / GetGroundEntity / GetGroundVelocity / GetInheritedVelocity / SetGravityScale / ScaleGravityThisFrame / GetLastLandingSpeed / TeleportTo / ReportAction / FindOwner
+#   Modifiers (buffs / ability grants): AddModifier (stack a character_modifier, remove with the returned cancelable), GetSpeedMultiplier / GetJumpMultiplier / GetGravityMultiplier / GetExtraAirJumps / IsDashGranted / CanCling / GetSideStyleOverride (read by walk / jump / dash / cling)
+#   Cling (decided by ClingKit's character_cling_component): IsClinging / GetClingSurface / GetClingNormal. While clinging IsMoveOverridden succeeds (walk leaves the velocity alone) and no ground probe is done while rising (starting to climb from the foot of a wall does not snap to the floor)
+#     jump checks cling first (on a wall it jumps with GetClingJumpVelocity; on a ceiling it only lets go. RequestClingRelease asks cling to release)
+# Requirements / notes: steps up to StepUpCm can be climbed (make taller steps into slopes). The body alone does not move with a moving floor (add SurfaceKit's character_ride_component to be carried. The object stood on is the entity hit by the ground sweep = GetGroundEntity)
+#   While grounded, upward velocity away from the ground of GroundStickSpeedCmPerSecond (200 cm/s) or less is removed by aligning with the ground (faster jumps / launches do leave)
+# ⚠ Unverified: whether FindSweepHits with a capsule returns hits, normals, distances and ContactPosition (used by corner / step correction) as described (UEFN 43.00 in the editor)
 character_motor_component<public> := class<final_super>(component):
 
-    # カプセルの半径（cm）。既定 40
+    # Capsule radius (cm). Default 40
     @editable_number(float):
         ToolTip := MotorRadiusToolTip
         Categories := array{CharacterMotorCategory}
         MinValue := option{5.0}
         MaxValue := option{1000.0}
     RadiusCm<public>:float = 40.0
-    # カプセルの高さ（cm。足元から頭まで）。既定 180
+    # Capsule height (cm, feet to head). Default 180
     @editable_number(float):
         ToolTip := MotorHeightToolTip
         Categories := array{CharacterMotorCategory}
         MinValue := option{10.0}
         MaxValue := option{2000.0}
     HeightCm<public>:float = 180.0
-    # 重力の加速度（cm/s²）。既定 1960
+    # Gravitational acceleration (cm/s^2). Default 1960
     @editable_number(float):
         ToolTip := MotorGravityToolTip
         Categories := array{CharacterMotorCategory}
         MinValue := option{0.0}
         MaxValue := option{20000.0}
     GravityCmPerSecondSquared<public>:float = 1960.0
-    # 落ちる速さの上限（cm/s）。既定 4000
+    # Maximum fall speed (cm/s). Default 4000
     @editable_number(float):
         ToolTip := MotorMaxFallToolTip
         Categories := array{CharacterMotorCategory}
         MinValue := option{0.0}
         MaxValue := option{50000.0}
     MaxFallSpeedCmPerSecond<public>:float = 4000.0
-    # 下がっているとき（上下の速さが負）の重力に掛ける倍率。上がるときより速く落ちて、ふわっとしない。1 なら上がるときと同じ。既定 1.6
-    #   ジャンプしたときだけでなく、縁から歩いて落ちたとき・打ち上げられて落ちるときも掛かる（SetGravityScale(0) なら 0 のまま）
+    # Multiplier on gravity while falling (vertical speed negative). Falls faster than it rises, less floaty. 1 means the same as rising. Default 1.6
+    #   Applies not only after a jump but also when walking off an edge or falling after a launch (stays 0 with SetGravityScale(0))
     @editable_number(float):
         ToolTip := MotorFallGravityToolTip
         Categories := array{CharacterMotorCategory}
         MinValue := option{0.1}
         MaxValue := option{10.0}
     FallGravityMultiplier<public>:float = 1.6
-    # 立っていられる坂の角度の上限（度）。これより急な面は壁として滑る。既定 50
+    # Maximum slope angle you can stand on (degrees). Steeper surfaces slide as walls. Default 50
     @editable_number(float):
         ToolTip := MotorMaxSlopeToolTip
         Categories := array{CharacterMotorCategory}
         MinValue := option{0.0}
         MaxValue := option{89.0}
     MaxSlopeDegrees<public>:float = 50.0
-    # 地面を探す距離（cm）。足元からこの距離までに地面があれば吸い付く。既定 10
+    # Ground probe distance (cm). Snaps if ground is within this distance below the feet. Default 10
     @editable_number(float):
         ToolTip := MotorGroundProbeToolTip
         Categories := array{CharacterMotorCategory}
         MinValue := option{0.0}
         MaxValue := option{200.0}
     GroundProbeCm<public>:float = 10.0
-    # 地面にいた体が、地面に沿って動いているとき（ジャンプで離れていないとき）に下へ探す距離（cm）。坂を下る・低い段を降りるときに浮かずに吸い付く。GroundProbeCm より小さければ GroundProbeCm。0 で使わない。既定 20
+    # Downward probe distance (cm) for a body that was grounded and is moving along the ground (not leaving by a jump). Snaps without floating when going down slopes or low steps. GroundProbeCm if smaller than it. 0 disables. Default 20
     @editable_number(float):
         ToolTip := MotorGroundSnapToolTip
         Categories := array{CharacterMotorCategory}
         MinValue := option{0.0}
         MaxValue := option{200.0}
     GroundSnapCm<public>:float = 20.0
-    # 地面にいて水平に動いているときに、足元が段の角に当たったら乗り上げる高さの上限（cm）。階段で使う。0 で使わない。既定 15
-    #   空中では使わない（壁沿いに落ちる・跳ぶときに壁へ乗り上げようとしない）。空中の縁の補助は LedgeAssistCm
+    # Maximum height (cm) of a step corner the feet may hit and climb while grounded and moving horizontally. For stairs. 0 disables. Default 15
+    #   Not used in the air (no climbing onto walls while falling or jumping along them). The air ledge assist is LedgeAssistCm
     @editable_number(float):
         ToolTip := MotorStepUpToolTip
         Categories := array{CharacterMotorCategory}
         MinValue := option{0.0}
         MaxValue := option{200.0}
     StepUpCm<public>:float = 15.0
-    # 空中で下がっているときに、足元が縁の角に当たったら乗り上げる高さの上限（cm。ジャンプが少し届かなかった縁の補助）。0 で使わない。既定 0
+    # Maximum height (cm) of a ledge corner the feet may hit and climb while falling in the air (assist for a jump that fell slightly short). 0 disables. Default 0
     @editable_number(float):
         ToolTip := MotorLedgeAssistToolTip
         Categories := array{CharacterMotorCategory}
         MinValue := option{0.0}
         MaxValue := option{200.0}
     LedgeAssistCm<public>:float = 0.0
-    # 上がっている途中で頭が天井の角にかすったとき、横へずらして上がり続ける距離の上限（cm）。0 で使わない。既定 12
+    # Maximum sideways shift (cm) to keep rising when the head grazes a ceiling corner. 0 disables. Default 12
     @editable_number(float):
         ToolTip := MotorCornerCorrectionToolTip
         Categories := array{CharacterMotorCategory}
         MinValue := option{0.0}
         MaxValue := option{100.0}
     CornerCorrectionCm<public>:float = 12.0
-    # 水平の速さがこれを超えたら「動いている」（StartedMoving / Moving）。既定 10
+    # "Moving" (StartedMoving / Moving) when the horizontal speed exceeds this. Default 10
     @editable_number(float):
         ToolTip := MotorMovingSpeedToolTip
         Categories := array{CharacterMotorCategory}
         MinValue := option{0.0}
         MaxValue := option{1000.0}
     MovingSpeedCmPerSecond<public>:float = 10.0
-    # 動ける向きを平面に縛る。Left なら左右の位置を開始時（か TeleportTo した位置）のまま保つ（横スクロール）。既定 None
+    # Restrict movement to a plane. Left keeps the Left position where it was at start (or at TeleportTo) (side-scroller). Default None
     @editable:
         ToolTip := MotorAxisLockToolTip
         Categories := array{CharacterMotorCategory}
     AxisLock<public>:character_axis_lock = character_axis_lock.None
-    # オンなら、開始時に持ち主の Fortnite キャラクターの位置へ移る。既定オン
+    # When on, moves to the owner's Fortnite character at start. Default on
     @editable:
         ToolTip := MotorSpawnAtOwnerToolTip
         Categories := array{CharacterMotorCategory}
     SpawnAtOwner<public>:logic = true
-    # オンなら、Fortnite のラウンドが始まるたびに、速度を消して持ち主の Fortnite キャラクターの位置へ移る（ラウンドごとにスタートからやり直す）。既定オン
+    # When on, clears velocity and moves to the owner's Fortnite character whenever a Fortnite round starts (restart from the start each round). Default on
     @editable:
         ToolTip := MotorResetOnRoundToolTip
         Categories := array{CharacterMotorCategory}
     ResetOnRoundStart<public>:logic = true
 
-    # 面から離しておく距離（cm）。当たった面にめり込まないように少し手前で止める
+    # Distance kept from surfaces (cm). Stops slightly short so the body never penetrates the surface hit
     SkinCm<private>:float = 2.0
     MaxSlideIterations<private>:int = 4
-    # 地面にいるとき、地面から離れる向きの速さがこれ以下なら地面に沿って動いているとみなす（cm/s）。坂を上り下りする・加速するくらいの揺れは吸収し、ジャンプ・打ち上げ（これより速い）では離れる
+    # While grounded, if the speed away from the ground is at most this (cm/s), the body counts as moving along the ground. Absorbs the wobble of slopes and acceleration; jumps and launches (faster) do leave
     GroundStickSpeedCmPerSecond<private>:float = 200.0
-    # 角の補正で、ずれの向きが分からない（平らな天井に当たった）ときに試す段数（CornerCorrectionCm を等分して近い順に）
+    # Number of steps tried by corner correction when the shift direction is unknown (hit a flat ceiling) (CornerCorrectionCm divided equally, nearest first)
     CornerCorrectionSteps<private>:int = 3
-    # 当たりの距離がこれ（cm）以下なら「掃引の始めから触れている（めり込みかけ）」とみなす。このとき返る法線は当てにならない
+    # A hit at this distance (cm) or less counts as "touching from the start of the sweep (about to penetrate)". Its normal cannot be trusted
     StartHitCm<private>:float = 0.01
-    # 面の法線の上下の成分がこれより小さい（下を向いた）面は天井。歩けない面でそれ以外は壁（上下の動きを減らさない）
+    # A surface whose normal's vertical component is below this (facing down) is a ceiling. Other non-walkable surfaces are walls (do not reduce vertical motion)
     CeilingNormalUp<private>:float = -0.3
-    # 壁に触れた向きを、めり込みからの押し出しに使うために覚えておくフレーム数
+    # Number of frames to remember the direction of the last wall touched, for pushing out of penetration
     WallMemoryFrames<private>:int = 30
 
     PreMoveEventInternal<private><final>:event(float) = event(float){}
@@ -235,46 +254,46 @@ character_motor_component<public> := class<final_super>(component):
     ActionEventInternal<private><final>:event(character_action) = event(character_action){}
     LandedEventInternal<private><final>:event(float) = event(float){}
 
-    # 毎フレーム、動かす前に（前のフレームからの秒数）で届く。動きの部品はここで AddVelocity / SetVelocity する
+    # Arrives every frame before moving, with the seconds since the previous frame. Movement components call AddVelocity / SetVelocity here
     PreMoveEvent<public><final>:listenable(float) = MakeProxyListenable(PreMoveEventInternal)
 
-    # 毎フレーム、動かしたあとに（前のフレームからの秒数）で届く。位置を読んで合わせる部品（Fortnite キャラクター・カメラ）はここで動かす
+    # Arrives every frame after moving, with the seconds since the previous frame. Components that read the position and follow it (Fortnite character, camera) move here
     PostMoveEvent<public><final>:listenable(float) = MakeProxyListenable(PostMoveEventInternal)
 
-    # 何かが起きるたびに届く（着地・ジャンプ・ダッシュ・動き始めなど）
+    # Arrives whenever something happens (landed, jumped, dashed, started moving, ...)
     ActionEvent<public><final>:listenable(character_action) = MakeProxyListenable(ActionEventInternal)
 
-    # 空中から地面に降りるたびに、降りた瞬間の下向きの速さ（cm/s。0 以上）で届く。ActionEvent の Landed のすぐあと。着地のつぶれ・土煙・音の大きさなどに使う
+    # Arrives whenever the body lands from the air, with the downward speed at that moment (cm/s, 0 or more). Right after Landed on ActionEvent. For landing squash, dust, sound volume, etc.
     LandedEvent<public><final>:listenable(float) = MakeProxyListenable(LandedEventInternal)
 
     var<private> Velocity:vector3 = vector3{}
-    # このフレームだけ重力に掛ける倍率（ScaleGravityThisFrame。毎フレーム PreMoveEvent の前に 1 に戻す）
+    # Gravity multiplier for this frame only (ScaleGravityThisFrame. Reset to 1 before PreMoveEvent every frame)
     var<private> FrameGravityMultiplier:float = 1.0
-    # 最後に着地した瞬間の下向きの速さ（cm/s）
+    # Downward speed at the last landing (cm/s)
     var<private> LastLandingSpeed:float = 0.0
     var<private> Grounded:logic = false
     var<private> Moving:logic = false
     var<private> GroundNormal:vector3 = vector3{Up := 1.0}
-    # 立っている物（接地の掃引で当たった component の entity）。地面にいないときは false
+    # The object stood on (the entity of the component hit by the ground sweep). false when not grounded
     var<private> GroundEntity:?entity = false
-    # 立っている物の動く速度（cm/s。character_ride_component が毎フレーム入れる。運ばれていなければ 0）
+    # Velocity of the object stood on (cm/s. character_ride_component sets it every frame. 0 when not being carried)
     var<private> GroundVelocity:vector3 = vector3{}
-    # 動く地面から離れたときに受け継いだ水平の速度（cm/s。着地すると 0。walk が空中で減速しない分）
+    # Horizontal velocity inherited when leaving moving ground (cm/s. 0 on landing. The part walk does not decelerate in the air)
     var<private> InheritedVelocity:vector3 = vector3{}
-    # ほかの部品（dash）が速度を決めているあいだ true（walk は速度を変えない）
+    # true while another component (dash) is setting the velocity (walk leaves the velocity alone)
     var<private> MoveOverridden:logic = false
-    # OnTick のたびに 1 増やす番号と、最後に壁に触れた番号・その壁の外向き（水平の単位ベクトル）
+    # Counter incremented every OnTick, the counter value when a wall was last touched, and that wall's outward direction (horizontal unit vector)
     var<private> FrameIndex:int = 0
     var<private> LastWallFrame:int = -1000
     var<private> LastWallNormal:vector3 = vector3{}
     var<private> GravityScale:float = 1.0
     var<private> Owner:?player = false
-    # 開始してから TeleportTo されたか（されていれば SpawnAtOwner の 1 フレーム後の移動はしない。ほかの部品が先に置いた位置を上書きしない）
+    # Whether TeleportTo was called since start (if so, the SpawnAtOwner move one frame later is skipped. Does not overwrite a position another component set first)
     var<private> TeleportedSinceBegin:logic = false
-    # AxisLock で保つ位置（cm）
+    # Position kept by AxisLock (cm)
     var<private> LockedValue:float = 0.0
     var<private> TickSubscription:?cancelable = false
-    # 重ねている変更（番号, 変更）と、その合計
+    # Stacked modifiers (id, modifier) and their totals
     var<private> Modifiers:[]tuple(int, character_modifier) = array{}
     var<private> NextModifierId:int = 0
     var<private> SpeedMultiplier:float = 1.0
@@ -282,8 +301,15 @@ character_motor_component<public> := class<final_super>(component):
     var<private> GravityMultiplier:float = 1.0
     var<private> ExtraAirJumps:int = 0
     var<private> DashGrants:int = 0
+    var<private> ClingGrants:int = 0
     var<private> SideStyleOverride:?character_side_style = false
-    # LockInput で止めている番号
+    # Cling (set by ClingKit's character_cling_component through SetClingState): kind of surface clung to (false when not clinging), surface normal (outward unit vector), velocity jump uses when jumping off
+    var<private> ClingSurface:?character_cling_surface = false
+    var<private> ClingNormal:vector3 = vector3{}
+    var<private> ClingJumpVelocity:vector3 = vector3{}
+    # jump asked to release the cling (cling releases the next time it looks and resets this to false)
+    var<private> ClingReleaseRequested:logic = false
+    # Ids of active LockInput locks
     var<private> InputLocks:[]int = array{}
     var<private> NextInputLockId:int = 0
     OwnerTags<private>:player_tag_holder = player_tag_holder{}
@@ -299,8 +325,8 @@ character_motor_component<public> := class<final_super>(component):
         if (ResetOnRoundStart?):
             Rounds.Start(Entity, OnRoundStarted, OnRoundEnded)
 
-    # SpawnAtOwner の移動は 1 フレーム後に行う。OnBeginSimulation の中で動かすと、まだシーンに入っていない子（見た目のメッシュ）が付いてこず、
-    # 体と見た目が離れたままになった（実機 v43.00：プレハブから作った体を開始時に動かすと、子のメッシュが作られた場所に残った）
+    # The SpawnAtOwner move is done one frame later. Moving inside OnBeginSimulation left children not yet in the scene (the visual mesh) behind,
+    # so body and visuals stayed apart (UEFN v43.00: moving a body created from a prefab at start left the child mesh where it was created)
     OnSimulate<override>()<suspends>:void =
         Sleep(0.0)
         if (SpawnAtOwner?, not TeleportedSinceBegin?, OwningPlayer := Owner?, Body := OwningPlayer.FindPlayerEntity[]):
@@ -313,27 +339,27 @@ character_motor_component<public> := class<final_super>(component):
         OwnerTags.RemoveAll()
         (super:)OnEndSimulation()
 
-    # 持ち主（このキャラクターを動かすプレイヤー）。持ち主のいない場所に置いたときは失敗する
+    # Owner (the player driving this character). Fails when placed somewhere without an owner
     FindOwner<public>()<decides><transacts>:player =
         Owner?
 
-    # 今の速度（cm/s。世界の向き）
+    # Current velocity (cm/s, world space)
     GetVelocity<public>()<transacts>:vector3 =
         Velocity
 
-    # 速度を決める（cm/s。世界の向き）
+    # Set the velocity (cm/s, world space)
     SetVelocity<public>(NewVelocity:vector3):void =
         set Velocity = NewVelocity
 
-    # 速度に足す（cm/s。打ち上げ・はじき飛ばしなど）
+    # Add to the velocity (cm/s. launches, knockback, etc.)
     AddVelocity<public>(Delta:vector3):void =
         set Velocity = Velocity + Delta
 
-    # 地面にいるなら成功する
+    # Succeeds while grounded
     IsGrounded<public>()<decides><transacts>:void =
         Grounded?
 
-    # 今 State なら成功する
+    # Succeeds if currently in State
     IsInState<public>(State:character_motor_state)<decides><transacts>:void =
         case (State):
             character_motor_state.Grounded => Grounded?
@@ -342,49 +368,113 @@ character_motor_component<public> := class<final_super>(component):
             character_motor_state.Falling => (not Grounded?, Velocity.Up <= 0.0)
             character_motor_state.Moving => Moving?
             character_motor_state.Still => not Moving?
+            character_motor_state.Clinging => ClingSurface?
 
-    # 立っている地面の向き（上向きの単位ベクトル）。地面にいないときは最後に立っていた地面
+    # Normal of the ground stood on (upward unit vector). When not grounded, the last ground stood on
     GetGroundNormal<public>()<transacts>:vector3 =
         GroundNormal
 
-    # 今立っている物（接地の掃引で当たったメッシュの entity。動く床ならその entity か子）。地面にいなければ失敗する（前のフレームの動きの結果）
+    # The object currently stood on (entity of the mesh hit by the ground sweep. For a moving floor, that entity or a child). Fails when not grounded (result of the previous frame's move)
     GetGroundEntity<public>()<decides><transacts>:entity =
         GroundEntity?
 
-    # 今乗って運ばれている地面の速度（cm/s。世界の向き。回る床なら足元の速度）。SurfaceKit の character_ride_component が入れる（無ければ・運ばれていなければ 0）
+    # Velocity of the ground currently carrying the body (cm/s, world space. For a rotating floor, the speed at the feet). Set by SurfaceKit's character_ride_component (0 without it or when not being carried)
     GetGroundVelocity<public>()<transacts>:vector3 =
         GroundVelocity
 
-    # 動く地面から離れたとき（ジャンプ・縁から落ちた）に受け継いだ水平の速度（cm/s。character_ride_component が入れる）。着地すると 0。walk は空中でこの分を減速しない（動く床から跳んでも床と一緒に進む）
+    # Horizontal velocity inherited when leaving moving ground (jump or walked off the edge) (cm/s. Set by character_ride_component). 0 on landing. walk does not decelerate this part in the air (jumping off a moving floor keeps moving with it)
     GetInheritedVelocity<public>()<transacts>:vector3 =
         InheritedVelocity
 
-    # character_ride_component から呼ばれる：乗っている地面の速度を入れる
+    # Called from character_ride_component: sets the velocity of the ground being ridden
     SetGroundVelocity<internal>(Value:vector3)<transacts>:void =
         set GroundVelocity = Value
 
-    # character_ride_component から呼ばれる：動く地面から離れたので、その速度 Value を体の速度に足し、水平の分を受け継いだ速度として覚える（着地まで）
+    # Called from character_ride_component: the body left moving ground, so add its velocity Value to the body's velocity and remember the horizontal part as inherited velocity (until landing)
     InheritVelocity<internal>(Value:vector3)<transacts>:void =
         set Velocity = Velocity + Value
         set InheritedVelocity = vector3{Forward := Value.Forward, Left := Value.Left}
         set GroundVelocity = vector3{}
 
-    # MoveKit から呼ばれる：受け継いだ速度を Value（水平の分だけ）にする。walk が空中で、入力・壁で減った分だけ縮める（減った分は戻らない）。dash が消す（突進は勢いを置き換える）
+    # Called from MoveKit: sets the inherited velocity to Value (horizontal part only). walk shrinks it in the air by what input / walls removed (the removed part does not come back). dash clears it (a dash replaces momentum)
     SetInheritedVelocity<internal>(Value:vector3)<transacts>:void =
         set InheritedVelocity = vector3{Forward := Value.Forward, Left := Value.Left}
 
-    # MoveKit の dash から呼ばれる：Value が true のあいだ、ほかの部品（dash）が速度を決めている（walk は速度を変えない。どの順に PreMoveEvent が届いても突進の速さ・距離が変わらない）
+    # Called from MoveKit's dash: while Value is true, another component (dash) sets the velocity (walk leaves it alone. Dash speed and distance do not depend on the order PreMoveEvent arrives)
     SetMoveOverride<internal>(Value:logic)<transacts>:void =
         set MoveOverridden = Value
 
-    # SetMoveOverride(true) のあいだ成功する（walk が毎フレーム見る）
+    # Succeeds during SetMoveOverride(true) or while clinging to a wall / ceiling (ClingKit sets the velocity) (walk checks every frame)
+    #   Cling is tracked separately from dash's SetMoveOverride (when dash ends and sets false, walk still does not overwrite the cling velocity)
     IsMoveOverridden<internal>()<decides><transacts>:void =
-        MoveOverridden?
+        MoveOverridden? or ClingSurface?
 
-    # character_ride_component から呼ばれる：乗っている地面 Ground が動いた分 Delta（世界、cm）だけ体を運ぶ。速度は変えない
-    #   上下はそのまま動かす（床が上がった分を先に戻して、床にめり込んだまま掃引しない）。水平は Ground 以外に当たったら手前（面から SkinCm）で止め、残りを当たった面に沿わせて 1 回だけ動かす（運ばれて壁にめり込まない）
-    #   掃引の始めから Ground 以外に触れていたら（めり込みかけ）、水平には運ばない
-    #   AxisLock で縛った軸には動かさない
+    # Succeeds while clinging to a wall or ceiling (decided by ClingKit's character_cling_component. Checked by jump / dash / face / walk)
+    IsClinging<public>()<decides><transacts>:void =
+        ClingSurface?
+
+    # Kind of surface clung to (Wall / Ceiling). Fails when not clinging
+    GetClingSurface<public>()<decides><transacts>:character_cling_surface =
+        ClingSurface?
+
+    # Normal of the surface clung to (outward unit vector. For a wall, toward the body; for a ceiling, downward). When not clinging, the last surface clung to (vector3{} if never)
+    GetClingNormal<public>()<transacts>:vector3 =
+        ClingNormal
+
+    # Called from ClingKit: sets the cling state. Surface false means released (the normal keeps its last value). JumpVelocity is the velocity jump uses at that time (away from the wall; for a ceiling, the falling velocity)
+    SetClingState<internal>(Surface:?character_cling_surface, Normal:vector3, JumpVelocity:vector3)<transacts>:void =
+        set ClingSurface = Surface
+        if (Surface?):
+            set ClingNormal = Normal
+            set ClingJumpVelocity = JumpVelocity
+        else:
+            set ClingReleaseRequested = false
+
+    # Called from MoveKit's jump: the velocity to jump with while clinging (ClingKit sets it every frame)
+    GetClingJumpVelocity<internal>()<transacts>:vector3 =
+        ClingJumpVelocity
+
+    # Called from MoveKit's jump: asks to release the cling (jumped, or dropped from a ceiling). cling releases before or after the next frame's move
+    RequestClingRelease<internal>()<transacts>:void =
+        if (ClingSurface?):
+            set ClingReleaseRequested = true
+
+    # Called from ClingKit: returns true if a release was requested, and clears the request
+    TakeClingRelease<internal>()<transacts>:logic =
+        Requested := ClingReleaseRequested
+        set ClingReleaseRequested = false
+        Requested
+
+    # Called from ClingKit: sweeps this capsule by Displacement as if its feet were at Feet (world position) and returns the first hit (excluding self and owner). Fails on a hit touching from the start of the sweep (normal not trustworthy). Does not move the body
+    ProbeSurfaceFrom<internal>(Feet:vector3, Displacement:vector3)<decides><transacts>:sweep_hit =
+        Hit := FindFirstHitFrom[Feet, Displacement]
+        not IsStartHit[Hit]
+        Hit
+
+    # Called from ClingKit: sweeps this capsule by Displacement as if its feet were at Feet and succeeds if nothing is hit (including hits touching from the start). Does not move the body
+    IsSweepClear<internal>(Feet:vector3, Displacement:vector3)<decides><transacts>:void =
+        not FindFirstHitFrom[Feet, Displacement]
+
+    # Called from ClingKit: assuming a sweep from the current position along Direction (unit vector) hit Hit, moves the body to SkinCm away from the surface along its normal (does not move along the AxisLock axis)
+    SnapToHit<internal>(Hit:sweep_hit, Direction:vector3)<transacts>:void =
+        MoveBy(ApplyLock(Direction * StopDistance(Hit, Direction), 0.0))
+
+    # Called from ClingKit: moves the body by Delta (world, cm) without checking collisions (does not move along the AxisLock axis. Velocity unchanged. Unlike TeleportTo, does not change the locked position or the start-move handling)
+    MoveBodyBy<internal>(Delta:vector3)<transacts>:void =
+        MoveBy(ApplyLock(Delta, 0.0))
+
+    # Succeeds if Normal is a standable slope (MaxSlopeDegrees or less) (ClingKit uses it to tell cling surfaces from floors)
+    IsWalkableNormal<internal>(Normal:vector3)<decides><transacts>:void =
+        IsWalkable[Normal]
+
+    # Distance kept from surfaces (cm. ClingKit adds it to its probe distance)
+    GetSkinCm<internal>()<transacts>:float =
+        SkinCm
+
+    # Called from character_ride_component: carries the body by Delta (world, cm), the amount the ground Ground moved. Velocity unchanged
+    #   Vertical: moved as is (undo the floor's rise first so we do not sweep while penetrating the floor). Horizontal: on hitting anything other than Ground, stop short (SkinCm from the surface) and slide the rest along it once (no penetrating walls while carried)
+    #   If touching something other than Ground from the start of the sweep (about to penetrate), do not carry horizontally
+    #   Does not move along the AxisLock axis
     CarryBy<internal>(Delta:vector3, Ground:entity)<transacts>:void =
         Move := ApplyLock(Delta, 0.0)
         if (Move.Up <> 0.0):
@@ -409,43 +499,43 @@ character_motor_component<public> := class<final_super>(component):
                 MoveBy(Horizontal)
                 break
 
-    # character_ride_component から呼ばれる：足元から下へ DistanceCm まで探し、歩ける面があれば、その entity（体は動かさない）。無ければ失敗する
-    #   掃引の始めから触れている当たり（横の壁にめり込みかけ。法線が真上に見えることがある）は地面にしない（壁を同じ床と取り違えて運び続けない）
+    # Called from character_ride_component: probes down from the feet by DistanceCm and returns the entity of a walkable surface if any (does not move the body). Fails if none
+    #   Hits touching from the start of the sweep (about to penetrate a side wall; the normal can look straight up) are not ground (do not mistake a wall for the same floor and keep carrying)
     FindGroundEntityBelow<internal>(DistanceCm:float)<decides><transacts>:entity =
         Hit := FindFirstHit[vector3{Up := -(DistanceCm + SkinCm)}]
         not IsStartHit[Hit]
         IsWalkable[Hit.ContactNormal]
         Hit.TargetComponent.Entity
 
-    # 重力の倍率（1.0 で GravityCmPerSecondSquared どおり。0 で無重力）
+    # Gravity scale (1.0 for GravityCmPerSecondSquared as is. 0 for zero gravity)
     SetGravityScale<public>(Scale:float):void =
         set GravityScale = Scale
 
-    # 今の重力の倍率
+    # Current gravity scale
     GetGravityScale<public>()<transacts>:float =
         GravityScale
 
-    # このフレームの重力にだけ Multiplier（0 以上）を掛ける。PreMoveEvent の中で呼ぶ（毎フレーム PreMoveEvent の前に 1 に戻るので、続けるなら毎フレーム呼ぶ）。何度も呼ぶと掛け合わせる
-    #   SetGravityScale・重ねた変更の GravityMultiplier・下がっているときの FallGravityMultiplier にも掛け合わさる（SetGravityScale(0) なら 0 のまま）。jump の頂点の浮き（ApexGravityMultiplier）がこれを使う
+    # Multiplies this frame's gravity only by Multiplier (0 or more). Call inside PreMoveEvent (reset to 1 before PreMoveEvent every frame, so call every frame to keep it). Repeated calls multiply
+    #   Also multiplies with SetGravityScale, stacked GravityMultiplier and FallGravityMultiplier while falling (stays 0 with SetGravityScale(0)). jump's apex hang (ApexGravityMultiplier) uses this
     ScaleGravityThisFrame<public>(Multiplier:float):void =
         set FrameGravityMultiplier *= Max(Multiplier, 0.0)
 
-    # 最後に空中から地面に降りた瞬間の下向きの速さ（cm/s。0 以上。まだ降りていなければ 0）。LandedEvent と同じ値
+    # Downward speed at the last landing from the air (cm/s. 0 or more. 0 if never landed). Same value as LandedEvent
     GetLastLandingSpeed<public>()<transacts>:float =
         LastLandingSpeed
 
-    # 当たりを見ずに Position（足元。世界の位置、cm）へ移る。速度はそのまま
+    # Moves to Position (feet, world position, cm) without checking collisions. Velocity unchanged
     TeleportTo<public>(Position:vector3):void =
         Current := Entity.GetGlobalTransform()
         Entity.SetGlobalTransform(Current.WithTranslation(Position))
         set LockedValue = LockedComponent(Position)
         set TeleportedSinceBegin = true
 
-    # 部品が、起きたこと（Jumped・Dashed など）を知らせる（ActionEvent に届く）。自分で作る動きの部品からも呼べる
+    # A component reports something that happened (Jumped, Dashed, ...) (arrives on ActionEvent). Your own movement components can call it too
     ReportAction<public>(Action:character_action):void =
         ActionEventInternal.Signal(Action)
 
-    # 体の動きに Modifier を重ねる。返った cancelable の Cancel で外す（2 回目からは何もしない）。外し忘れないように、足した部品が止まるときに必ず Cancel する
+    # Stacks Modifier onto the body's movement. Remove with Cancel on the returned cancelable (does nothing from the second call). To avoid leaks, always Cancel when the component that added it stops
     AddModifier<public>(Modifier:character_modifier)<transacts>:cancelable =
         set NextModifierId += 1
         Id := NextModifierId
@@ -453,54 +543,58 @@ character_motor_component<public> := class<final_super>(component):
         RecomputeModifiers()
         character_modifier_handle{Motor := Self, Id := Id}
 
-    # 今重ねている変更の数
+    # Number of modifiers currently stacked
     GetModifierCount<public>()<transacts>:int =
         Modifiers.Length
 
-    # 入力を止める（ロビー・結果の画面など）。返った cancelable の Cancel で外す（2 回目からは何もしない）。いくつ重ねてもよく、全部外れると入力が戻る（呼ぶ側ごとに別々に止め・外しできる）
-    #   止めているあいだ：walk は入力（ボタン・方向・SetMoveInput）を 0 として扱い（速度は BrakingCmPerSecondSquared で止まっていく）、TankTurn でも回さない。左右の入力のしかたの切り替えボタンも効かない
-    #   jump は跳ばない（ボタン・Jump とも。押しは先行入力にも残さず捨てる。押しているとはみなさないので頂点の浮きも止まる）。dash は出さない（突進の途中なら終える）。face（character_face_movement_component）は体を回さない
-    #   体の物理（重力・掃引・接地）は止めない。体ごと止めるなら、別に SetGravityScale(0) と SetVelocity(vector3{}) をする
+    # Locks input (lobby, result screen, etc.). Remove with Cancel on the returned cancelable (does nothing from the second call). Any number can be stacked; input returns when all are removed (each caller locks and unlocks independently)
+    #   While locked: walk treats input (buttons, direction, SetMoveInput) as 0 (velocity brakes with BrakingCmPerSecondSquared) and does not turn even with TankTurn. The side-style toggle button is ignored too
+    #   jump does not jump (neither button nor Jump. Presses are discarded, not buffered. Not counted as held, so the apex hang stops too). dash does not dash (a dash in progress ends). face (character_face_movement_component) does not turn the body
+    #   Body physics (gravity, sweep, grounding) keep running. To freeze the whole body, also call SetGravityScale(0) and SetVelocity(vector3{})
     LockInput<public>()<transacts>:cancelable =
         set NextInputLockId += 1
         Id := NextInputLockId
         set InputLocks += array{Id}
         character_input_lock_handle{Motor := Self, Id := Id}
 
-    # LockInput で入力を止めているあいだ成功する（walk / jump / dash / face が毎フレーム見る。自分で作る動きの部品もこれを見る）
+    # Succeeds while input is locked by LockInput (walk / jump / dash / face check it every frame. Your own movement components should check it too)
     IsInputLocked<public>()<decides><transacts>:void =
         InputLocks.Length > 0
 
-    # character_input_lock_handle の Cancel から呼ばれる：番号 Id の止めを外す
+    # Called from character_input_lock_handle's Cancel: removes the lock with id Id
     UnlockInput<internal>(Id:int)<transacts>:void =
         set InputLocks = for (Each : InputLocks, Each <> Id):
             Each
 
-    # 重ねている変更の速さの倍率（掛け合わせ。無ければ 1）
+    # Speed multiplier of the stacked modifiers (product. 1 if none)
     GetSpeedMultiplier<public>()<transacts>:float =
         SpeedMultiplier
 
-    # 重ねている変更のジャンプの倍率（掛け合わせ。無ければ 1）
+    # Jump multiplier of the stacked modifiers (product. 1 if none)
     GetJumpMultiplier<public>()<transacts>:float =
         JumpMultiplier
 
-    # 重ねている変更の重力の倍率（掛け合わせ。無ければ 1）。SetGravityScale の倍率とは別
+    # Gravity multiplier of the stacked modifiers (product. 1 if none). Separate from the SetGravityScale factor
     GetGravityMultiplier<public>()<transacts>:float =
         GravityMultiplier
 
-    # 重ねている変更の、空中ジャンプに足す回数（足し合わせ。無ければ 0）
+    # Air jumps added by the stacked modifiers (sum. 0 if none)
     GetExtraAirJumps<public>()<transacts>:int =
         ExtraAirJumps
 
-    # ダッシュを許す変更（GrantsDash）が 1 つでも重なっていれば成功する
+    # Succeeds if at least one stacked modifier grants dash (GrantsDash)
     IsDashGranted<public>()<decides><transacts>:void =
         DashGrants > 0
 
-    # 重ねている変更が決める左右の入力のしかた（SideStyle を持つ変更のうち最後に足したもの）。無ければ失敗する（walk は自分の基本の値を使う）
+    # Succeeds if at least one stacked modifier grants cling (GrantsCling) (if ClingKit's character_cling_component has RequiresGrant on, clinging is possible only while this holds)
+    CanCling<public>()<decides><transacts>:void =
+        ClingGrants > 0
+
+    # Side-input style decided by the stacked modifiers (the last one added that has a SideStyle). Fails if none (walk uses its own base value)
     GetSideStyleOverride<public>()<decides><transacts>:character_side_style =
         SideStyleOverride?
 
-    # character_modifier_handle の Cancel から呼ばれる：番号 Id の変更を外す
+    # Called from character_modifier_handle's Cancel: removes the modifier with id Id
     RemoveModifier<internal>(Id:int)<transacts>:void =
         set Modifiers = for (Entry : Modifiers, Entry(0) <> Id):
             Entry
@@ -512,8 +606,9 @@ character_motor_component<public> := class<final_super>(component):
         var Gravity:float = 1.0
         var AirJumps:int = 0
         var Dash:int = 0
+        var Cling:int = 0
         var Side:?character_side_style = false
-        # Modifiers は足した順に並ぶので、SideStyle は後のもので上書きする（最後に足したものが勝つ）
+        # Modifiers are in insertion order, so a later SideStyle overwrites (the last one added wins)
         for (Entry : Modifiers):
             Modifier := Entry(1)
             set Speed *= Modifier.SpeedMultiplier
@@ -522,6 +617,8 @@ character_motor_component<public> := class<final_super>(component):
             set AirJumps += Modifier.ExtraAirJumps
             if (Modifier.GrantsDash?):
                 set Dash += 1
+            if (Modifier.GrantsCling?):
+                set Cling += 1
             if (Style := Modifier.SideStyle?):
                 set Side = option{Style}
         set SpeedMultiplier = Speed
@@ -529,9 +626,10 @@ character_motor_component<public> := class<final_super>(component):
         set GravityMultiplier = Gravity
         set ExtraAirJumps = AirJumps
         set DashGrants = Dash
+        set ClingGrants = Cling
         set SideStyleOverride = Side
 
-    # ラウンドの始まり：速度を消して、持ち主のキャラクター（スポーン地点に出直している）の位置へ移る
+    # Round start: clear velocity and move to the owner's character (respawned at the spawn point)
     OnRoundStarted<private>()<suspends>:void =
         set Velocity = vector3{}
         set InheritedVelocity = vector3{}
@@ -545,7 +643,7 @@ character_motor_component<public> := class<final_super>(component):
         if (DeltaTime <= 0.0):
             return
         set FrameIndex += 1
-        # このフレームだけの重力の倍率は、このあとの PreMoveEvent の中で決める（前のフレームの残りは使わない）
+        # This frame's gravity factor is decided inside the following PreMoveEvent (leftovers from the previous frame are not used)
         set FrameGravityMultiplier = 1.0
         PreMoveEventInternal.Signal(DeltaTime)
         set Velocity = ApplyLock(Velocity, 0.0)
@@ -558,31 +656,31 @@ character_motor_component<public> := class<final_super>(component):
         UpdateMoving()
         PostMoveEventInternal.Signal(DeltaTime)
 
-    # 空中か、地面から離れようとしている（ジャンプ・打ち上げ）ときだけ重力を足す。地面に沿って動いているあいだ（坂を上る・下る）は足さない
+    # Adds gravity only in the air or when leaving the ground (jump, launch). Not while moving along the ground (up or down a slope)
     ApplyGravity<private>(DeltaTime:float):void =
         if (not Grounded? or IsLeavingGround[]):
-            # 下がっているときは FallGravityMultiplier を掛ける（速く落ちる）。SetGravityScale(0) なら全体が 0
+            # Multiply by FallGravityMultiplier while falling (fall faster). Everything is 0 with SetGravityScale(0)
             Shape := if (Velocity.Up < 0.0) then FallGravityMultiplier else 1.0
             Acceleration := GravityCmPerSecondSquared * GravityScale * GravityMultiplier * FrameGravityMultiplier * Shape
             Fall := Max(Velocity.Up - Acceleration * DeltaTime, -MaxFallSpeedCmPerSecond)
             set Velocity = vector3{Forward := Velocity.Forward, Left := Velocity.Left, Up := Fall}
 
-    # 地面にいて、地面から離れる向きの速さが GroundStickSpeedCmPerSecond より速いなら成功する（ジャンプ・打ち上げで地面を離れるところ）
+    # Succeeds if grounded and the speed away from the ground exceeds GroundStickSpeedCmPerSecond (about to leave the ground by a jump or launch)
     IsLeavingGround<private>()<decides><transacts>:void =
         Grounded?
         DotProduct(Velocity, GroundNormal) > GroundStickSpeedCmPerSecond
 
-    # Displacement だけ動かす。当たったら面から SkinCm 離れたところで止め、残りを面に沿わせてもう一度（最大 MaxSlideIterations 回）。当たった面に向かう速度は消す（壁なら水平の分だけ）
-    #   滑らせる前に、角の補正（頭が天井の角にかすった）と段の補正（足元が段の角に当たった）を試す。補正できたら速度は変えない
-    #   壁に貼り付いて止まらないための決まり（実機 v43.00：壁に押し付けたまま跳ぶ・落ちると、壁の途中で止まって動けなくなった）：
-    #     1. 止まる距離は面の法線の向きに SkinCm（StopDistance）。前は掃引の向きに SkinCm 戻していたので、壁に浅い角度で近づくたびに隙間が縮んで 0 になった
-    #     2. 掃引の始めから触れている当たり（距離 0）は、返る法線が掃引の逆向き（落ちていれば真上）になり、床・天井と取り違えて上下の動きと速度が消えていた。
-    #        法線を使わずに押し出して掃引し直し（TryDepenetrate）、押し出せなければこのフレームはその物を無視して動く
-    #     3. 壁（歩けない面で天井でないもの）は上下の動きを変えない（SlideAlong・ClipVelocity）。前は法線ごと消していたので、少し傾いた壁・縁の角で上下の速さが削られた
-    #     4. 段の補正は地面にいるときだけ（空中は LedgeAssistCm）。角の補正は天井（下向きの面）だけ
+    # Moves by Displacement. On hit, stops SkinCm from the surface, slides the rest along it and tries again (up to MaxSlideIterations). Velocity into the surface is removed (for a wall, only the horizontal part)
+    #   Before sliding, tries corner correction (head grazed a ceiling corner) and step correction (feet hit a step corner). If a correction works, velocity is unchanged
+    #   Rules against sticking to walls (UEFN v43.00: jumping or falling while pressed against a wall stopped halfway up the wall and got stuck):
+    #     1. The stop distance is SkinCm along the surface normal (StopDistance). Backing off SkinCm along the sweep direction let the gap shrink to 0 on every shallow approach to a wall
+    #     2. Hits touching from the start of the sweep (distance 0) return a normal that is the reverse of the sweep (straight up when falling); mistaken for floor / ceiling, they removed vertical motion and velocity.
+    #        Push out without using the normal and sweep again (TryDepenetrate); if pushing out fails, ignore that object for this frame
+    #     3. Walls (non-walkable surfaces that are not ceilings) do not change vertical motion (SlideAlong, ClipVelocity). Removing along the normal used to shave vertical speed on slightly tilted walls and ledge corners
+    #     4. Step correction only while grounded (in the air, LedgeAssistCm). Corner correction only for ceilings (downward-facing surfaces)
     MoveWithCollision<private>(Displacement:vector3):void =
         var Remaining:vector3 = Displacement
-        # このフレームの掃引で無視する物（押し出せなかった・かすっただけの物）
+        # Object ignored in this frame's sweeps (could not be pushed out of, or only grazed)
         var Skip:?entity = false
         var Iteration:int = 0
         loop:
@@ -592,7 +690,7 @@ character_motor_component<public> := class<final_super>(component):
             Feet := Entity.GetGlobalTransform().Translation
             if (Hit := FindFirstHitFromExcept[Feet, Remaining, Skip]):
                 if (IsStartHit[Hit]):
-                    # めり込みかけ：押し出せたら、そこから同じ動きを掃引し直す。押し出せなければ、その物を無視して動く（動きを止めない）
+                    # About to penetrate: if pushed out, sweep the same move again from there. If not, ignore the object and keep moving (do not stop)
                     Pushed := TryDepenetrate(Hit, Remaining)
                     if (not Pushed?):
                         set Skip = option{Hit.TargetComponent.Entity}
@@ -603,14 +701,14 @@ character_motor_component<public> := class<final_super>(component):
                     MoveBy(Direction * Allowed)
                     Rest := Remaining - Direction * Allowed
                     if (DotProduct(Direction, Normal) > -0.001):
-                        # 動きに向かい合っていない面にかすっただけ：止めずに残りをそのまま動かす（このフレームはその物を無視する）
+                        # Only grazed a surface not facing the motion: do not stop, move the rest as is (ignore the object for this frame)
                         set Remaining = Rest
                         set Skip = option{Hit.TargetComponent.Entity}
                     else if (TryCornerCorrection(Hit, Rest)?):
-                        # 横へずらせたので、残りの動きをそのまま続ける
+                        # Shifted sideways, so continue the remaining motion as is
                         set Remaining = Rest
                     else if (TryStepUp(Hit, Rest)?):
-                        # 段の上へ乗った（残りの水平の動きは使い切った）
+                        # Climbed onto the step (the remaining horizontal motion is used up)
                         break
                     else:
                         set Remaining = SlideAlong(Rest, Normal)
@@ -619,25 +717,25 @@ character_motor_component<public> := class<final_super>(component):
                 MoveBy(Remaining)
                 break
 
-    # Hit の当たりの距離が StartHitCm 以下（掃引の始めから触れている。めり込みかけ）なら成功する
+    # Succeeds if Hit's distance is StartHitCm or less (touching from the start of the sweep, about to penetrate)
     IsStartHit<private>(Hit:sweep_hit)<decides><transacts>:void =
         Hit.SourceHitDistance <= StartHitCm
 
-    # Normal が壁（歩けない面で、天井でないもの）なら成功する。壁は上下の動きを変えない
+    # Succeeds if Normal is a wall (non-walkable surface that is not a ceiling). Walls do not change vertical motion
     IsWallNormal<private>(Normal:vector3)<decides><transacts>:void =
         not IsWalkable[Normal]
         Normal.Up > CeilingNormalUp
 
-    # Direction（単位ベクトル）へ動いて Hit に当たったとき、進んでよい距離（cm）。面の法線の向きに測った離れが SkinCm になるところまで（0〜当たりの距離）
-    #   掃引の向きに SkinCm 戻すだけだと、浅い角度で壁に近づく（壁沿いに落ちる・跳ぶ）たびに隙間が SkinCm × 角度まで縮み、数フレームで 0 になる
+    # Distance (cm) allowed when moving along Direction (unit vector) and hitting Hit. Up to where the gap measured along the surface normal becomes SkinCm (0 to the hit distance)
+    #   Only backing off SkinCm along the sweep direction lets the gap shrink to SkinCm x angle on every shallow approach (falling or jumping along a wall), reaching 0 within a few frames
     StopDistance<private>(Hit:sweep_hit, Direction:vector3)<transacts>:float =
         HitCm := Hit.SourceHitDistance
         Approach := -DotProduct(Direction, Hit.ContactNormal)
         if (Approach > 0.001) then Clamp(HitCm - SkinCm / Approach, 0.0, HitCm) else Max(HitCm - SkinCm, 0.0)
 
-    # 残りの動き Rest を当たった面（法線 Normal）に沿わせる。面に向かう分だけを除く（離れる向きの動きはそのまま）
-    #   床・坂（歩ける面）と天井：面の法線の向きの分を除く（着地・頭をぶつけると上下の動きが止まる）
-    #   壁：上下の動きは変えず、水平だけを面の外へずらして面に沿わせる（壁沿いに落ちる・跳ぶ動きを壁が止めない。少し傾いた壁・縁の角でも上下の動きが削られない）
+    # Slides the remaining motion Rest along the surface hit (normal Normal). Removes only the part heading into the surface (motion away from it is kept)
+    #   Floors / slopes (walkable) and ceilings: remove the component along the normal (landing or bumping the head stops vertical motion)
+    #   Walls: vertical motion is kept; only the horizontal part is shifted outward to follow the surface (a wall does not stop falling or jumping along it. Vertical motion is not shaved on slightly tilted walls or ledge corners either)
     SlideAlong<private>(Rest:vector3, Normal:vector3)<transacts>:vector3 =
         Into := DotProduct(Rest, Normal)
         if (Into >= 0.0):
@@ -646,12 +744,12 @@ character_motor_component<public> := class<final_super>(component):
             Flat := vector3{Forward := Normal.Forward, Left := Normal.Left}
             FlatSquared := Flat.LengthSquared()
             if (FlatSquared > 0.000001):
-                # Rest + Flat × k の法線の向きの分を 0 にする（k = -Into / |Flat|²）。上下の成分は変わらない
+                # Zero the normal component of Rest + Flat x k (k = -Into / |Flat|^2). The vertical component is unchanged
                 return Rest + Flat * (-Into / FlatSquared)
         Rest - Normal * Into
 
-    # 当たった面（法線 Normal）に向かう速度を消す。壁なら水平の壁に向かう分だけ消し（上下の速さは変えない）、壁の外向きを覚える（めり込みからの押し出しに使う）
-    #   歩けない面（壁・天井）に向かう速度を消したら HitWall を知らせる
+    # Removes velocity into the surface hit (normal Normal). For a wall, only the horizontal part into it (vertical speed unchanged) and remembers the wall's outward direction (used to push out of penetration)
+    #   Reports HitWall when velocity into a non-walkable surface (wall or ceiling) was removed
     ClipVelocity<private>(Normal:vector3):void =
         if (IsWallNormal[Normal]):
             Flat := vector3{Forward := Normal.Forward, Left := Normal.Left}
@@ -671,8 +769,8 @@ character_motor_component<public> := class<final_super>(component):
                 if (not IsWalkable[Normal]):
                     ReportAction(character_action.HitWall)
 
-    # 掃引の始めから Hit に触れている（めり込みかけ）とき、押し出す向きを順に試し、空いた位置（何にも触れていない）へ動かせたら成功（true）。動かせなければ体は動かさない
-    #   試す向き：物理が返した法線（掃引の逆向きそのもの＝当てにならない、でなければ）→ 最近触れた壁の外向き → 動き Motion の水平の逆 → 速度の水平の逆 → 真上（床）→ 真下（天井）。それぞれ SkinCm + 0.5 と SkinCm × 4 の 2 通り
+    # When touching Hit from the start of the sweep (about to penetrate), tries push-out directions in order and succeeds (true) if the body can move to a free spot (touching nothing). If not, the body is not moved
+    #   Directions tried: the normal physics returned (unless it is exactly the reverse of the sweep = untrustworthy) -> outward direction of the last wall touched -> reverse of the horizontal motion Motion -> reverse of the horizontal velocity -> straight up (floor) -> straight down (ceiling). Each at two distances, SkinCm + 0.5 and SkinCm x 4
     TryDepenetrate<private>(Hit:sweep_hit, Motion:vector3)<transacts>:logic =
         Feet := Entity.GetGlobalTransform().Translation
         MotionCm := Motion.Length()
@@ -695,14 +793,14 @@ character_motor_component<public> := class<final_super>(component):
                     set Pushed = true
         Pushed
 
-    # 足元を Feet に置いたとき、何にも触れていなければ true（Away の逆向きへ SkinCm 掃引して、始めから触れている当たりが無いかを見る）
+    # true if nothing is touched with the feet at Feet (sweeps SkinCm opposite to Away and checks for a hit touching from the start)
     IsFreeAt<private>(Feet:vector3, Away:vector3)<transacts>:logic =
         if (Hit := FindFirstHitFrom[Feet, Away * (-SkinCm)], IsStartHit[Hit]) then false else true
 
-    # 角の補正：上がっている途中で、頭（上の半球）が天井（法線が CeilingNormalUp より下向きの面）の角にかすっただけなら、横へ CornerCorrectionCm までずらして成功（true）
-    #   壁（ほぼ垂直の面）では使わない：壁は SlideAlong が上下の動きを変えずに沿わせるので、ずらす必要が無い（前は壁にかすっても横へずらしていた）
-    #   角の位置（ContactPosition）が頭の中心から横にずれていれば、その反対へ、かすらなくなる分だけずらす
-    #   平らな天井の面に当たった（ずれが無い）ときは、横の動きの向き（AxisLock なら動ける軸の両向き）へ、近い順に試す
+    # Corner correction: if, while rising, the head (upper hemisphere) only grazed the corner of a ceiling (a surface whose normal is below CeilingNormalUp), shifts sideways by up to CornerCorrectionCm and succeeds (true)
+    #   Not used for walls (near-vertical surfaces): SlideAlong follows walls without changing vertical motion, so no shift is needed (it used to shift sideways on grazing a wall)
+    #   If the corner position (ContactPosition) is offset sideways from the head center, shift the opposite way by just enough to clear it
+    #   When a flat ceiling surface was hit (no offset), try the horizontal motion direction (with AxisLock, both directions of the free axis), nearest first
     TryCornerCorrection<private>(Hit:sweep_hit, Rest:vector3)<transacts>:logic =
         if (CornerCorrectionCm <= 0.0 or Rest.Up <= 0.0 or Hit.ContactNormal.Up > CeilingNormalUp):
             return false
@@ -715,7 +813,7 @@ character_motor_component<public> := class<final_super>(component):
         Away := ApplyLock(vector3{Forward := HeadCenter.Forward - Contact.Forward, Left := HeadCenter.Left - Contact.Left}, 0.0)
         AwayCm := Away.Length()
         if (AwayCm >= 0.5):
-            # 角が横にある：かすらなくなる（頭の中心と角の水平の距離が半径 + SkinCm になる）までずらす
+            # The corner is to the side: shift until it is cleared (horizontal distance between head center and corner becomes radius + SkinCm)
             Need := RadiusCm + SkinCm - AwayCm + 0.5
             if (Need > 0.0, Need <= CornerCorrectionCm):
                 return TryNudge(Feet, Away * (Need / AwayCm), Rise)
@@ -726,7 +824,7 @@ character_motor_component<public> := class<final_super>(component):
                 set Nudged = true
         Nudged
 
-    # 平らな天井に当たったときに、ずらすのを試す向き（水平の単位ベクトル）。AxisLock なら動ける軸の両向き、無ければ横の動きの向きとその逆（横に動いていなければ試さない）
+    # Directions (horizontal unit vectors) to try shifting when a flat ceiling was hit. With AxisLock, both directions of the free axis; otherwise the horizontal motion direction and its reverse (nothing if not moving sideways)
     GetCornerSides<private>()<transacts>:[]vector3 =
         Horizontal := vector3{Forward := Velocity.Forward, Left := Velocity.Left}
         HorizontalCm := Horizontal.Length()
@@ -736,7 +834,7 @@ character_motor_component<public> := class<final_super>(component):
             character_axis_lock.Forward => array{vector3{Left := 1.0}, vector3{Left := -1.0}}
             character_axis_lock.None => Moving2D
 
-    # Feet から横へ Nudge だけずらせて、そこから Rise だけ上が空いていれば、ずらして成功（true）
+    # If the body can shift sideways from Feet by Nudge and the space above there is clear by Rise, shifts and succeeds (true)
     TryNudge<private>(Feet:vector3, Nudge:vector3, Rise:vector3)<transacts>:logic =
         if (FindFirstHitFrom[Feet, Nudge]):
             return false
@@ -745,10 +843,10 @@ character_motor_component<public> := class<final_super>(component):
         MoveBy(Nudge)
         true
 
-    # 段の補正：地面にいて（跳んで離れるところでなく）水平に動いて、足元が StepUpCm 以下の段の角に当たったなら、段の上へ乗り上げて成功（true）
-    #   空中では、下がっているときに LedgeAssistCm 以下の縁だけ（既定 0 で使わない）。壁沿いに落ちる・跳ぶあいだに壁へ乗り上げようとしない
-    #   上が空いている → 上げた位置から前が空いている → 下に歩ける面がある、の 3 つを確かめてから動かす（どれかがだめなら何もしない＝いつもどおり滑る）
-    #   角に乗っても滑り落ちないよう、角が歩ける向きに当たるところ（体の軸と角の水平の距離が 半径 × sin(MaxSlopeDegrees) 未満）まで進める（その分だけ、このフレームの動きより先へ進むことがある）
+    # Step correction: if grounded (not about to leave by a jump), moving horizontally, and the feet hit the corner of a step of StepUpCm or less, climbs onto the step and succeeds (true)
+    #   In the air, only ledges of LedgeAssistCm or less while falling (default 0, unused). No climbing onto walls while falling or jumping along them
+    #   Checks three things before moving: the space above is clear -> the space ahead from the lifted position is clear -> there is a walkable surface below (if any fails, do nothing = slide as usual)
+    #   To avoid sliding off the corner, advances to where the corner touches at a walkable angle (horizontal distance between body axis and corner below radius x sin(MaxSlopeDegrees)) (so it may move further than this frame's motion)
     TryStepUp<private>(Hit:sweep_hit, Rest:vector3)<transacts>:logic =
         OnGround := if (Grounded?, not IsLeavingGround[]) then true else false
         Limit := if (OnGround?) then StepUpCm else if (Velocity.Up <= 0.0) then LedgeAssistCm else 0.0
@@ -761,7 +859,7 @@ character_motor_component<public> := class<final_super>(component):
         HorizontalCm := Horizontal.Length()
         if (HorizontalCm < 0.01):
             return false
-        # 水平の動きが角に向かっていなければ（壁沿いに上下に動いているだけなら）補正しない
+        # No correction unless the horizontal motion heads into the corner (just moving up / down along a wall)
         if (DotProduct(Horizontal, vector3{Forward := Normal.Forward, Left := Normal.Left}) >= 0.0):
             return false
         Feet := Entity.GetGlobalTransform().Translation
@@ -789,17 +887,19 @@ character_motor_component<public> := class<final_super>(component):
             return true
         false
 
-    # 足元を下へ探し、歩ける面があれば吸い付いて接地にする
-    #   地面にいた体：地面に沿って動いているあいだ（IsLeavingGround でない）、GroundSnapCm（GroundProbeCm より小さければ GroundProbeCm）まで探す。坂を下る・低い段を降りるときも浮かない
-    #   空中の体：下がっている（上下の速さが 0 以下）ときだけ、GroundProbeCm まで探す
-    #   接地したら、速度を地面に沿わせる（水平の速さはそのまま、上下の速さを地面の傾きに合わせる。平らな地面なら上下の速さが 0）。当たった entity を立っている物（GetGroundEntity）にする
-    #   空中から接地したら、動く地面から受け継いだ速度（GetInheritedVelocity）を 0 にする
-    #   掃引の始めから触れている当たり（横の壁にめり込みかけ）は地面にしない（FindGroundHit。壁を床と取り違えて、壁の途中に重力なしで立ったまま止まらない）
+    # Probes down from the feet and, if a walkable surface is found, snaps to it and becomes grounded
+    #   A grounded body: while moving along the ground (not IsLeavingGround), probes by GroundSnapCm (GroundProbeCm if smaller). No floating when going down slopes or low steps
+    #   An airborne body: probes by GroundProbeCm only while falling (vertical speed 0 or less)
+    #   On grounding, aligns velocity with the ground (horizontal speed kept, vertical speed matched to the slope. 0 vertical speed on flat ground). The entity hit becomes the object stood on (GetGroundEntity)
+    #   On grounding from the air, clears the velocity inherited from moving ground (GetInheritedVelocity)
+    #   Hits touching from the start of the sweep (about to penetrate a side wall) are not ground (FindGroundHit. Do not mistake a wall for a floor and stand halfway up it without gravity)
+    #   No probing while clinging to a wall / ceiling and rising (ClingKit) (starting to climb from the foot of a wall slower than GroundStickSpeedCmPerSecond must not snap to the floor and lose vertical speed)
     UpdateGround<private>():void =
         WasGrounded := Grounded
         var NowGrounded:logic = false
         var NowGround:?entity = false
-        Probing := if (WasGrounded?) then (if (IsLeavingGround[]) then false else true) else (if (Velocity.Up <= 0.0) then true else false)
+        Climbing := if (ClingSurface?, Velocity.Up > 0.0) then true else false
+        Probing := if (Climbing?) then false else if (WasGrounded?) then (if (IsLeavingGround[]) then false else true) else (if (Velocity.Up <= 0.0) then true else false)
         ProbeCm := if (WasGrounded?) then Max(GroundProbeCm, GroundSnapCm) else GroundProbeCm
         MaybeHit:?sweep_hit = if (Probing?) then FindGroundHit(ProbeCm) else false
         if (Hit := MaybeHit?, IsWalkable[Hit.ContactNormal]):
@@ -819,8 +919,8 @@ character_motor_component<public> := class<final_super>(component):
             ReportAction(character_action.Landed)
             LandedEventInternal.Signal(LastLandingSpeed)
 
-    # 足元から下へ DistanceCm（+ SkinCm）まで探して、最初に当たったもの。無ければ false
-    #   掃引の始めから触れている当たりは使わない：押し出せたらそこから探し直し、押し出せなければその物を除いて探し直す（その下に本当の床があれば見つかる）
+    # Probes down from the feet by DistanceCm (+ SkinCm) and returns the first hit. false if none
+    #   Hits touching from the start of the sweep are not used: if pushed out, probe again from there; if not, probe again excluding that object (finds the real floor below it, if any)
     FindGroundHit<private>(DistanceCm:float)<transacts>:?sweep_hit =
         Down := vector3{Up := -(DistanceCm + SkinCm)}
         if (First := FindFirstHit[Down]):
@@ -839,19 +939,19 @@ character_motor_component<public> := class<final_super>(component):
             set Moving = NowMoving
             ReportAction(if (NowMoving?) then character_action.StartedMoving else character_action.StoppedMoving)
 
-    # Normal が立っていられる坂（MaxSlopeDegrees 以下）なら成功する
+    # Succeeds if Normal is a standable slope (MaxSlopeDegrees or less)
     IsWalkable<private>(Normal:vector3)<decides><transacts>:void =
         Normal.Up >= Cos(MaxSlopeDegrees * PiFloat / 180.0)
 
-    # このカプセルを今の位置から Displacement だけ掃引して、最初に当たったもの（自分と持ち主の Fortnite キャラクターは除く）。当たらなければ失敗する
+    # Sweeps this capsule from the current position by Displacement and returns the first hit (excluding self and the owner's Fortnite character). Fails if nothing is hit
     FindFirstHit<private>(Displacement:vector3)<decides><transacts>:sweep_hit =
         FindFirstHitFrom[Entity.GetGlobalTransform().Translation, Displacement]
 
-    # このカプセルを足元 Feet（世界の位置）に置いたとして、Displacement だけ掃引して最初に当たったもの。当たらなければ失敗する（体は動かさない。角・段の補正の下調べに使う）
+    # Sweeps this capsule by Displacement as if its feet were at Feet (world position) and returns the first hit. Fails if nothing is hit (does not move the body. Used to look ahead for corner / step correction)
     FindFirstHitFrom<private>(Feet:vector3, Displacement:vector3)<decides><transacts>:sweep_hit =
         FindFirstHitFromExcept[Feet, Displacement, false]
 
-    # FindFirstHitFrom と同じ。Except の entity に当たったものも除く（動く床に運ぶとき、その床には当たらない）
+    # Same as FindFirstHitFrom, also excluding hits on the Except entity (when carried by a moving floor, that floor is not hit)
     FindFirstHitFromExcept<private>(Feet:vector3, Displacement:vector3, Except:?entity)<decides><transacts>:sweep_hit =
         Capsule := collision_capsule{}
         set Capsule.Radius = RadiusCm
@@ -862,7 +962,7 @@ character_motor_component<public> := class<final_super>(component):
             set Found = option{Hit}
         Found?
 
-    # 自分（この entity とその子孫）か、持ち主の Fortnite キャラクターなら成功する
+    # Succeeds if Other is self (this entity or a descendant) or the owner's Fortnite character
     IsIgnored<private>(Other:entity)<decides><transacts>:void =
         var Current:?entity = option{Other}
         var Ignored:logic = false
@@ -880,14 +980,14 @@ character_motor_component<public> := class<final_super>(component):
                 break
         Ignored?
 
-    # AxisLock で縛る軸の値
+    # Value of the axis locked by AxisLock
     LockedComponent<private>(V:vector3)<transacts>:float =
         case (AxisLock):
             character_axis_lock.Left => V.Left
             character_axis_lock.Forward => V.Forward
             character_axis_lock.None => 0.0
 
-    # V の縛る軸の値を Value にする（縛らないならそのまま）
+    # Sets the locked axis of V to Value (V as is if not locked)
     ApplyLock<private>(V:vector3, Value:float)<transacts>:vector3 =
         case (AxisLock):
             character_axis_lock.Left => vector3{Forward := V.Forward, Left := Value, Up := V.Up}
@@ -898,7 +998,7 @@ character_motor_component<public> := class<final_super>(component):
         Current := Entity.GetGlobalTransform()
         Entity.SetGlobalTransform(Current.WithTranslation(Current.Translation + Delta))
 
-# 役割：character_motor_component.AddModifier が返す、変更を外すための cancelable（実行時だけ）
+# Role: the cancelable returned by character_motor_component.AddModifier, for removing the modifier (runtime only)
 character_modifier_handle<internal> := class<internal>(cancelable):
     Motor<internal>:character_motor_component
     Id<internal>:int
@@ -909,7 +1009,7 @@ character_modifier_handle<internal> := class<internal>(cancelable):
             set Canceled = true
             Motor.RemoveModifier(Id)
 
-# 役割：character_motor_component.LockInput が返す、入力の止めを外すための cancelable（実行時だけ）
+# Role: the cancelable returned by character_motor_component.LockInput, for removing the input lock (runtime only)
 character_input_lock_handle<internal> := class<internal>(cancelable):
     Motor<internal>:character_motor_component
     Id<internal>:int
@@ -920,22 +1020,22 @@ character_input_lock_handle<internal> := class<internal>(cancelable):
             set Canceled = true
             Motor.UnlockInput(Id)
 
-# Candidate が Maybe の中身と同じ entity なら成功する（Maybe が false なら失敗する）
+# Succeeds if Candidate is the same entity as the content of Maybe (fails if Maybe is false)
 IsOptionEntity<internal>(Candidate:entity, Maybe:?entity)<decides><transacts>:void =
     Other := Maybe?
     Other = Candidate
 
-# V から Normal の向きの成分を除く（面に沿わせる）
+# Removes the component of V along Normal (follow the surface)
 RemoveComponent<internal>(V:vector3, Normal:vector3)<reads>:vector3 =
     V - Normal * DotProduct(V, Normal)
 
-# V を地面（向き Normal。上向き）に沿わせる：水平の速さはそのまま、上下の速さを地面の傾きに合わせる（V と Normal の内積を 0 にする）。Normal がほぼ横向きなら上下の速さを 0 にする
+# Aligns V with the ground (direction Normal, upward): horizontal speed kept, vertical speed matched to the slope (dot product of V and Normal becomes 0). If Normal is nearly horizontal, vertical speed becomes 0
 AlongGround<internal>(V:vector3, Normal:vector3)<reads>:vector3 =
     UpValue := if (Normal.Up > 0.01) then -(V.Forward * Normal.Forward + V.Left * Normal.Left) / Normal.Up else 0.0
     vector3{Forward := V.Forward, Left := V.Left, Up := UpValue}
 
-# MakeRotationFromYawPitchRollDegrees のヨーが左回りなら 1.0、右回りなら -1.0（90 度で回した前の軸の Left で確かめる）
-#   ArcTan(Left, Forward) は「左へ回ると正」なので、角度をヨーに渡すときはこれを掛ける（v43.00 実機：ヨーの正は右回り）
-#   BodyKit（向き）と MoveKit（walk の TankTurn）の両方が使うので、CharacterSystem の直下に置く
+# 1.0 if the yaw of MakeRotationFromYawPitchRollDegrees turns left, -1.0 if it turns right (checked by the Left of the forward axis rotated 90 degrees)
+#   ArcTan(Left, Forward) is "positive when turning left", so multiply by this when passing an angle as yaw (UEFN v43.00: positive yaw turns right)
+#   Used by both BodyKit (facing) and MoveKit (walk's TankTurn), so it lives directly under CharacterSystem
 YawSign<internal>()<reads>:float =
     if (MakeRotationFromYawPitchRollDegrees(90.0, 0.0, 0.0).GetForwardAxis().Left >= 0.0) then 1.0 else -1.0

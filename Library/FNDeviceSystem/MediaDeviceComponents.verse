@@ -4,32 +4,32 @@ using { /Fortnite.com/Devices }
 using { ActivationSystem }
 using { FNDeviceSystem.TooltipKit }
 
-# 見せ方・聞かせ方で、デバイスでしかできないこと（シネマティック シーケンス・音）を、起動・停止の合図から行う部品。
+# Parts that do, from the activation / deactivation signals, the presentation things only devices can do (cinematic sequences, audio).
 
-# だれに再生するか
+# Whom to play for
 device_play_scope<public> := enum:
-    # 全員（デバイスの Visibility の設定に従う）
+    # Everyone (follows the device's Visibility setting)
     Everyone
-    # 合図を起こした人だけ（デバイスの Visibility = Instigator のとき。分からなければ全員）
+    # Only the agent who caused the signal (when the device's Visibility = Instigator. Everyone when unknown)
     Activator
 
-# 役割：起動の合図でシネマティック シーケンス デバイスを再生し、停止の合図で止める
-# 置き方：エディターで entity に付ける（ノード・ボリューム・インタラクトの Targets など）
-# 外から：Play / Stop
-# 前提・注意：デバイスは 1 つずつ選ぶ（デバイスの配列は MCP で書けないため）。複数のデバイスを使うときは、子の entity にこの部品を 1 つずつ置く
+# Role: plays the cinematic sequence device on the activation signal and stops it on the deactivation signal
+# Placement: attach to an entity in the editor (a node, a volume, the Targets of an interact, ...)
+# From outside: Play / Stop
+# Requirements: devices are chosen one at a time (an array of devices cannot be written through MCP). To use several devices, place one of this part on each child entity
 device_sequence_component<public> := class<final_super>(component):
 
-    # 再生するシネマティック シーケンス デバイス
+    # The cinematic sequence device to play
     @editable:
         ToolTip := DeviceSequencesToolTip
         Categories := array{FNDeviceCategory}
     Sequence<public>:?cinematic_sequence_device = false
-    # だれに再生するか。既定 Everyone
+    # Whom to play for. Default Everyone
     @editable:
         ToolTip := DevicePlayScopeToolTip
         Categories := array{FNDeviceCategory}
     Scope<public>:device_play_scope = device_play_scope.Everyone
-    # オンなら停止の合図で止める。既定オン
+    # When on, stops on the deactivation signal. Default on
     @editable:
         ToolTip := DeviceStopOnDeactivateToolTip
         Categories := array{FNDeviceCategory}
@@ -45,33 +45,33 @@ device_sequence_component<public> := class<final_super>(component):
             Stop()
         false
 
-    # （全員に）再生する
+    # Plays (for everyone)
     Play<public>():void =
         if (Device := Sequence?):
             Device.Play()
 
-    # 止める
+    # Stops
     Stop<public>():void =
         if (Device := Sequence?):
             Device.Stop()
 
-# 役割：起動の合図でオーディオ プレイヤー デバイスを鳴らし、停止の合図で止める（効果音・BGM）
-# 置き方：エディターで entity に付ける（独自キャラクターの動きの反応・インタラクト・ボリュームの Targets など）
-# 外から：Play / Stop
-# 前提・注意：デバイスは 1 つずつ選ぶ（デバイスの配列は MCP で書けないため）。複数のデバイスを使うときは、子の entity にこの部品を 1 つずつ置く
+# Role: plays the audio player device on the activation signal and stops it on the deactivation signal (sound effects, BGM)
+# Placement: attach to an entity in the editor (reactions to a custom character's movement, the Targets of an interact or a volume, ...)
+# From outside: Play / Stop
+# Requirements: devices are chosen one at a time (an array of devices cannot be written through MCP). To use several devices, place one of this part on each child entity
 device_audio_component<public> := class<final_super>(component):
 
-    # 鳴らすオーディオ プレイヤー デバイス
+    # The audio player device to play
     @editable:
         ToolTip := DeviceAudioPlayersToolTip
         Categories := array{FNDeviceCategory}
     AudioPlayer<public>:?audio_player_device = false
-    # だれに鳴らすか。既定 Everyone
+    # Whom to play for. Default Everyone
     @editable:
         ToolTip := DevicePlayScopeToolTip
         Categories := array{FNDeviceCategory}
     Scope<public>:device_play_scope = device_play_scope.Everyone
-    # オンなら停止の合図で止める。既定オン
+    # When on, stops on the deactivation signal. Default on
     @editable:
         ToolTip := DeviceStopOnDeactivateToolTip
         Categories := array{FNDeviceCategory}
@@ -87,12 +87,12 @@ device_audio_component<public> := class<final_super>(component):
             Stop()
         false
 
-    # （全員に）鳴らす
+    # Plays (for everyone)
     Play<public>():void =
         if (Device := AudioPlayer?):
             Device.Play()
 
-    # 止める
+    # Stops
     Stop<public>():void =
         if (Device := AudioPlayer?):
             Device.Stop()

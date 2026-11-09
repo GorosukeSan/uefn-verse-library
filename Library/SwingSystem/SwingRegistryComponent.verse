@@ -2,18 +2,18 @@ using { /Verse.org/SceneGraph }
 using { /Verse.org/Simulation }
 using { SceneGraphSystem }
 
-# 役割：区画の中のスイングの台帳。各人の swing_runner（ロープを引くときに相手を探す）と、倍率の元（swing_modifier_component）を覚える。外からは倍率の結果（GetStats）を読むだけ（書き換えはスイング側だけが行う）
-# 置き方：エディターで entity に付ける。区画（game_scope_component の配下。無ければ世界）に 1 つ。スイング側・倍率の側が最初に 1 回だけ FindScopedComponent で探して覚える
-# 前提・注意：無くてもスイングは動くが、ロープを引く・倍率（swing_modifier_component）はこれが要る。だれがスイング中かはここでは持たない（Agent.IsSwinging[] / Agent.GetSwingState() でタグを見る）
+# Role: registry of the swings in a scope. Remembers each player's swing_runner (used to find the other side when pulling a rope) and the modifier sources (swing_modifier_component). From outside you only read the combined modifier (GetStats); only the swing side writes
+# Placement: attach to an entity in the editor. One per scope (under a game_scope_component; the world if there is none). The swing side and the modifier side look it up once with FindScopedComponent and remember it
+# Requirements / notes: swings work without it, but pulling a rope and modifiers (swing_modifier_component) need it. It does not track who is swinging (look at the tags with Agent.IsSwinging[] / Agent.GetSwingState())
 swing_registry_component<public> := class<final_super>(component):
 
     var<private> Runners:[agent]swing_runner = map{}
     var<private> Modifiers:[]swing_modifier_component = array{}
 
-    # 倍率の元が足された・外された・掛ける相手が変わったときに Signal する（swing_runner が Await して倍率を作り直す）
+    # Signaled when a modifier source is added / removed or its targets change (swing_runner Awaits it and rebuilds the modifier)
     ModifiersChangedEvent<internal>:event() = event(){}
 
-    # Agent に掛かっている倍率をすべて重ねた結果（掛かっていなければ swing_stats{}）
+    # Every modifier applied to Agent, combined (swing_stats{} if none is applied)
     GetStats<public>(Agent:agent)<transacts>:swing_stats =
         var Result:swing_stats = swing_stats{}
         for (Modifier : Modifiers, Modifier.IsAppliedTo[Agent]):

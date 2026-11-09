@@ -1,102 +1,102 @@
 # WidgetSystem
 
-プレイヤーの画面に widget（HUD・メニュー）を 1 人ずつ出す System です。基底 `player_widget_component` の派生が `CreateWidget` で 1 人分の widget を作るだけで、だれに出すか（`Audience`）・重ね順（`ZOrder`）・メニューの重なり（`MenuConflict`）・途中参加・後片付けは基底が受け持ちます。すぐ使える文字・ゲージ・通知の HUD、選択メニュー、標準 HUD を隠す部品もあります。
+A System that shows widgets (HUDs, menus) on players' screens, one per person. A subclass of the base `player_widget_component` only builds the widget for one person in `CreateWidget`; who sees it (`Audience`), stacking order (`ZOrder`), menu overlap (`MenuConflict`), late joiners and cleanup are handled by the base. Ready-made text, gauge and notification HUDs, choice menus and a part that hides the standard HUD are included.
 
-## 置き方
+## Setup (placement)
 
-| component | 置く場所 | すること |
+| component | Where to place | What it does |
 |---|---|---|
-| `player_widget_component` の派生 | 起動の合図が届く場所（ゲームの流れなら、ノードの entity かその子孫）。直接は置かない（派生を置く）。1 entity に何個置いてもよい | 起動しているあいだ、`Audience` で決めた人の画面に widget を出す。停止で全員から消す |
-| `text_hud_component`（HudKit） | 同上 | 画面の決まった位置に文字を 1 行出す（全員に同じ文字か、人ごとの文字） |
-| `gauge_hud_component`（HudKit） | 同上 | 割合（0.0〜1.0）を横棒で出す（全員に同じ値か、人ごとの値） |
-| `notification_hud_component`（HudKit） | 同上（既定で開始から全員に出す） | 数秒で消える通知を縦に積んで出す |
-| `hud_hide_component`（HudKit） | 起動の合図が届く場所 | 起動しているあいだ、Fortnite 標準の HUD のうちチェックを入れたものを人ごとに隠す。止まると自分が隠した分だけ戻す |
-| `card_menu_component`（MenuKit） | 起動の合図が届く場所。子 entity にカードごとの `card_info_component` を置く | 子 entity の `card_info_component` をカードにして Order の順に並べ、押されたカードの entity へ起動の合図を送る。マウスが乗る・フォーカスが来たカードは枠の色が変わり、Virtual Pointer で押したカードは奥へ沈む |
-| `card_info_component`（CardKit） | カードで選ばせたい entity（マップの根・モード・品物など） | カードに出す情報（Title・Subtitle・Description・Badge・Thumbnail・AccentColor・Order）を持つ。名前・並び順の持ち主はこの component だけにする。カードの画面のほか、PickupSystem の HudKit（拾った効果の HUD）も効果のプレハブの根のこれを読む（依存は PickupSystem → WidgetSystem の向きだけ） |
-| `choice_menu_component`（MenuKit） | 起動の合図が届く場所（インタラクトで開くなら、`interact_trigger_component` の `Targets` に入れる entity） | 見出しの下に項目のボタンを並べ、押された項目を知らせ、`Targets[番号]` へ起動の合図を送る |
-| `widget_show_in_group_component`（ShowKit） | widget と同じ entity | プレイヤーの組（PlayerSystem の `player_group_component`）に入っている人にだけ、同じ entity の widget を出す。入ったら出し、出たら消す。「メニューで選んだ人にだけ、そのモード・ジャンルの HUD を出す」 |
-| `widget_show_item_holder_component`（ShowKit） | アイテムの entity（`item_component`・`item_holder_component` と同じ entity） | アイテムの持ち手が付いているあいだ、同じ entity の `player_widget_component`（すべて）をその人に出し、外れたら消す |
-| `player_widget_view_component` | 実行時に `player_widget_component` がプレイヤーの slot の下に作る（エディターでは置かない） | 1 人の画面に widget を足し、消えるときに外す |
+| a `player_widget_component` subclass | Where the activation signal arrives (for a game sequence, the node's entity or a descendant). Not placed directly (place a subclass). Any number per entity | While activated, shows the widget on the screens of the people chosen by `Audience`. Deactivation removes it from everyone |
+| `text_hud_component` (HudKit) | Same as above | Shows one line of text at a fixed screen position (the same text for everyone, or per-person text) |
+| `gauge_hud_component` (HudKit) | Same as above | Shows a ratio (0.0-1.0) as a horizontal bar (the same value for everyone, or per-person values) |
+| `notification_hud_component` (HudKit) | Same as above (by default shown to everyone from the start) | Shows notifications that disappear after a few seconds, stacked vertically |
+| `hud_hide_component` (HudKit) | Where the activation signal arrives | While activated, hides the checked parts of the standard Fortnite HUD per person. When it stops, restores only what it hid |
+| `card_menu_component` (MenuKit) | Where the activation signal arrives. Give each child entity a `card_info_component` | Turns the `card_info_components` of child entities into cards sorted by Order and sends an activation signal to the pressed card's entity. The card under the mouse or with focus changes its border color, and a card pressed with the Virtual Pointer sinks in |
+| `card_info_component` (CardKit) | The entity to be chosen as a card (a map root, a mode, an item, etc.) | Holds the info shown on the card (Title, Subtitle, Description, Badge, Thumbnail, AccentColor, Order). This component is the only owner of the name and sort order. Besides card screens, PickupSystem's HudKit (the HUD of a picked-up effect) also reads this on the root of the effect prefab (the dependency only points PickupSystem -> WidgetSystem) |
+| `choice_menu_component` (MenuKit) | Where the activation signal arrives (to open with an interact, the entity put in the `Targets` of `interact_trigger_component`) | Lines up option buttons under a heading, notifies which option was pressed, and sends an activation signal to `Targets[index]` |
+| `widget_show_in_group_component` (ShowKit) | The same entity as the widget | Shows the widgets on the same entity only to people in a player group (PlayerSystem's `player_group_component`). Shows on joining and hides on leaving. "Show that mode's / genre's HUD only to people who chose it in a menu" |
+| `widget_show_item_holder_component` (ShowKit) | The item's entity (the same entity as `item_component` and `item_holder_component`) | While the item has a holder, shows every `player_widget_component` on the same entity to that person, and hides when the holder is removed |
+| `player_widget_view_component` | Created at runtime by `player_widget_component` under the player's slot (not placed in the editor) | Adds the widget to one person's screen and removes it when it goes away |
 
-例：ノードにいるあいだ全員に文字を出し、標準 HUD のミニマップなどを隠す
+Example: show text to everyone while in a node, and hide the minimap etc. of the standard HUD
 ```
-ノード（game_node_component）
-├ 案内（text_hud_component、Text = "ゴールを目指せ"）
-└ HUD を隠す（hud_hide_component）
+Node (game_node_component)
+├ Guide (text_hud_component, Text = "Reach the goal")
+└ Hide HUD (hud_hide_component)
 ```
-ゲームの流れを使わずに最初から出すなら、`ActiveOnBegin` をオンにします。だれに出すかを場所やアイテムで決めるなら、`Audience = Chosen` にして、同じ entity に `widget_show_item_holder_component`（ShowKit）か `widget_show_in_volume_component`（VolumeSystem の WidgetKit）を置きます。
+To show from the start without using a game sequence, turn on `ActiveOnBegin`. To decide who sees it by place or item, set `Audience = Chosen` and place `widget_show_item_holder_component` (ShowKit) or `widget_show_in_volume_component` (VolumeSystem's WidgetKit) on the same entity.
 
-## 設定（@editable）
-- ラウンド（設定なし。オフにできない）— 必ず fort_round_manager を挟む。出すのはラウンドの途中（OnRoundStarted から OnRoundEnded まで）だけで、ラウンドの外では Activate / ShowFor も受け付けない。ActiveOnBegin の画面は OnRoundStarted で出し（ラウンドの途中に置かれたときも購読の直後に呼ばれる）、OnRoundEnded で全員から消す。UEFN の編集中に画面が残らない。round manager が無いとき（テストなど）は開始時に出し、いつでも出せる。`IsOutsideRound[]` で問い合わせられる。
-すべての `player_widget_component` の派生にあるもの：
-- `Mode : player_widget_mode = player_widget_mode.Hud` — `Hud` は操作を奪わない表示（表示中も移動・カメラの操作はそのまま）。`Menu` は操作を受け取る画面で、表示した瞬間にフォーカスを移す。
-- `Audience : player_widget_audience = player_widget_audience.Everyone` — `Everyone` は起動したら区画の全員に出す（途中参加の人にも）。`Chosen` は `ShowFor` で決めた人だけに出す。
-- `ZOrder : int = 0` — 画面に重ねる順（0〜100000）。大きいほど手前。目安は HUD 0〜100、メニュー 1000、通知 10000。
-- `MenuConflict : player_widget_menu_conflict = player_widget_menu_conflict.CloseOther` — 同じ人にもう別のメニューが出ているとき、前を閉じてこちらを出す（`CloseOther`）か、前を残してこちらを出さない（`KeepOther`）か。`Mode = Menu` のときだけ使う。
-- `ActiveOnBegin : logic = false` — オンならゲームの開始から出す（`Chosen` なら `ShowFor` を受け付け始める）。オフなら起動の合図から。
-- `ForwardReceivedEvents : logic = false` — オンなら、この entity に届いた知らせ（起動・停止の合図以外の scene_event）を、出している全員の `widget_view.ReceivedEvent` へ渡す。
+## Settings (@editable)
+- Rounds (no setting; cannot be turned off) — always goes through fort_round_manager. Shown only during a round (from OnRoundStarted to OnRoundEnded); outside a round, Activate / ShowFor are not accepted either. ActiveOnBegin screens are shown at OnRoundStarted (also called right after subscribing when placed mid-round) and removed from everyone at OnRoundEnded. No screen is left behind while editing in UEFN. Without a round manager (tests, etc.) it shows at start and can show at any time. Query with `IsOutsideRound[]`.
+On every `player_widget_component` subclass:
+- `Mode : player_widget_mode = player_widget_mode.Hud` — `Hud` is a display that does not take input (movement and camera controls keep working while shown). `Menu` is a screen that takes input and moves focus the moment it is shown.
+- `Audience : player_widget_audience = player_widget_audience.Everyone` — `Everyone` shows to everyone in the area when activated (late joiners too). `Chosen` shows only to people chosen with `ShowFor`.
+- `ZOrder : int = 0` — stacking order on the screen (0-100000). Larger is in front. Guide: HUD 0-100, menus 1000, notifications 10000.
+- `MenuConflict : player_widget_menu_conflict = player_widget_menu_conflict.CloseOther` — when another menu is already shown to the same person: close the previous one and show this (`CloseOther`), or keep the previous one and do not show this (`KeepOther`). Used only with `Mode = Menu`.
+- `ActiveOnBegin : logic = false` — when on, shows from the start of the game (with `Chosen`, starts accepting `ShowFor`). When off, from the activation signal.
+- `ForwardReceivedEvents : logic = false` — when on, notifications that reach this entity (scene_events other than activation / deactivation signals) are passed to `widget_view.ReceivedEvent` of everyone it is shown to.
 
-HudKit / MenuKit：
-- `text_hud_component.Text : string = ""` — 最初に出す文字。空なら見えない。
-- `text_hud_component.PositionXRatio : float = 0.5` / `PositionYRatio : float = 0.15` — 置く位置（画面の割合 0.0〜1.0。左上が 0, 0。その点を真ん中にして置く）。
-- `gauge_hud_component.WidthPx : float = 300.0`（10〜2000）/ `HeightPx : float = 16.0`（2〜500） — 棒の幅と高さ（画面のピクセル）。
-- `gauge_hud_component.FillColor : color = NamedColors.White` / `BackColor : color = NamedColors.Black` — 中身と背景の色。
-- `gauge_hud_component.PositionXRatio : float = 0.5` / `PositionYRatio : float = 0.9` — 置く位置。
-- `gauge_hud_component.InitialRatio : float = 1.0` — 最初の割合（0.0〜1.0）。
-- `notification_hud_component.DisplaySeconds : float = 3.0` — 1 つの通知を出しておく秒数（0.5〜60）。
-- `notification_hud_component.MaxLines : int = 4` — 同時に出す通知の数（1〜20）。超えたら古いものから消す。
-- `notification_hud_component.PositionXRatio : float = 0.5` / `PositionYRatio : float = 0.3` — 置く位置。
-- `notification_hud_component` は既定を `ActiveOnBegin = true`、`ZOrder = 10000` にしている。
-- `choice_menu_component.Title : string = ""` — 見出し。空なら出さない。
-- `choice_menu_component.Options : []string = array{"OK"}` — 並べる項目（上から番号 0, 1, 2 ...）。
-- `choice_menu_component.Targets : []entity = array{}` — 項目ごとに起動の合図を送る entity（`Options` と同じ並び。足りない番号は送らない）。
-- `choice_menu_component.CloseOnChoice : logic = true` — オンなら、選んだらその人のメニューを閉じる。
-- `widget_show_in_group_component.Group : ?entity = false` — 組（`player_group_component` を付けた entity）。空なら、この entity かその祖先の組。どちらも無ければだれにも出さない。
-- `choice_menu_component.ShowCloseButton : logic = true` / `CloseText : string = "Close"` — 最後に何も選ばずに閉じるボタンを足すか、その文字。
-- `choice_menu_component.PositionXRatio : float = 0.5` / `PositionYRatio : float = 0.5` — 置く位置。
-- `choice_menu_component` は既定を `Mode = Menu`、`ZOrder = 1000` にしている。
-- `hud_hide_component.ActiveOnBegin : logic = false` — オンならゲームの開始から隠す。オフなら起動の合図から。
-- `hud_hide_component` の隠すもの（オンにしたものを隠す）：`HideMinimap = true`（ミニマップ）、`HideBuild = true`（建築メニューと素材）、`HideTeamInfo = true`（チーム情報・人数・撃破数）、`HideRoundInfo = true`（ラウンド・ストームの情報）、`HideExperience = true`（経験値）、`HideHealth = false`（体力とシールド）、`HideInventory = false`（手持ちのアイテム欄）、`HideInteractionPrompts = false`（インタラクトの案内）。
+HudKit / MenuKit:
+- `text_hud_component.Text : string = ""` — text shown at first. Invisible if empty.
+- `text_hud_component.PositionXRatio : float = 0.5` / `PositionYRatio : float = 0.15` — position (screen ratios 0.0-1.0; top-left is 0, 0. Placed centered on that point).
+- `gauge_hud_component.WidthPx : float = 300.0` (10-2000) / `HeightPx : float = 16.0` (2-500) — bar width and height (screen pixels).
+- `gauge_hud_component.FillColor : color = NamedColors.White` / `BackColor : color = NamedColors.Black` — fill and background colors.
+- `gauge_hud_component.PositionXRatio : float = 0.5` / `PositionYRatio : float = 0.9` — position.
+- `gauge_hud_component.InitialRatio : float = 1.0` — initial ratio (0.0-1.0).
+- `notification_hud_component.DisplaySeconds : float = 3.0` — seconds one notification stays (0.5-60).
+- `notification_hud_component.MaxLines : int = 4` — number of notifications shown at once (1-20). Beyond it, the oldest are removed.
+- `notification_hud_component.PositionXRatio : float = 0.5` / `PositionYRatio : float = 0.3` — position.
+- `notification_hud_component` defaults to `ActiveOnBegin = true`, `ZOrder = 10000`.
+- `choice_menu_component.Title : string = ""` — heading. Not shown if empty.
+- `choice_menu_component.Options : []string = array{"OK"}` — options to line up (index 0, 1, 2 ... from the top).
+- `choice_menu_component.Targets : []entity = array{}` — entity that receives an activation signal per option (same order as `Options`. Missing indices send nothing).
+- `choice_menu_component.CloseOnChoice : logic = true` — when on, closes that person's menu after choosing.
+- `widget_show_in_group_component.Group : ?entity = false` — the group (an entity with `player_group_component`). Empty means the group of this entity or an ancestor. With neither, nobody sees it.
+- `choice_menu_component.ShowCloseButton : logic = true` / `CloseText : string = "Close"` — whether to add a button at the end that closes without choosing, and its text.
+- `choice_menu_component.PositionXRatio : float = 0.5` / `PositionYRatio : float = 0.5` — position.
+- `choice_menu_component` defaults to `Mode = Menu`, `ZOrder = 1000`.
+- `hud_hide_component.ActiveOnBegin : logic = false` — when on, hides from the start of the game. When off, from the activation signal.
+- What `hud_hide_component` hides (the ones turned on): `HideMinimap = true` (minimap), `HideBuild = true` (build menu and materials), `HideTeamInfo = true` (team info, player count, eliminations), `HideRoundInfo = true` (round and storm info), `HideExperience = true` (experience), `HideHealth = false` (health and shields), `HideInventory = false` (inventory bar), `HideInteractionPrompts = false` (interaction prompts).
 
-CardKit / MenuKit（カード）：
-- `card_info_component.Title / Subtitle / Description / Badge : string`、`Thumbnail : ?texture`（無ければ AccentColor の帯）、`AccentColor : color`、`Order : int`（小さいほど先）。
-- `card_menu_component.Title : string`、`Columns : int = 4`、`CloseOnChoice`・`ShowCloseButton`・`CloseText`（choice_menu と同じ）、`PositionXRatio / PositionYRatio`、`PointerFieldOfViewDegrees : float = 90`（Virtual Pointer の押した位置を画面の割合に直すときのカメラの水平の画角）。見た目は `var Style : widget_card_style`（コードで差し替える）。
-- `text_hud_component.TextColor : color = 白`、`TextSize : float = 0`（0 は既定の大きさ）、`BackgroundOpacity : float = 0`（0 なら板なし）、`BackgroundColor : color = 黒`。
+CardKit / MenuKit (cards):
+- `card_info_component.Title / Subtitle / Description / Badge : string`, `Thumbnail : ?texture` (an AccentColor band if none), `AccentColor : color`, `Order : int` (smaller comes first).
+- `card_menu_component.Title : string`, `Columns : int = 4`, `CloseOnChoice` / `ShowCloseButton` / `CloseText` (same as choice_menu), `PositionXRatio / PositionYRatio`, `PointerFieldOfViewDegrees : float = 90` (the horizontal camera field of view used to convert the Virtual Pointer's pressed position to a screen ratio). The look is `var Style : widget_card_style` (replace it in code).
+- `text_hud_component.TextColor : color = white`, `TextSize : float = 0` (0 is the default size), `BackgroundOpacity : float = 0` (0 means no panel), `BackgroundColor : color = black`.
 
-## イベント
-- `widget_choice_event`（scene_event、SendUp）: `Menu : choice_menu_component`、`Agent : agent`、`Index : int`（`Options` の番号。0 から）。`choice_menu_component` で項目が押されたとき、その entity から根へ送る。受け手は祖先の component（条件・ゲームの流れ・利用者の component）。消費しない。
-- `hud_text_request_event`（scene_event、SendDown）: `Agent : ?agent`（`false` なら全員。これから出す人も）、`Text : message`。利用者の component が `text_hud_component` の entity へ（またはその祖先から SendDown で）送り、文字を変える。消費しない。
-- `hud_notification_request_event`（scene_event、SendDown）: `Agent : ?agent`（`false` なら出している全員）、`Text : message`。利用者の component が `notification_hud_component` の entity へ（またはその祖先から SendDown で）送り、通知を出す。消費しない。
-- listenable（外から Signal はできない）
-  - `choice_menu_component.ChoiceEvent : listenable(tuple(agent, int))` — だれかが項目を選ぶたびに、（その人, 項目の番号）で届く。
-  - `widget_view.HiddenEvent : listenable(tuple())` — その人の画面から消えたときに 1 回届く（`Close`・`HideFor`・`Deactivate`・退出・メニューの入れ替え・停止）。
-  - `widget_view.ReceivedEvent : listenable(scene_event)` — `SendToWidgets` / `SendToWidgetFor`（と `ForwardReceivedEvents`）で渡した知らせと、同じ人のほかの view から `SendToPlayer`（PlayerSystem）で送られた `player_event` の中身が届く。
-- 送るもの: `choice_menu_component` は項目を選ばれると `Targets[番号]` の entity へ `SendActivatedBy(Agent)`（`activated_by_agent_event`）。
-- 受けるもの
-  - `player_widget_component`（派生すべて）は `activated_event`（出し始める）/ `deactivated_event`（全員から消す）。`ForwardReceivedEvents` がオンなら、それ以外の知らせを全員の表示へ渡す。
-  - `text_hud_component` は `hud_text_request_event`、`notification_hud_component` は `hud_notification_request_event`。
-  - `hud_hide_component` は `activated_event`（隠す）/ `deactivated_event`（戻す）。
-  - `player_widget_view_component` は `player_view_source_event`（作った component から）と `player_event`（同じ人のほかの view から）を受け、中身を `widget_view.ReceivedEvent` に渡す。
+## Events
+- `widget_choice_event` (scene_event, SendUp): `Menu : choice_menu_component`, `Agent : agent`, `Index : int` (the index in `Options`, from 0). Sent from the entity to the root when an option is pressed in `choice_menu_component`. Receivers are ancestor components (conditions, game sequence, your components). Not consumed.
+- `hud_text_request_event` (scene_event, SendDown): `Agent : ?agent` (`false` means everyone, including people shown later), `Text : message`. Your component sends it to the `text_hud_component`'s entity (or SendDown from an ancestor) to change the text. Not consumed.
+- `hud_notification_request_event` (scene_event, SendDown): `Agent : ?agent` (`false` means everyone it is shown to), `Text : message`. Your component sends it to the `notification_hud_component`'s entity (or SendDown from an ancestor) to show a notification. Not consumed.
+- listenables (cannot be Signaled from outside)
+  - `choice_menu_component.ChoiceEvent : listenable(tuple(agent, int))` — delivered as (the person, the option index) each time someone chooses an option.
+  - `widget_view.HiddenEvent : listenable(tuple())` — delivered once when it disappears from that person's screen (`Close`, `HideFor`, `Deactivate`, leaving, menu swap, deactivation).
+  - `widget_view.ReceivedEvent : listenable(scene_event)` — delivers notifications passed with `SendToWidgets` / `SendToWidgetFor` (and `ForwardReceivedEvents`), and the contents of `player_events` sent with `SendToPlayer` (PlayerSystem) from the same person's other views.
+- Sent: when an option is chosen, `choice_menu_component` sends `SendActivatedBy(Agent)` (`activated_by_agent_event`) to the entity `Targets[index]`.
+- Received
+  - `player_widget_component` (every subclass) receives `activated_event` (start showing) / `deactivated_event` (remove from everyone). With `ForwardReceivedEvents` on, other notifications are passed to everyone's display.
+  - `text_hud_component` receives `hud_text_request_event`; `notification_hud_component` receives `hud_notification_request_event`.
+  - `hud_hide_component` receives `activated_event` (hide) / `deactivated_event` (restore).
+  - `player_widget_view_component` receives `player_view_source_event` (from the creating component) and `player_event` (from the same person's other views) and passes the contents to `widget_view.ReceivedEvent`.
 
-## 持ち主
-プレイヤーの slot の下（LoadoutSystem のロードアウトの中、CharacterSystem のキャラクターの中など。`Entity.FindOwningPlayer[]` が成功する場所）に置くと、全員ではなく持ち主に効きます。
-- `player_widget_component`（派生すべて）：`Audience = Everyone` は「持ち主だけに出す」になる（ほかの人・途中参加の人には出さない）。`Chosen` なら、これまでどおり `ShowFor` で決めた人に出す。
-- `hud_hide_component`：持ち主の分だけ標準 HUD を隠す（区画の全員と途中参加の人は見ない）。
+## Owner
+Placed under a player's slot (inside a LoadoutSystem loadout, inside a CharacterSystem character, etc.: anywhere `Entity.FindOwningPlayer[]` succeeds), it affects the owner instead of everyone.
+- `player_widget_component` (every subclass): `Audience = Everyone` becomes "show only to the owner" (not to others or late joiners). `Chosen` still shows to the people chosen with `ShowFor`.
+- `hud_hide_component`: hides the standard HUD only for the owner (does not look at everyone in the area or late joiners).
 
-## 公開 API
+## Public API
 ```verse
 player_widget_mode<public> := enum:
     Hud
     Menu
 
-(Mode:player_widget_mode).ToInputMode<public>()<computes>:ui_input_mode     # Hud → None、Menu → All
+(Mode:player_widget_mode).ToInputMode<public>()<computes>:ui_input_mode     # Hud -> None, Menu -> All
 
 player_widget_audience<public> := enum:
     Everyone
     Chosen
 
 widget_zorder<public> := type{_X:int where 0 <= _X, _X <= 2147483647}
-MakePlayerUISlot<public>(ZOrder:int, InputMode:ui_input_mode)<transacts>:player_ui_slot   # 範囲外の ZOrder は丸める
+MakePlayerUISlot<public>(ZOrder:int, InputMode:ui_input_mode)<transacts>:player_ui_slot   # out-of-range ZOrder is clamped
 
 player_widget_menu_conflict<public> := enum:
     CloseOther
@@ -109,35 +109,35 @@ player_widget_component<public> := class<abstract><final_super>(component):
     MenuConflict<public>:player_widget_menu_conflict
     ActiveOnBegin<public>:logic
     ForwardReceivedEvents<public>:logic
-    CreateWidget<protected>(View:widget_view):widget        # 派生が実装する。出すたびに 1 回呼ばれる（いちばん外側の widget を返す）
-    Activate<public>():void                                 # 出し始める（Everyone は全員、Chosen は ShowFor を受け付け始める）
-    Deactivate<public>():void                               # 全員から消す
-    ShowFor<public>(Agent:agent):void                       # もう出ていれば何もしない。Chosen で起動していなければ起動してから出す
+    CreateWidget<protected>(View:widget_view):widget        # implemented by subclasses. Called once each time it is shown (returns the outermost widget)
+    Activate<public>():void                                 # start showing (Everyone: to all; Chosen: starts accepting ShowFor)
+    Deactivate<public>():void                               # remove from everyone
+    ShowFor<public>(Agent:agent):void                       # does nothing if already shown. With Chosen and not activated, activates first
     HideFor<public>(Agent:agent):void
     IsShownFor<public>(Agent:agent)<decides><transacts>:void
-    CanShowTo<public>(Agent:agent)<decides><transacts>:void    # 同じ entity の widget_audience_filter_component がすべて許すなら成功
-    IsShown<public>()<decides><transacts>:void              # 起動しているあいだ成功
+    CanShowTo<public>(Agent:agent)<decides><transacts>:void    # succeeds if every widget_audience_filter_component on the same entity allows it
+    IsShown<public>()<decides><transacts>:void              # succeeds while activated
     FindView<public>(Agent:agent)<decides><transacts>:widget_view
-    SendToWidgets<public>(SceneEvent:scene_event):void      # 出している全員の ReceivedEvent へ
+    SendToWidgets<public>(SceneEvent:scene_event):void      # to the ReceivedEvent of everyone it is shown to
     SendToWidgetFor<public>(Agent:agent, SceneEvent:scene_event):void
 
-(InEntity:entity).GetPlayerWidgets<public>()<reads>:[]player_widget_component   # InEntity に付いた派生すべて
+(InEntity:entity).GetPlayerWidgets<public>()<reads>:[]player_widget_component   # every subclass attached to InEntity
 
-widget_view<public> := class<internal>:                     # 1 人分の窓口。利用者は作らない
+widget_view<public> := class<internal>:                     # the view for one person. Your code does not create it
     Player<public>:player
     Owner<public>:player_widget_component
     HiddenEvent<public><final>:listenable(tuple())
     ReceivedEvent<public><final>:listenable(scene_event)
     IsShown<public>()<decides><transacts>:void
-    Close<public>():void                                    # Owner.HideFor(Player) と同じ
+    Close<public>():void                                    # same as Owner.HideFor(Player)
     Focus<public>(Target:widget):void
-    SetDefaultFocus<public>(Target:widget):void             # CreateWidget の中で呼ぶ。出した次のフレームで Focus する
-    AwaitClick<public>(OnClick:listenable(widget_message), ?ButtonId:string = "", ?Label:string = "")<suspends>:logic   # この人が押したら true（PressButton でも）、先に閉じたら false
-    AwaitChoice<public>(Buttons:[]text_button_base, ?ButtonIds:[]string = array{})<suspends>:?int            # 押されたボタンの番号（PressButton でも同じ番号）。先に閉じたら false
-    AwaitButtonGroupChoice<public>(Groups:[][]button, ?ButtonIds, ?Labels)<suspends>:?int     # 1 つの選択肢が複数の button でできているとき（どれかで選ばれる）
-    AwaitButtonChoice<public>(Buttons:[]button, ?ButtonIds:[]string = array{}, ?Labels:[]string = array{})<suspends>:?int   # 中身を自由に入れられる button（カードなど）版。Labels は一覧に出す文字
-    GetWaitingButtons<public>():[]widget_button_info        # 今 AwaitClick / AwaitChoice で待っているボタン（ID・番号・文字・有効か）
-    PressButton<public>(Key:string):widget_press_result     # コードから押す（ID・ボタンの文字・番号の文字）。本物のクリックと同じく待ちに届く
+    SetDefaultFocus<public>(Target:widget):void             # call inside CreateWidget. Focus is called on the frame after showing
+    AwaitClick<public>(OnClick:listenable(widget_message), ?ButtonId:string = "", ?Label:string = "")<suspends>:logic   # true when this person presses (PressButton too), false if closed first
+    AwaitChoice<public>(Buttons:[]text_button_base, ?ButtonIds:[]string = array{})<suspends>:?int            # index of the pressed button (PressButton gives the same index). false if closed first
+    AwaitButtonGroupChoice<public>(Groups:[][]button, ?ButtonIds, ?Labels)<suspends>:?int     # when one choice is made of several buttons (any of them chooses it)
+    AwaitButtonChoice<public>(Buttons:[]button, ?ButtonIds:[]string = array{}, ?Labels:[]string = array{})<suspends>:?int   # version for buttons with free content (cards, etc.). Labels are the text shown in the list
+    GetWaitingButtons<public>():[]widget_button_info        # buttons currently waited on by AwaitClick / AwaitChoice (ID, index, text, enabled)
+    PressButton<public>(Key:string):widget_press_result     # press from code (ID, button text or index as text). Reaches the wait exactly like a real click
 
 widget_press_result<public> := enum:                       # Pressed / NotShown / NotWaiting / NoButton / Disabled
 widget_button_info<public> := struct:
@@ -146,41 +146,64 @@ widget_button_info<public> := struct:
     Label<public>:string
     Enabled<public>:logic
 
-player_widget_view_component<public> := class<final_super><internal>(component):   # 実行時に作られる
+player_widget_view_component<public> := class<final_super><internal>(component):   # created at runtime
     View<public>:widget_view
     Root<public>:widget
     Slot<public>:player_ui_slot
 
-# 配置と文字の補助（位置は画面の割合 0.0〜1.0、左上が 0, 0）
+# Layout and text helpers (positions are screen ratios 0.0-1.0, top-left is 0, 0)
 MakeScreenSlot<public>(Widget:widget, XRatio:float, YRatio:float)<transacts>:canvas_slot
 MakeFullScreenSlot<public>(Widget:widget)<transacts>:canvas_slot
 MakeScreenCanvas<public>(Widget:widget, XRatio:float, YRatio:float):canvas
 MakeStack<public>(Widgets:[]widget, Orientation:orientation, PaddingPx:float):stack_box
-widget_text_style<public> := struct { Color, Size（0 なら既定）, Justification }
+widget_text_style<public> := struct { Color, Size (0 means default), Justification }
 MakeStyledText<public>(Text:message, Style:widget_text_style):text_block
-MakePanel<public>(Widget:widget, BackColor:color, Opacity:float, PaddingPx:float):widget     # 後ろに板を敷く（Opacity 0 ならそのまま）
-ToOpacity<public>(Value:float)<transacts>:widget_opacity                                       # 0.0〜1.0 に収める
+MakePanel<public>(Widget:widget, BackColor:color, Opacity:float, PaddingPx:float):widget     # put a panel behind (Opacity 0 returns it as is)
+ToOpacity<public>(Value:float)<transacts>:widget_opacity                                       # clamp to 0.0-1.0
 
 # CardKit
-widget_card<public> := struct { Id, Title, Subtitle, Description, Badge, Image:?texture, AccentColor, Enabled }   # WithSubtitle / WithBadge / WithEnabled で 1 か所だけ変えた写し
-widget_card_style<public> := struct { WidthPx, HeightPx, ImageHeightPx, PaddingPx, BorderPx, BorderColor, BorderOpacity, HighlightColor, HighlightBackgroundOpacity, PressDepthPx, PressShadeOpacity, 色・文字の大きさ … }
-MakeCardView<public>(Card, Style, ?Skin:?widget_card_skin = false):widget_card_button   # 押せるカード 1 枚（Button・SetHighlighted・SetPressed・ClearPressed・TrackHighlight(View)）
-MakeCardButton<public>(Card, Style):button                                              # button だけ（選択・押し込みの表示が要らないとき）
-PlayCardChosen<public>(Cards, Chosen, ShineSeconds, ?DimAmount, ?StepsPerSecond)<suspends>   # 選ばれた演出：ほかを暗く、選んだカードに光（擬似ライト）が斜めに走り傾きが追う
-PlayCardZoom<public>(Root:canvas, Card, Style, Rect, Seconds, TargetScale, ?Skin, ?StepsPerSecond)<suspends>   # 写しを画面の真ん中へ拡大しながら消す（いちばん手前）
-MakeCardContent<public>(Card, Style):widget                                             # 押せない見た目だけ
+widget_card<public> := struct { Id, Title, Subtitle, Description, Badge, Image:?texture, AccentColor, Enabled }   # WithSubtitle / WithBadge / WithEnabled give a copy with one field changed (all through the single CopyWidgetCard; when adding a field, write it only there)
+widget_card_style<public> := struct { WidthPx, HeightPx, ImageHeightPx, PaddingPx, BorderPx, BorderColor, BorderOpacity, HighlightColor, HighlightBackgroundOpacity, PressDepthPx, PressShadeOpacity, colors and text sizes ... }
+MakeCardView<public>(Card, Style, ?Skin:?widget_card_skin = false):widget_card_button   # one pressable card (Button, SetHighlighted, SetPressed, ClearPressed, TrackHighlight(View))
+MakeCardButton<public>(Card, Style):button                                              # button only (when the selected / pressed looks are not needed)
+PlayCardChosen<public>(Cards, Chosen, ShineSeconds, ?DimAmount, ?StepsPerSecond)<suspends>   # chosen effect: darken the others, a light (fake light) sweeps diagonally over the chosen card and the tilt follows
+PlayCardZoom<public>(Root:canvas, Card, Style, Rect, Seconds, TargetScale, ?Skin, ?StepsPerSecond)<suspends>   # enlarge a copy toward the screen center and fade it out (in front of everything)
+MakeCardContent<public>(Card, Style):widget                                             # look only, not pressable
 MakeCardGrid<public>(Buttons:[]widget, Columns:int, GapPx:float):widget
-CardGridRect<public>(Index, Count, Columns, GapPx, Style, CenterX, CenterY):widget_screen_rect   # その並びで Index 枚目が占める範囲（画面の割合。1080p・16:9 基準）
-widget_card_skin<public> / widget_card_skin_view<public> := interface                  # 地の見た目の差し替え（マテリアルなど。GetWidget・SetHighlight・SetPress・SetTilt・SetLight・SetFade）
-MakeScreenSlot(Widget, X, Y, ?ZOrder)                                                    # ZOrder：同じ canvas の中で手前に出す
-card_info_component.GetCard(Id)、GetTitle(?Fallback)、SortCards(Infos)
+CardGridRect<public>(Index, Count, Columns, GapPx, Style, CenterX, CenterY):widget_screen_rect   # the rectangle the Index-th card occupies in that layout (screen ratios; 1080p, 16:9)
+widget_card_skin<public> / widget_card_skin_view<public> := interface                  # replaces the background look (material, etc. GetWidget, SetHighlight, SetPress, SetTilt, SetLight, SetFade)
+MakeScreenSlot(Widget, X, Y, ?ZOrder)                                                    # ZOrder: bring to the front within the same canvas
+card_info_component.GetCard(Id), GetTitle(?Fallback), GetCardId(?Fallback) (CardId -> Title -> Fallback; the button ID in card_menu_component), SortCards(Infos)
 
-# PointerKit（Virtual Pointer。実験的）
+# PointerKit (Virtual Pointer; experimental)
 (Player:player).PointerToScreenRatio<public>(ViewportPosition:vector3, FieldOfViewDegrees:float)<decides><transacts>:tuple(float, float)
-RunCardPointerPress<public>(View:widget_view, Cards:[]widget_card_button, Rects:[]widget_screen_rect, FieldOfViewDegrees:float)<suspends>:void   # 押したカードを沈める（spawn で呼ぶ）
+RunCardPointerPress<public>(View:widget_view, Cards:[]widget_card_button, Rects:[]widget_screen_rect, FieldOfViewDegrees:float)<suspends>:void   # sink the pressed card (call with spawn)
 IntToMessage<public><localizes>(Value:int):message
-PercentToMessage<public><localizes>(Value:int):message      # 75 → "75%"
+PercentToMessage<public><localizes>(Value:int):message      # 75 -> "75%"
 StringToMessage<public><localizes>(Text:string):message
+
+# World -> screen (PointerKit. MarkerKit's markers use it too)
+widget_screen_projection<public> := struct<computes> { Origin, Forward, Right, Up:vector3, TanH, TanV:float }   # camera eye, directions and extent to the screen edge
+(Player:player).GetScreenProjection<public>()<decides><reads>:widget_screen_projection          # that person's current camera (derived from 4 DeprojectViewportToWorld rays. Field of view and aspect ratio not hard-coded. Lags slightly)
+MakeScreenProjectionInView<public>(View:transform, FieldOfViewDegrees:float, ?AspectRatio:float = 16:9)<reads>:widget_screen_projection   # a camera you placed (no lag)
+MakeScreenProjectionAlong<public>(Origin, Forward:vector3, FieldOfViewDegrees, ?AspectRatio)<decides><reads>:widget_screen_projection
+(Projection).ProjectToScreenRatio<public>(WorldPosition:vector3)<decides><reads>:vector2           # fails behind the camera. Off screen gives values outside 0-1
+(Projection).ProjectDirectionToScreenRatio<public>(Direction:vector3)<decides><reads>:vector2
+(Player:player).ProjectToScreenRatio<public>(WorldPosition:vector3)<decides><reads>:vector2       # GetScreenProjection then project (reuse GetScreenProjection for many points)
+(Player:player).ViewportToScreenRatio<public>(ViewportPosition:vector3)<decides><reads>:vector2   # Virtual Pointer coordinate -> screen ratio (from the current camera's rays)
+ProjectToScreenRatioInView / ProjectToScreenRatioAlong / ClampScreenRatio                           # shortcuts for projecting a single point
+
+# MarkerKit (markers layered over the 3D view)
+widget_bubble_style<public> := struct { BackColor, BackOpacity, BorderPx, BorderColor, BorderOpacity, HighlightColor, PaddingPx, MinWidthPx, MinHeightPx, TailWidthPx, TailHeightPx, TailSteps }
+MakeSpeechBubble<public>(Content:widget, Style:widget_bubble_style):widget_bubble_button   # speech bubble with a tail pointing down (pressable. Button, SetHighlighted, TrackHighlight(View), BodyHeightPx, GetTailHeightPx)
+MakeScreenMarker<public>(Root:canvas, Widget:widget, ?AlignX:float = 0.5, ?AlignY:float = 1.0, ?ZOrder:int = 0, ?MinMovePx:float = 0.5):widget_screen_marker
+widget_screen_marker<public> := class<internal>:
+    MoveTo<public>(X:float, Y:float):void                  # align (AlignX, AlignY) to the point. Movement below MinMovePx does not re-place
+    HideMarker<public>():void
+    IsShown<public>()<decides><transacts>:void
+    GetPoint<public>()<transacts>:tuple(float, float)
+    DistancePxTo<public>(X, Y, RadiusPx, ?OffsetXPx, ?OffsetYPx)<decides><transacts>:float   # whether a pressed point is near (px at 1080p)
+    FollowWorld<public>(Projection:widget_screen_projection, World:vector3, ?MarginRatio:float = 0.05):void   # call every frame. Hides when behind or off screen
 
 # HudKit
 hud_text_request_event<public> := class(scene_event):
@@ -191,9 +214,9 @@ text_hud_component<public> := class<final_super>(player_widget_component):
     Text<public>:string
     PositionXRatio<public>:float
     PositionYRatio<public>:float
-    SetText<public>(Value:message):void                     # 全員の文字（人ごとの文字は消す）
-    SetTextFor<public>(Agent:agent, Value:message):void     # その人だけ（全員の文字より優先）
-    ClearTextFor<public>(Agent:agent):void                  # 全員の文字に戻す
+    SetText<public>(Value:message):void                     # everyone's text (per-person text is cleared)
+    SetTextFor<public>(Agent:agent, Value:message):void     # that person only (takes priority over everyone's text)
+    ClearTextFor<public>(Agent:agent):void                  # back to everyone's text
 
 gauge_hud_component<public> := class<final_super>(player_widget_component):
     WidthPx<public>:float
@@ -203,7 +226,7 @@ gauge_hud_component<public> := class<final_super>(player_widget_component):
     PositionXRatio<public>:float
     PositionYRatio<public>:float
     InitialRatio<public>:float
-    SetRatio<public>(Ratio:float):void                      # 全員（0.0〜1.0 に丸める。人ごとの値は消す）
+    SetRatio<public>(Ratio:float):void                      # everyone (clamped to 0.0-1.0. Per-person values are cleared)
     SetRatioFor<public>(Agent:agent, Ratio:float):void
     GetRatioFor<public>(Agent:agent)<transacts>:float
 
@@ -216,7 +239,7 @@ notification_hud_component<public> := class<final_super>(player_widget_component
     MaxLines<public>:int
     PositionXRatio<public>:float
     PositionYRatio<public>:float
-    Notify<public>(Agent:agent, Text:message):void          # その人に出していなければ何もしない
+    Notify<public>(Agent:agent, Text:message):void          # does nothing if not shown to that person
     NotifyAll<public>(Text:message):void
 
 hud_hide_component<public> := class<final_super>(component):
@@ -230,7 +253,7 @@ hud_hide_component<public> := class<final_super>(component):
     HideInventory<public>:logic
     HideInteractionPrompts<public>:logic
     Activate<public>():void
-    Deactivate<public>():void                               # 自分が隠した人の分だけ戻す
+    Deactivate<public>():void                               # restores only the people it hid
     IsActive<public>()<decides><transacts>:void
 
 # MenuKit
@@ -249,9 +272,9 @@ choice_menu_component<public> := class<final_super>(player_widget_component):
     PositionXRatio<public>:float
     PositionYRatio<public>:float
     ChoiceEvent<public><final>:listenable(tuple(agent, int))
-    OpenFor<public>(Agent:agent):void                       # ShowFor と同じ
+    OpenFor<public>(Agent:agent):void                       # same as ShowFor
 
-# だれに出してよいかを絞る基底（同じ entity の widget はすべて、これが許す人にだけ出す。全員に出すときも ShowFor でも）
+# Base that restricts who may see it (every widget on the same entity shows only to the people this allows, both when showing to everyone and with ShowFor)
 widget_audience_filter_component<public> := class<abstract><final_super>(component):
     AllowsWidgetFor<public>(Agent:agent)<decides><transacts>:void
 
@@ -262,32 +285,35 @@ widget_show_in_group_component<public> := class<final_super>(widget_audience_fil
 widget_show_item_holder_component<public> := class<final_super>(component):
 ```
 
-## 前提・注意
-- 絞り込み（`widget_audience_filter_component` の派生。`widget_show_in_group_component` など）は、ほかの出し方と重ねられる：`Audience = Everyone` なら起動で「組の人全員」に、`Chosen` ならボリューム・アイテムなどが `ShowFor` した人のうち「組の人」にだけ出る。許されない人には `ShowFor` しても出ない。組に入ったときに出し直すのは `Audience = Everyone` で起動しているときだけ（`Chosen` は、組に入ったあとでボリュームなどに入り直すと出る）。
-- `player_widget_component` と `hud_hide_component` は、区画（または世界）に `player_manager_component`（PlayerSystem）が 1 つ要る。
-- 同じ人には、同じ component から 1 枚しか出さない（`ShowFor` を何度呼んでも 1 枚）。
-- `Mode = Menu` は 1 人に同時に 1 枚。ほかのメニューは同じ slot の下の view から探し、`MenuConflict` で前を閉じるか、こちらを出さないかを決める。
-- コードからボタンを押す：`View.PressButton(Key)`（`AwaitClick` / `AwaitChoice` で待っているあいだだけ。本物のクリックと同じく、`AwaitChoice` なら同じ番号が返り、`widget_choice_handler` の合図と同じ道を通る）。待っているボタンの一覧は `View.GetWaitingButtons()`。ID は `AwaitClick(?ButtonId := "close")` / `AwaitChoice(Buttons, ?ButtonIds := array{"m01", "m02"})` で付ける（付けなければ番号の文字 "0"・"1" …）。MCP から押すのは MCPSystem の WidgetKit（画面ごとにオプトイン：同じ entity に `mcp_widget_control_component`）。
-- `CreateWidget` は出すたびに呼ばれる。ボタンを待つなら `spawn{...}` の中で `View.AwaitClick` / `View.AwaitChoice` を使う（閉じると false が返って終わるので、待ちが残らない）。表示を変える知らせは `View.ReceivedEvent` を購読する。
-- `Audience = Everyone` の人を `HideFor` で消したあと、`ShowFor` で戻せる。
-- `hud_hide_component` は島全体の設定には触らず、人ごとに隠す（止まると、自分が隠した人の分だけ元に戻す）。途中参加の人にも隠す。
-- `gauge_hud_component` は値の出どころを知らない。`energy_component.ChangedEvent`（EnergySystem）などを購読して `SetRatioFor` を呼ぶのは利用者側。
-- `widget_show_item_holder_component` を使うときは、同じ entity の widget を `Audience = Chosen` にする。アイテムの entity に届いた知らせを表示に渡すなら、widget 側の `ForwardReceivedEvents` をオンにする。
-- `choice_menu_component` では、パッドのときいちばん上のボタン（無ければ閉じるボタン）にフォーカスが移る。
-- MCP でレベルを組むとき：文字列の配列（`choice_menu_component.Options`）は、MCP では長さと中身を同時に変えられない。いったん空にしてから入れ直す。Fortnite 標準の `input_action` / `input_mapping` は MCP の `SetComponentProperty` で参照として設定できない（コードの既定値として使うのはよい。別のものはエディターで選ぶ）。
+## Requirements, caveats and limits
+- Filtering (a `widget_audience_filter_component` subclass such as `widget_show_in_group_component`) stacks with the other ways of showing: with `Audience = Everyone`, activation shows to "everyone in the group"; with `Chosen`, only to "group members" among the people a volume, item, etc. called `ShowFor` on. People not allowed are not shown even with `ShowFor`. Re-showing on joining the group happens only when activated with `Audience = Everyone` (with `Chosen`, it shows when they re-enter the volume etc. after joining the group).
+- `player_widget_component` and `hud_hide_component` need one `player_manager_component` (PlayerSystem) in the area (or world).
+- Only one widget per person per component (calling `ShowFor` repeatedly still gives one).
+- `Mode = Menu` is one at a time per person. Other menus are looked up among the views under the same slot, and `MenuConflict` decides whether to close the previous one or not show this one.
+- Pressing buttons from code: `View.PressButton(Key)` (only while `AwaitClick` / `AwaitChoice` is waiting. Exactly like a real click: `AwaitChoice` returns the same index and it goes through the same path as the `widget_choice_handler` signal). The list of waiting buttons is `View.GetWaitingButtons()`. IDs are given with `AwaitClick(?ButtonId := "close")` / `AwaitChoice(Buttons, ?ButtonIds := array{"m01", "m02"})` (without them, the index as text "0", "1", ...). Pressing from MCP is MCPSystem's WidgetKit (opt-in per screen: `mcp_widget_control_component` on the same entity).
+- `CreateWidget` is called each time it is shown. To wait for buttons, use `View.AwaitClick` / `View.AwaitChoice` inside `spawn{...}` (it returns false and ends when closed, so no wait is left behind). Subscribe to `View.ReceivedEvent` for notifications that change the display.
+- A person removed with `HideFor` under `Audience = Everyone` can be brought back with `ShowFor`.
+- `hud_hide_component` does not touch the island-wide settings; it hides per person (when it stops, restores only the people it hid). Also hides for late joiners.
+- `gauge_hud_component` does not know where the value comes from. Subscribing to `energy_component.ChangedEvent` (EnergySystem) etc. and calling `SetRatioFor` is your code's job.
+- When using `widget_show_item_holder_component`, set the widgets on the same entity to `Audience = Chosen`. To pass notifications that reach the item's entity to the display, turn on `ForwardReceivedEvents` on the widget.
+- In `choice_menu_component`, on a gamepad focus moves to the top button (or the close button if there is none).
+- When building a level through MCP: a string array (`choice_menu_component.Options`) cannot have its length and contents changed at the same time through MCP. Clear it first, then fill it again. Fortnite's standard `input_action` / `input_mapping` cannot be set as references with MCP's `SetComponentProperty` (using them as code defaults is fine; choose other ones in the editor).
 
-- カード：マウスが乗る・パッドのフォーカスが来ると button の HighlightEvent が届き、`TrackHighlight` が枠の色（`HighlightColor`）と地の濃さを変える。自作の UI はこれをしないと、どれが選ばれているか分からない。
-- Virtual Pointer（PointerKit、実験的）：ポインターの位置が届くのは `PointerSelect` を押しているあいだ（BeginDetect → DetectionOngoing → EndDetect）だけ。画面の大きさを取る API が無いので、`DeprojectViewportToWorld` の光線と視点の向きの差から画面の割合に直す（カメラの水平の画角と 16:9 が前提）。押しているあいだは、選ばれている表示より押し込みを優先する。⚠ 未確認：メニューを出しているあいだに PointerSelect が届くか。
-- カードの高さは `HeightPx` にそろえる（中身が短くても同じ高さ）。`CardGridRect` で当たりの範囲を計算するため。
+- Cards: when the mouse enters or gamepad focus arrives, the button's HighlightEvent arrives and `TrackHighlight` changes the border color (`HighlightColor`) and background strength. A custom UI that does not do this gives no clue which card is selected.
+- Virtual Pointer (PointerKit, experimental): the pointer position arrives only while `PointerSelect` is pressed (BeginDetect -> DetectionOngoing -> EndDetect). There is no API for the screen size, so it is converted to a screen ratio from the difference between the `DeprojectViewportToWorld` ray and the view direction (assumes the horizontal camera field of view and 16:9). While pressed, the press-in takes priority over the selected look. ⚠ Unconfirmed: whether PointerSelect arrives while a menu is shown.
+- Card height is padded to `HeightPx` (the same height even when the content is shorter), because `CardGridRect` computes the hit rectangles.
+- World -> screen (PointerKit's `widget_screen_projection`): v43.00 has no API for the screen size, so projection uses the camera eye, direction and field of view. `GetScreenProjection` derives that person's current camera from 4 rays (fits any camera, but lags slightly because it is a server value). `MakeScreenProjectionInView` builds from the position, direction and field of view of a camera you placed (assumes 16:9; the same horizontal field of view as perspective_camera_component.FieldOfView). MarkerKit's `FollowWorld` accepts either. Cameras include `player_orbit_camera` (`GetTransform`, `FieldOfViewDegrees`) in CharacterSystem's CameraExperimentalKit.
+- `widget_screen_marker` moves by removing and re-adding the canvas part (there is no API to change position). Re-adding every frame makes buttons unpressable, so it re-places only when it moved more than `MinMovePx` (pressable while the camera is still). On a Mode = Hud screen the mouse cannot press buttons, so hit the speech bubble with the Virtual Pointer's pressed point via `DistancePxTo`.
 
-## 確かめ方
-- テスト：`_Test/WidgetSystemTest/` の `widget_system_test_component`。`player_manager_component` を付けた entity を 1 つと、この component を付けた entity を 1 つ置き、プレイヤー 1 人以上で始める（参加を最大 10 秒待つ。画面表示の component はテストが実行時に作る）。起動の合図で全員に出ること・`SendToWidgets` が `ReceivedEvent` に届くこと・停止で消えて `HiddenEvent` が 1 回届くこと、`Audience = Chosen` の `ShowFor` / `HideFor`（2 回呼んでも 1 枚）と `FindView`、メニューの 1 人 1 枚（`CloseOther`）、HudKit / MenuKit の 4 つが出ることを確かめます。途中で文字・ゲージ・通知・メニューが一瞬出ます。数秒で終わります。結果は出力ログの `[TEST] WidgetSystem`。
-- 見本：`_Samples/WidgetSample/`。HUD（`widget_sample_component`。1 秒ごとに `SendToWidgets` で経過時間を更新）、メニュー（`menu_sample_component`。`Mode = Menu`・`Audience = Chosen`、閉じるボタンを `View.AwaitClick` で待つ）、メニューを開く入力（`widget_sample_opener_component`。C / RT で開き、`SendToPlayer` で同じ人の HUD に知らせる）。
+## Verifying
+- Test: `widget_system_test_component` in `_Test/WidgetSystemTest/`. Place one entity with `player_manager_component` and one entity with this component, and start with at least 1 player (waits up to 10 seconds for a join. The test creates the screen components at runtime). It checks that the activation signal shows to everyone, that `SendToWidgets` reaches `ReceivedEvent`, that deactivation removes it and `HiddenEvent` arrives once, `ShowFor` / `HideFor` with `Audience = Chosen` (one widget even when called twice) and `FindView`, one menu per person (`CloseOther`), and that the 4 HudKit / MenuKit parts appear. Text, a gauge, a notification and a menu flash briefly during the test. It finishes in a few seconds. Results are in the output log under `[TEST] WidgetSystem`.
+- Sample: `_Samples/WidgetSample/`. A HUD (`widget_sample_component`; updates the elapsed time every second with `SendToWidgets`), a menu (`menu_sample_component`; `Mode = Menu`, `Audience = Chosen`, waits for the close button with `View.AwaitClick`), and an input that opens the menu (`widget_sample_opener_component`; opens with C / RT and notifies the same person's HUD with `SendToPlayer`).
 
-## 移行が要るもの（2026-11-08）
-- `player_widget_component` は必ずラウンドを挟む（設定なし・オフにできない）：ラウンドの外では画面を出さず、ラウンドの終わり（OnRoundEnded）で閉じる
-- `widget_view` にコードからボタンを押す入口を足した（互換あり。変えなくてよい）：`AwaitClick(OnClick, ?ButtonId, ?Label)`、`AwaitChoice(Buttons, ?ButtonIds)`、`GetWaitingButtons()`、`PressButton(Key)`、`widget_press_result`、`widget_button_info`。MCPSystem の WidgetKit が使う（MCP からの押下が本物のクリックと同じく `AwaitClick` / `AwaitChoice` に届く）
+## Migration notes (2026-11-08)
+- `player_widget_component` always goes through rounds (no setting; cannot be turned off): no screen is shown outside a round, and it closes at the end of the round (OnRoundEnded)
+- Added an entry point to `widget_view` for pressing buttons from code (compatible; no change needed): `AwaitClick(OnClick, ?ButtonId, ?Label)`, `AwaitChoice(Buttons, ?ButtonIds)`, `GetWaitingButtons()`, `PressButton(Key)`, `widget_press_result`, `widget_button_info`. Used by MCPSystem's WidgetKit (a press from MCP reaches `AwaitClick` / `AwaitChoice` exactly like a real click)
 
-## 移行が要るもの（2026-11-09）
-- 足したもの（互換あり）：CardKit（`card_info_component`・`widget_card`・`widget_card_style`・`MakeCardView` / `MakeCardButton` / `MakeCardContent` / `MakeCardGrid` / `CardGridRect`・スキンの interface）、MenuKit の `card_menu_component`、PointerKit、`widget_view.AwaitButtonChoice`、`widget_text_style` / `MakeStyledText` / `MakePanel` / `ToOpacity`、`text_hud_component` の文字の色・大きさ・板。
-- `widget_wait`（internal）に押せるかを見る `Widgets` を足した。`AwaitChoice` の動きは変わらない。
+## Migration notes (2026-11-09)
+- Added (compatible): CardKit (`card_info_component`, `widget_card`, `widget_card_style`, `MakeCardView` / `MakeCardButton` / `MakeCardContent` / `MakeCardGrid` / `CardGridRect`, the skin interfaces), MenuKit's `card_menu_component`, PointerKit, `widget_view.AwaitButtonChoice`, `widget_text_style` / `MakeStyledText` / `MakePanel` / `ToOpacity`, text color, size and panel on `text_hud_component`.
+- Added `Widgets` to `widget_wait` (internal) to check whether buttons can be pressed. The behavior of `AwaitChoice` does not change.
+- Added (compatible): PointerKit's `widget_screen_projection`, `GetScreenProjection`, `MakeScreenProjectionInView` / `MakeScreenProjectionAlong`, `ProjectDirectionToScreenRatio`, `(player).ViewportToScreenRatio` (world -> screen is gathered here. `(player).ProjectToScreenRatio`, `ProjectToScreenRatioInView` / `Along` and `ClampScreenRatio` work as before). MarkerKit (`widget_screen_marker` / `MakeScreenMarker`, `FollowWorld`, `widget_bubble_style` / `MakeSpeechBubble` / `widget_bubble_button`).

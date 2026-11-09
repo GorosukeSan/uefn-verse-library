@@ -6,9 +6,9 @@ using { /UnrealEngine.com/JSON }
 using { MCPSystem }
 using { _Test }
 
-# 役割：MCPSystemTest の受け口の見本（宛先 "mcptest"）。echo（名前つき・並びの引数）、sum（int の配列）、vec（ベクトル）、bad_data（壊れた data）、state
+# Role: sample receiver for MCPSystemTest (toolset "mcptest"). echo (named / positional args), sum (int array), vec (vector), bad_data (broken data), state
 mcp_test_echo_component<public> := class<final_super>(component, mcp_controllable):
-    # インスタンスの名前（"mcptest@<名前>"）
+    # Instance name ("mcptest@<name>")
     TestId<public>:string = ""
 
     RoleTags<private>:mcp_role_tags = mcp_role_tags{}
@@ -27,11 +27,11 @@ mcp_test_echo_component<public> := class<final_super>(component, mcp_controllabl
 
     McpTools<override>()<transacts>:[]mcp_tool =
         array:
-            McpTool("echo", "text と n を返す", array{McpArg("text", "string", "文字"), McpOptArg("n", "int", "数")})
-            McpTool("sum", "values の合計", array{McpArg("values", "json", "int の配列")})
-            McpTool("vec", "v の left+up+forward", array{McpArg("v", "vector3", "ベクトル")})
-            McpTool("bad_data", "壊れた data を返す", array{})
-            McpTool("state", "状態", array{})
+            McpTool("echo", "returns text and n", array{McpArg("text", "string", "text"), McpOptArg("n", "int", "number")})
+            McpTool("sum", "sum of values", array{McpArg("values", "json", "int array")})
+            McpTool("vec", "left+up+forward of v", array{McpArg("v", "vector3", "vector")})
+            McpTool("bad_data", "returns broken data", array{})
+            McpTool("state", "state", array{})
 
     McpHandle<override>(Call:mcp_call):mcp_reply =
         if (Call.Tool = "echo"):
@@ -55,12 +55,12 @@ mcp_test_echo_component<public> := class<final_super>(component, mcp_controllabl
         else:
             McpOk("state ok")
 
-# 役割：MCPSystem の動作確認。JSON の小道具（逃がし・数の読み取り・範囲の確認）、受け箱の振り分け（ExecuteJson：Core・宛先・インスタンス・"*"・ツールの有無・省略できない引数・並びの引数・data の確かめ・batch・help）、
-#   タグの名前の表、mcp_role_tags、mcp_session_context.ClaimPosition（重なりをずらす）を確かめる
-# テストのレベル：この component を付けた entity を 1 つ置くだけ（受け箱・受け口の見本はテストが実行時に作る）。プレイヤーは要らない
-# かかる時間：1 秒ほど
-# 結果：出力ログの [TEST] MCPSystem
-# 前提・注意：ライブ編集の経路（MCP → Inbox → 返事の Print）はセッションで Python の送り手から確かめる（README の「確かめ方」）
+# Role: verification of MCPSystem. Checks the JSON helpers (escaping, reading numbers, range checks), inbox dispatch (ExecuteJson: Core, toolset, instance, "*", unknown tool, required args, positional args, data validation, batch, help),
+#   the tag-name table, mcp_role_tags, and mcp_session_context.ClaimPosition (offsetting overlaps)
+# Test level: just one entity with this component (the inbox and the sample receiver are created by the test at runtime). No player needed
+# Duration: about 1 second
+# Result: [TEST] MCPSystem in the output log
+# Requirements / Notes: the live-edit path (MCP -> Inbox -> Print of the reply) is checked in a session from the Python sender (see "Verifying" in the README)
 mcp_system_test_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =
@@ -85,7 +85,7 @@ mcp_system_test_component<public> := class<final_super>(component):
 
     TestJsonHelpers<private>(Results:test_log):void =
         Results.Check("escape quote/backslash/newline", if (McpEscape("a\"b\\c\nd") = "a\\\"b\\\\c\\nd") then true else false)
-        Results.Check("quote parses back", if (V := Parse[McpQuote("日本語 \" \\ x")], S := V.AsString[], S = "日本語 \" \\ x") then true else false)
+        Results.Check("quote parses back", if (V := Parse[McpQuote("naïve café \" \\ x")], S := V.AsString[], S = "naïve café \" \\ x") then true else false)
         Results.CheckInt("parse int -42", if (N := McpParseInt["-42"]) then N else 0, -42)
         Results.Check("parse int rejects 12a", if (McpParseInt["12a"]) then false else true)
         Results.Check("parse int rejects 19 digits", if (McpParseInt["1234567890123456789"]) then false else true)
@@ -153,10 +153,10 @@ mcp_system_test_component<public> := class<final_super>(component):
         Results.CheckFloat("first claim stays", A.Left, 0.0, 0.001)
         Results.Check("second claim is shifted", if (DistanceSquared(A, B) >= 100.0 * 100.0 - 0.01) then true else false)
 
-# 返事が ok（"error" が無い）で、reply が Text なら true（v43 の Verse は JSON の true / false を読めないので、ok は "error" の有無で見る）
+# True when the reply is ok (no "error") and reply equals Text (Verse in v43 cannot read JSON true / false, so ok is judged by the absence of "error")
 ReplyOk<internal>(Json:string, Text:string)<transacts>:logic =
     if (V := Parse[Json], O := V.AsObject[], not O["error"], R := O["reply"].AsString[], R = Text) then true else false
 
-# 返事のエラーの種類が Code なら true
+# True when the reply's error kind is Code
 ReplyError<internal>(Json:string, Code:string)<transacts>:logic =
     if (V := Parse[Json], O := V.AsObject[], E := O["error"].AsString[], E = Code) then true else false

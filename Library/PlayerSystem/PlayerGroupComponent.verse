@@ -4,40 +4,40 @@ using { ActivationSystem }
 using { SceneGraphSystem }
 using { PlayerSystem.TooltipKit }
 
-# 人が組に入った知らせ
-# 方向：player_group_component の entity から下へ（SendDown）
-# 送り手：player_group_component。受け手：その子孫の部品（組に入った人にだけ何かをするもの）。消費しない
+# Notification that a player joined the group
+# Direction: downward from the player_group_component's entity (SendDown)
+# Sender: player_group_component. Receivers: its descendant parts (things that act only on members). Not consumed
 player_group_joined_event<public> := class(scene_event):
-    # 送った組
+    # The group that sent it
     Group<public>:player_group_component
-    # 入った人
+    # The player who joined
     Agent<public>:agent
 
-# 人が組から出た知らせ（ほかの組を選んだ・Leave・退出）
-# 方向・送り手・受け手は player_group_joined_event と同じ
+# Notification that a player left the group (chose another group, Leave, or left the game)
+# Direction, sender and receivers are the same as player_group_joined_event
 player_group_left_event<public> := class(scene_event):
-    # 送った組
+    # The group that sent it
     Group<public>:player_group_component
-    # 出た人
+    # The player who left
     Agent<public>:agent
 
-# 役割：プレイヤーの組（選んだ人の集まり）。だれが起こしたか分かる起動の合図（activated_by_agent_event。選択メニューの Targets・インタラクト・ボリュームの入り口など）を受けたら、その人を組に入れる
-#   「メニューで選んだ人にだけ HUD を出す」「選んだジャンルの部品だけ効かせる」ときの、だれが選んだかの置き場。widget を組の人にだけ出すのは WidgetSystem の widget_show_in_group_component
-#   LeaveOthers なら、組に入るとき、同じ親の下のほかの組から出る（兄弟の組どうしは 1 人 1 つ。選び直しで前の選びが外れる）
-#   入ったら Targets へ、その人の起動の合図（activated_by_agent_event）を送る（ワープ・ロードアウトなど、選んだときに 1 回すること）
-# 置き方：エディターで entity に付ける。排他にする組は、同じ親の下に兄弟として並べる
-# いつ：組に入る・出るのは合図と Join / Leave。停止の合図（deactivated_event）で全員が出る（だれが起こしたか分かる停止の合図なら、その人だけ）
-# 知らせ：JoinedEvent / LeftEvent（その人）、player_group_joined_event / player_group_left_event（この entity から下へ）
-# 外から：Join / Leave / Clear / IsMember / GetMembers / GetMemberCount / GetMemberPlayerEntities
-# 前提・注意：ゲームから抜けた人は組から出る（LeftEvent が届く）。人数は少ない前提で、配列で持つ（weak_map は使わない）
+# Role: a group of players (the set of those who chose it). When it receives an activation signal that tells who caused it (activated_by_agent_event: a selection menu's Targets, an interact, a volume entrance, etc.), it adds that player to the group
+#   The place that records who chose what, for "show the HUD only to those who chose it in the menu" or "enable only the parts of the chosen genre". Showing a widget only to members is WidgetSystem's widget_show_in_group_component
+#   With LeaveOthers, joining leaves the other groups under the same parent (sibling groups are one per player; choosing again cancels the previous choice)
+#   On join, sends that player's activation signal (activated_by_agent_event) to Targets (things done once at selection: warp, loadout, etc.)
+# Placement: attach to an entity in the editor. Mutually exclusive groups are placed as siblings under the same parent
+# When: joining and leaving happen on signals and Join / Leave. The deactivation signal (deactivated_event) removes everyone (only that player if the signal tells who caused it)
+# Notifies: JoinedEvent / LeftEvent (the player), player_group_joined_event / player_group_left_event (downward from this entity)
+# From outside: Join / Leave / Clear / IsMember / GetMembers / GetMemberCount / GetMemberPlayerEntities
+# Requirements / Notes: a player who leaves the game leaves the group (LeftEvent is delivered). Assumes few players and holds them in an array (no weak_map)
 player_group_component<public> := class<final_super>(component):
 
-    # オンなら、組に入るとき、同じ親の下のほかの組（兄弟の entity の player_group_component）から出る。既定オン
+    # When on, joining leaves the other groups under the same parent (player_group_components of sibling entities). Default on
     @editable:
         ToolTip := GroupLeaveOthersToolTip
         Categories := array{PlayerGroupCategory}
     LeaveOthers<public>:logic = true
-    # 組に入った人の起動の合図（activated_by_agent_event）を送る entity（ワープ先・ロードアウトなど）。空なら送らない
+    # Entities that receive the activation signal (activated_by_agent_event) of a player who joined (warp destination, loadout, etc.). Nothing is sent if empty
     @editable:
         ToolTip := GroupTargetsToolTip
         Categories := array{PlayerGroupCategory}
@@ -46,10 +46,10 @@ player_group_component<public> := class<final_super>(component):
     JoinedEventInternal<private><final>:event(agent) = event(agent){}
     LeftEventInternal<private><final>:event(agent) = event(agent){}
 
-    # 人が組に入るたびに、その人で届く（Await / Subscribe する。外から Signal はできない）
+    # Delivered with the player each time someone joins the group (Await / Subscribe to it; it cannot be Signaled from outside)
     JoinedEvent<public><final>:listenable(agent) = MakeProxyListenable(JoinedEventInternal)
 
-    # 人が組から出るたびに、その人で届く
+    # Delivered with the player each time someone leaves the group
     LeftEvent<public><final>:listenable(agent) = MakeProxyListenable(LeftEventInternal)
 
     var<private> Members:[]agent = array{}
@@ -75,8 +75,8 @@ player_group_component<public> := class<final_super>(component):
                 Clear()
         false
 
-    # Agent を組に入れる（LeaveOthers なら兄弟の組から出してから）。そのあと Targets へその人の起動の合図を送る
-    # もう入っていれば、組の知らせは出さず、Targets への合図だけ送り直す（ラウンドごとに同じものを選び直したときのワープなど）
+    # Add Agent to the group (after leaving the sibling groups if LeaveOthers). Then send that player's activation signal to Targets
+    # If already a member, no group notification is sent; only the signal to Targets is resent (e.g. warping when the same thing is chosen again each round)
     Join<public>(Agent:agent):void =
         if (IsMember[Agent]):
             SendToTargets(Agent)
@@ -89,31 +89,31 @@ player_group_component<public> := class<final_super>(component):
         Entity.SendDown(player_group_joined_event{Group := Self, Agent := Agent})
         SendToTargets(Agent)
 
-    # Agent を組から出す。入っていなければ何もしない
+    # Remove Agent from the group. Does nothing if not a member
     Leave<public>(Agent:agent):void =
         if (IsMember[Agent]):
             set Members = for (Member : Members, Member <> Agent) do Member
             LeftEventInternal.Signal(Agent)
             Entity.SendDown(player_group_left_event{Group := Self, Agent := Agent})
 
-    # 全員を組から出す
+    # Remove everyone from the group
     Clear<public>():void =
         for (Member : Members):
             Leave(Member)
 
-    # Agent が組に入っているなら成功する
+    # Succeeds if Agent is a member of the group
     IsMember<public>(Agent:agent)<decides><transacts>:void =
         Members.Find[Agent]
 
-    # 組に入っている人（入った順）
+    # Members of the group (in join order)
     GetMembers<public>()<transacts>:[]agent =
         Members
 
-    # 組に入っている人の数
+    # Number of members in the group
     GetMemberCount<public>()<transacts>:int =
         Members.Length
 
-    # 組に入っている人のうち、今キャラクターがいる人の体の entity（FindPlayerEntity。入った順。スポーン前・倒れて体が無い人は含まない）
+    # Body entities of the members who currently have a character (FindPlayerEntity; in join order. Players before spawn or downed without a body are not included)
     GetMemberPlayerEntities<public>()<transacts>:[]entity =
         for (Member : Members, Body := Member.FindPlayerEntity[]):
             Body
@@ -134,6 +134,6 @@ player_group_component<public> := class<final_super>(component):
         else:
             array{}
 
-# InEntity かその祖先に付いている、いちばん近い player_group_component。無ければ失敗する
+# The nearest player_group_component attached to InEntity or one of its ancestors. Fails if there is none
 (InEntity:entity).FindAncestorGroup<public>()<decides><transacts>:player_group_component =
     InEntity.FindNearestAncestorComponent[player_group_component]

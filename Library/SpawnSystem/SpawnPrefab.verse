@@ -1,10 +1,10 @@
 using { /Verse.org/SceneGraph }
 using { /Verse.org/SpatialMath }
 
-# Prefab を 1 つ作って Parent の子にし、世界での位置・向き・大きさを Transform にして返す（関数版。数を数えたり、まとめて消したりはしない）
-# 出したものを数える・まとめて消す・起動の合図で出し入れするなら、PrefabKit の spawn_prefab_component を使う
+# Creates one Prefab, makes it a child of Parent, sets its world position / rotation / scale to Transform and returns it (function version; does not count or remove in bulk)
+# To count what was spawned, remove it in bulk or spawn / despawn on activation signals, use spawn_prefab_component in PrefabKit
 (Parent:entity).SpawnPrefab<public>(Prefab:concrete_subtype(entity), Transform:transform):entity =
-    # 引数のままでは Prefab{} と書けない（V3545）ので、いったん変数に受ける
+    # Prefab{} cannot be written on the argument directly (V3545), so take it into a variable first
     PrefabType:concrete_subtype(entity) = Prefab
     Spawned := PrefabType{}
     Parent.AddEntities(array{Spawned})

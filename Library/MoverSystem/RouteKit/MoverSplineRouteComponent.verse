@@ -5,49 +5,49 @@ using { SceneGraphSystem }
 using { MoverSystem }
 using { MoverSystem.TooltipKit }
 
-# 方向：道のりの entity（mover の entity）から SendDown（自分と子孫）
-# 送り手：mover_spline_route_component（Route）。曲線が決まったとき（動き出して最初の行き先を決めるとき・SetPoints や Restart のあとの最初の行き先のとき）
-# 受け手：道のりを見せる見た目（地点の目印・曲線の線）。消費しない
+# Direction: SendDown from the route entity (the mover entity) (itself and descendants)
+# Sender: mover_spline_route_component (Route). When the curve is built (when the first target is chosen after moving starts / at the first target after SetPoints or Restart)
+# Receivers: looks that show the route (point markers, curve lines). Not consumed
 mover_spline_changed_event<public> := class(scene_event):
-    # 送った mover_spline_route_component
+    # The mover_spline_route_component that sent it
     Route<public>:mover_spline_route_component
-    # 曲線が通る地点（世界の位置、センチメートル）。番号の順
+    # The points the curve passes through (world positions, centimeters), in number order
     Points<public>:[]vector3
-    # 曲線を細かく分けた点（世界の位置、センチメートル）。地点 i は CurvePoints[i × 区間の分割数]。Closed なら最後の点は最初の点と同じ
+    # The subdivided points of the curve (world positions, centimeters). Point i is CurvePoints[i x subdivisions per segment]. With Closed, the last point equals the first
     CurvePoints<public>:[]vector3
 
-# 役割：地点を滑らかな曲線（centripetal Catmull-Rom。地点を必ず通り、とがったり輪になったりしにくい）でつなぎ、mover_component にその曲線の上を一定の速さで進ませる道のり。行き先（mover_target）は地点で、地点のあいだの曲線は GetLeg の途中の点（mover_leg.Via）で渡す
-#   曲線は地点の区間ごとに SubdivisionsPerSegment 個の直線に分け、分けた点と長さの表（始めからの曲線の長さ）を、動き出して最初の行き先を決めるときに 1 回作る。mover は分けた直線を同じ速さで進むので、曲線の上の速さは一定（地点で曲がりが急でも速さは変わらない）
-#   Closed なら最後の地点から最初の地点へも曲線でつないで回り続ける（Mode は見ない）。Closed でなければ Mode で、PingPong は同じ曲線を行き来し、Once は最後の地点で止まり、Loop は最後の地点から最初の地点へまっすぐ戻る
-#   地点が 2 つなら直線（分けない）。地点は、Points（コードで入れた世界の位置）があればそれ、無ければ直下の子の mover_waypoint_component の位置（Order の小さい順）。IncludeStart なら、動き出したときの位置を最初の地点（番号 0）にする
-#   FaceTravelDirection なら、進む向きに mover の entity の向き（ヨー）を合わせる（entity の前 = Forward 軸）
-# 置き方：エディターで、動かしたい entity（mover_component と同じ entity）に付ける。mover_path_route_component など、ほかの道のりと一緒には付けない
-# 同じ entity：mover_component（速さ・待ち・一時停止・やり直し・知らせはそちら）
-# 子：Points が空なら、mover_waypoint_component を付けた entity（見た目の無いもの）を直下に。順番は各目印の Order で決める
-# 知らせ：曲線が決まったとき mover_spline_changed_event（自分の entity から SendDown）。着いた・終わったは mover_component の知らせ（地点ごと）
-# 外から：SetPoints、GetResolvedPoints / GetCurvePoints / GetLengthCm / FindDistanceAtPoint / SampleAtDistance、GetWaypoints
-# 前提・注意：地点の位置は動き出して最初の行き先を決めるときに 1 回だけ読む（子の目印が mover と一緒に動いても変わらない）。WaitSeconds が 0 でも、地点ごとに区間を組み直すので 1 フレームほど止まることがある（⚠ 未検証：）
+# Role: a route that joins the points with a smooth curve (centripetal Catmull-Rom: always passes through the points, rarely forms cusps or small loops) and makes mover_component travel along it at a constant speed. The targets (mover_target) are the points; the curve between points is passed as the intermediate points of GetLeg (mover_leg.Via)
+#   Each segment between points is divided into SubdivisionsPerSegment straight lines; the subdivided points and a length table (curve length from the start) are built once, when the first target is chosen after moving starts. The mover travels the subdivided lines at the same speed, so the speed along the curve is constant (sharp turns at points do not change it)
+#   With Closed, the last point is also joined to the first with a curve and it keeps going around (Mode is ignored). When not Closed, Mode applies: PingPong goes back and forth along the same curve, Once stops at the last point, Loop returns straight from the last point to the first
+#   With 2 points it is a straight line (not subdivided). The points are Points (world positions set from code) when present, otherwise the positions of the mover_waypoint_component direct children (ascending Order). With IncludeStart, the position where moving started becomes the first point (number 0)
+#   With FaceTravelDirection, the facing (yaw) of the mover entity is aligned to the direction of travel (the entity's front = Forward axis)
+# Placement: attach in the editor to the entity to move (the same entity as mover_component). Do not combine with another route such as mover_path_route_component
+# Same entity: mover_component (speed, waits, pause, restart and notifications are handled there)
+# Children: when Points is empty, entities (without a look) carrying mover_waypoint_component, as direct children. The order is decided by each marker's Order
+# Notifies: mover_spline_changed_event when the curve is built (SendDown from its own entity). Arrival / finish are mover_component's notifications (per point)
+# From outside: SetPoints, GetResolvedPoints / GetCurvePoints / GetLengthCm / FindDistanceAtPoint / SampleAtDistance, GetWaypoints
+# Requirements / notes: point positions are read once, when the first target is chosen after moving starts (they do not change even when the child markers move with the mover). Even with WaitSeconds = 0, the legs are rebuilt per point, so it may stop for about one frame (⚠ Unverified:)
 mover_spline_route_component<public> := class<final_super>(mover_route_component):
 
-    # オンなら最後の地点から最初の地点へも曲線でつなぎ、輪を回り続ける（Mode は見ない）。地点は 3 つ以上にする（2 つなら直線の行き来）。既定オフ
+    # When on, the last point is also joined to the first with a curve and it keeps going around the loop (Mode is ignored). Use 3 or more points (2 give a straight back-and-forth). Default off
     @editable:
         ToolTip := MoverSplineClosedToolTip
         Categories := array{MoverCategory, MoverSplineCategory}
     Closed<public>:logic = false
 
-    # Closed でないときの回り方。PingPong は同じ曲線を行き来、Once は最後の地点で止まる、Loop は最後の地点から最初の地点へまっすぐ戻る。既定 PingPong
+    # Traversal when not Closed. PingPong goes back and forth along the same curve, Once stops at the last point, Loop returns straight from the last point to the first. Default PingPong
     @editable:
         ToolTip := MoverSplineModeToolTip
         Categories := array{MoverCategory, MoverSplineCategory}
     Mode<public>:mover_path_mode = mover_path_mode.PingPong
 
-    # オンなら動き出した位置を最初の地点（番号 0）にする。オフなら目印の地点だけを通る（置いた位置が最初の目印と違えば、最初はそこへまっすぐ向かう）。既定オン
+    # When on, the start position becomes the first point (number 0). When off, only the marker points are visited (when the placed position differs from the first marker, it first heads straight there). Default on
     @editable:
         ToolTip := MoverPathIncludeStartToolTip
         Categories := array{MoverCategory, MoverSplineCategory}
     IncludeStart<public>:logic = true
 
-    # 地点のあいだの曲線を、いくつの直線に分けるか（1〜64）。多いほど曲線に近い。地点が 2 つのときは 1。既定 8
+    # How many straight lines each curve between points is divided into (1-64). More is closer to the curve. 1 with 2 points. Default 8
     @editable_number(int):
         ToolTip := MoverSplineSubdivisionsToolTip
         Categories := array{MoverCategory, MoverSplineCategory}
@@ -55,13 +55,13 @@ mover_spline_route_component<public> := class<final_super>(mover_route_component
         MaxValue := option{64}
     SubdivisionsPerSegment<public>:int = 8
 
-    # オンなら、進む向きに entity の向き（ヨー。前 = Forward 軸）を合わせる。傾き（ピッチ・ロール）は変えない。既定オフ
+    # When on, the entity's facing (yaw; front = Forward axis) is aligned to the direction of travel. Tilt (pitch / roll) is unchanged. Default off
     @editable:
         ToolTip := MoverSplineFaceToolTip
         Categories := array{MoverCategory, MoverSplineCategory}
     FaceTravelDirection<public>:logic = false
 
-    # コードで入れる地点（世界の位置、センチメートル）。空なら子の mover_waypoint_component を使う
+    # Points set from code (world positions, centimeters). When empty, the mover_waypoint_component children are used
     Points<public>:[]vector3 = array{}
 
     var Override<private>:?[]vector3 = false
@@ -76,32 +76,32 @@ mover_spline_route_component<public> := class<final_super>(mover_route_component
     var LegIndex<private>:int = -1
     var LegVia<private>:[]vector3 = array{}
 
-    # 地点を入れ替える（世界の位置、センチメートル）。今向かっている行き先はそのままで、次の行き先から、新しい地点の最初（IncludeStart なら動き出した位置）から通り直す（曲線もそのとき作り直す）
+    # Replace the points (world positions, centimeters). The current target is kept; from the next target on, traversal restarts from the first of the new points (the start position with IncludeStart) (the curve is rebuilt then)
     SetPoints<public>(NewPoints:[]vector3):void =
         set Override = option{NewPoints}
         set IsResolved = false
 
-    # 最初の地点から通り直す（mover_component の Restart が呼ぶ）。地点と曲線は次の行き先を決めるときに作り直す（SetPoints で入れた地点はそのまま使う）
+    # Start over from the first point (called by mover_component's Restart). The points and the curve are rebuilt when the next target is chosen (points set with SetPoints stay in use)
     Reset<override>():void =
         set IsResolved = false
 
-    # 曲線が通る地点（世界の位置、センチメートル。番号の順）。まだ動き出していなければ空
+    # The points the curve passes through (world positions, centimeters, in number order). Empty before moving starts
     GetResolvedPoints<public>()<reads>:[]vector3 =
         Resolved
 
-    # 曲線を細かく分けた点（世界の位置、センチメートル）。地点 i は GetCurvePoints()[i × 区間の分割数]。Closed なら最後の点は最初の点と同じ。まだ動き出していなければ空
+    # The subdivided points of the curve (world positions, centimeters). Point i is GetCurvePoints()[i x subdivisions per segment]. With Closed, the last point equals the first. Empty before moving starts
     GetCurvePoints<public>()<reads>:[]vector3 =
         Curve
 
-    # 曲線の長さ（センチメートル。Closed なら 1 周）。分けた直線の長さの合計で、mover が進む長さと同じ。まだ動き出していなければ 0
+    # Length of the curve (centimeters; one lap with Closed). The sum of the subdivided lines, i.e. the distance the mover travels. 0 before moving starts
     GetLengthCm<public>()<reads>:float =
         if (TotalCm := CumulativeCm[CumulativeCm.Length - 1]) then TotalCm else 0.0
 
-    # 最初の地点から地点 Index までの曲線の長さ（センチメートル）。Closed なら Index = 地点の数 で 1 周の長さ。範囲の外・まだ動き出していなければ失敗する
+    # Curve length (centimeters) from the first point to point Index. With Closed, Index = number of points gives one lap. Fails when out of range or before moving starts
     FindDistanceAtPoint<public>(Index:int)<decides><reads>:float =
         CumulativeCm[Index * Steps]
 
-    # 最初の地点から曲線に沿って DistanceCm（センチメートル）進んだ位置（世界の位置）。Closed なら 1 周の長さで回り、そうでなければ両端で止まる。まだ動き出していなければ vector3{}
+    # The position (world) DistanceCm (centimeters) along the curve from the first point. With Closed, wraps around the lap length; otherwise clamped at both ends. vector3{} before moving starts
     SampleAtDistance<public>(DistanceCm:float)<transacts>:vector3 =
         Total := GetLengthCm()
         Along := if (CurveClosed?, Total > 0.0, Turns := Floor[DistanceCm / Total]) then DistanceCm - Turns * Total else Max(0.0, Min(DistanceCm, Total))
@@ -112,7 +112,7 @@ mover_spline_route_component<public> := class<final_super>(mover_route_component
         else:
             vector3{}
 
-    # 直下の子の mover_waypoint_component を Order の小さい順に返す（Order が同じものどうしの順は決まらない）
+    # The mover_waypoint_component direct children in ascending Order (the order among equal Orders is unspecified)
     GetWaypoints<public>()<transacts>:[]mover_waypoint_component =
         var Sorted:[]mover_waypoint_component = array{}
         for (Waypoint : Entity.GetChildComponents(mover_waypoint_component)):
@@ -134,7 +134,7 @@ mover_spline_route_component<public> := class<final_super>(mover_route_component
             set LegVia = array{}
             false
 
-    # NextTarget が返した地点へ向かう曲線の途中の点。前の地点が無い（最初の行き先）・Loop でまっすぐ戻るときは空（まっすぐ）
+    # The intermediate curve points toward the point returned by NextTarget. Empty (straight) when there is no previous point (the first target) or when Loop returns straight
     GetLeg<override>(From:vector3, Target:mover_target):mover_leg =
         if (Target.Index = LegIndex):
             mover_leg{Via := LegVia, FaceTravelDirection := FaceTravelDirection}
@@ -159,7 +159,7 @@ mover_spline_route_component<public> := class<final_super>(mover_route_component
         for (Waypoint : GetWaypoints()):
             Waypoint.Entity.GetGlobalTranslation()
 
-    # From 番の地点から To 番の地点への曲線の途中の点（両端は含めない）
+    # The intermediate curve points from point From to point To (both ends excluded)
     MakeVia<private>(From:int, To:int)<transacts>:[]vector3 =
         if (From < 0 or From = To):
             array{}
@@ -172,7 +172,7 @@ mover_spline_route_component<public> := class<final_super>(mover_route_component
         else:
             array{}
 
-    # 区間 Segment（地点 Segment → Segment + 1）の途中の点。Reverse なら逆の順
+    # The intermediate points of segment Segment (point Segment -> Segment + 1). Reversed with Reverse
     CurveSlice<private>(Segment:int, Reverse:logic)<transacts>:[]vector3 =
         First := Segment * Steps
         Inner := for (Index -> Point : Curve, Index > First, Index < First + Steps):
@@ -183,7 +183,7 @@ mover_spline_route_component<public> := class<final_super>(mover_route_component
         else:
             Inner
 
-    # 長さの表で、Along（センチメートル）以上になる最初の点の番号
+    # The number of the first point in the length table at or beyond Along (centimeters)
     FindSampleAfter<private>(Along:float)<decides><reads>:int =
         first (Index -> Cumulative : CumulativeCm, Cumulative >= Along):
             Index
@@ -211,7 +211,7 @@ mover_spline_route_component<public> := class<final_super>(mover_route_component
                 set Forward = true
                 option{Current + 1}
 
-# Points を通る centripetal Catmull-Rom の曲線を、区間ごとに Steps 個の直線に分けた点。Closed なら最後の地点から最初の地点へも区間を作る（最後の点は最初の点と同じ）。開いた両端は、端の地点で折り返した点を外側に足して作る
+# The centripetal Catmull-Rom curve through Points, subdivided into Steps straight lines per segment. With Closed, a segment from the last point back to the first is added too (the last point equals the first). The open ends are built by adding points mirrored across the end points on the outside
 MakeSplineCurve<internal>(Points:[]vector3, Closed:logic, Steps:int)<transacts>:[]vector3 =
     Count := Points.Length
     if (Count <= 1):
@@ -229,7 +229,7 @@ MakeSplineCurve<internal>(Points:[]vector3, Closed:logic, Steps:int)<transacts>:
                 set Out = Out + array{CatmullRomPoint(P0, P1, P2, P3, (Step * 1.0) / (Divisions * 1.0))}
         Out + array{SplineControlPoint(Points, Segments, Closed)}
 
-# 曲線を作るときの Index 番の点。Closed なら番号を回し、そうでなければ両端の外は端で折り返した点（2 × 端 − 隣）
+# Point number Index used to build the curve. With Closed, the number wraps; otherwise, beyond either end, the point mirrored across the end (2 x end - neighbor)
 SplineControlPoint<internal>(Points:[]vector3, Index:int, Closed:logic)<transacts>:vector3 =
     Count := Points.Length
     if (Closed?, Wrapped := Mod[Index + Count, Count], Point := Points[Wrapped]):
@@ -243,7 +243,7 @@ SplineControlPoint<internal>(Points:[]vector3, Index:int, Closed:logic)<transact
     else:
         vector3{}
 
-# P1 から P2 への区間で、Ratio（0〜1。曲線の媒介変数）の位置。centripetal（点の間隔の平方根を媒介変数の幅にする。Barry–Goldman の形）。Ratio が 0 なら P1、1 なら P2
+# The position at Ratio (0-1, the curve parameter) on the segment from P1 to P2. Centripetal (the square root of the point spacing is the parameter step; Barry-Goldman form). Ratio 0 gives P1, 1 gives P2
 CatmullRomPoint<internal>(P0:vector3, P1:vector3, P2:vector3, P3:vector3, Ratio:float)<reads>:vector3 =
     T1 := Max(Sqrt(Distance(P0, P1)), 0.0001)
     T2 := T1 + Max(Sqrt(Distance(P1, P2)), 0.0001)
@@ -256,7 +256,7 @@ CatmullRomPoint<internal>(P0:vector3, P1:vector3, P2:vector3, P3:vector3, Ratio:
     B2 := A2 * ((T3 - T) / (T3 - T1)) + A3 * ((T - T1) / (T3 - T1))
     B1 * ((T2 - T) / (T2 - T1)) + B2 * ((T - T1) / (T2 - T1))
 
-# 長さの表：最初の点から各点までの折れ線の長さ（センチメートル）。最初は 0
+# Length table: polyline length (centimeters) from the first point to each point. The first is 0
 MakeCumulativeLengths<internal>(Curve:[]vector3)<transacts>:[]float =
     var Total:float = 0.0
     var Previous:?vector3 = false

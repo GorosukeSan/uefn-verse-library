@@ -3,20 +3,20 @@ using { /Verse.org/Simulation }
 using { ActivationSystem }
 using { ConditionSystem.TooltipKit }
 
-# event_received_condition_component の EventType の既定。どこからも送られない scene_event なので、EventType を選ぶまで条件を満たさない
+# Default of event_received_condition_component.EventType. A scene_event nobody ever sends, so the condition is not satisfied until an EventType is chosen
 no_scene_event<public> := class(scene_event):
 
-# 役割：起動してから（起動の合図 activated_event を受けてから。合図が来なければ開始から）、EventType の scene_event（その派生も）がこの entity に届いたら満たす。起動の合図か Reset で満たさない状態に戻る
-#   「カードが出されたら」「敵が倒されたら」など、ゲーム側の知らせで次へ進むときに、条件の派生を書かずに使う
-# 置き方：エディターで entity に付け、EventType で型を選ぶ。コードからなら event_received_condition_component{Entity := E, EventType := my_event} で作る
-# 親：game_transition_component か condition_all / condition_any の entity の直下
-# いつ：この entity に届く scene_event だけを見る（祖先からの SendDown・区画全体への SendScoped・世界全体への SendGlobal・子孫からの SendUp）。ほかの枝で SendUp されたものは届かない
-# 知らせ：満たしたとき・戻ったとき condition_changed_event を上へ送る（NotifyChanged）。受けた scene_event は消費しない
-# 外から：Reset（満たさない状態に戻す）、FindReceivedEvent（満たしたときに受けた scene_event。中の Agent などを読む）
-# ⚠ 未検証：subtype(scene_event) の @editable が UEFN のエディターで型を選べるか（scene_event は interface。subtype(component) は選べることを確かめ済み）と、型の値での絞り込み（EventType[SceneEvent]）が UEFN で動くか（standalone の型チェックと新しい VM の実行では動く）
+# Role: once activated (after receiving the activation signal activated_event; from the start if no signal comes), becomes satisfied when a scene_event of EventType (or a subclass) reaches this entity. Returns to unsatisfied on the activation signal or Reset
+#   Use it to advance on a game-side notification ("when a card is played", "when an enemy is defeated") without writing a condition subclass
+# Placement: attach to an entity in the editor and choose the type in EventType. From code, create it with event_received_condition_component{Entity := E, EventType := my_event}
+# Parent: directly under the entity of a game_transition_component or condition_all / condition_any
+# When: only looks at scene_events that reach this entity (SendDown from an ancestor, SendScoped to the whole scope, SendGlobal to the whole world, SendUp from a descendant). Events SendUp'd on another branch do not reach it
+# Notifies: sends condition_changed_event upward when it becomes satisfied and when it returns (NotifyChanged). Does not consume the received scene_event
+# From outside: Reset (return to unsatisfied), FindReceivedEvent (the scene_event received when it became satisfied; read its Agent etc.)
+# ⚠ Unverified: whether an @editable of subtype(scene_event) lets you pick a type in the UEFN editor (scene_event is an interface; subtype(component) is confirmed to work), and whether narrowing by a type value (EventType[SceneEvent]) works in UEFN (it works in the standalone type check and in the new VM)
 event_received_condition_component<public> := class<final_super>(condition_component):
 
-    # 待つ scene_event の型（その派生も合う）。既定の no_scene_event のままなら満たさない
+    # Type of the scene_event to wait for (subclasses match too). Never satisfied while left at the default no_scene_event
     @editable:
         ToolTip := EventTypeToolTip
         Categories := array{EventConditionCategory}
@@ -28,7 +28,7 @@ event_received_condition_component<public> := class<final_super>(condition_compo
         Received?
 
     OnReceive<override>(SceneEvent:scene_event):logic =
-        # 起動の合図で戻してから型を見る（EventType が activated_event なら、起動でそのまま満たす）
+        # Reset on the activation signal before checking the type (if EventType is activated_event, activation satisfies it directly)
         if (activated_event[SceneEvent]):
             Reset()
         if (EventType[SceneEvent], not Received?):
@@ -40,12 +40,12 @@ event_received_condition_component<public> := class<final_super>(condition_compo
         set Received = false
         (super:)OnEndSimulation()
 
-    # 満たさない状態（まだ受けていない）に戻す。満たしていなければ何もしない
+    # Return to the unsatisfied state (nothing received yet). Does nothing if not satisfied
     Reset<public>():void =
         if (Received?):
             set Received = false
             NotifyChanged()
 
-    # 満たしたときに受けた scene_event（起動してから最初に受けた合うもの）。まだ受けていなければ失敗する
+    # The scene_event received when it became satisfied (the first matching one since activation). Fails if nothing has been received yet
     FindReceivedEvent<public>()<decides><transacts>:scene_event =
         Received?

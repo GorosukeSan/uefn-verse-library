@@ -5,26 +5,26 @@ using { WidgetSystem }
 using { MCPSystem }
 using { MCPSystem.TooltipKit }
 
-# mcp_widget_control_component が自分の entity に付けるタグ（widget ツールセットがこのタグで画面を集める）
+# Tag that mcp_widget_control_component attaches to its own entity (the widget toolset collects screens by this tag)
 mcp_widget_control_tag<public> := class<concrete>(tag){}
 
-# 役割：画面ごとのオプトイン。この component を置いた entity の画面（player_widget_component の派生すべて）だけが、MCP の widget ツールセットから見え、押せる
-# 置き方：MCP から操作したい画面（player_widget_component の派生）と同じ entity に 1 つ
-# タグ：自分の entity に mcp_widget_control_tag
-# 前提・注意：押すのは WidgetSystem の widget_view.PressButton（本物のクリックと同じく AwaitClick / AwaitChoice に届く）。ボタンを待っていない画面は not_waiting
+# Role: opt-in per screen. Only the screens (every player_widget_component subclass) on entities that carry this component are visible and pressable from MCP's widget toolset
+# Placement: one on the same entity as the screen (a player_widget_component subclass) you want to drive from MCP
+# Tags: mcp_widget_control_tag on its own entity
+# Requirements, caveats: pressing goes through WidgetSystem's widget_view.PressButton (reaches AwaitClick / AwaitChoice like a real click). A screen not waiting for a button gives not_waiting
 mcp_widget_control_component<public> := class<final_super>(component):
 
-    # MCP から画面を指す名前（widget.screens の screen）。空なら "screen"
+    # Name used to address the screen from MCP (the screen of widget.screens). Empty means "screen"
     @editable:
         ToolTip := McpWidgetScreenIdToolTip
         Categories := array{McpCategory}
     ScreenId<public>:string = ""
-    # オンなら MCP からボタンを押せる。既定オン
+    # When on, MCP can press buttons. Default on
     @editable:
         ToolTip := McpWidgetAllowPressToolTip
         Categories := array{McpCategory}
     AllowPress<public>:logic = true
-    # オンなら MCP から出す・閉じることができる。既定オン
+    # When on, MCP can show and close the screen. Default on
     @editable:
         ToolTip := McpWidgetAllowShowHideToolTip
         Categories := array{McpCategory}
@@ -40,22 +40,22 @@ mcp_widget_control_component<public> := class<final_super>(component):
         RoleTags.RemoveAll()
         (super:)OnEndSimulation()
 
-    # MCP で使う画面の名前
+    # Screen name used by MCP
     GetScreenName<public>()<transacts>:string =
         if (ScreenId = "") then "screen" else ScreenId
 
-    # この entity の画面（player_widget_component の派生すべて）
+    # Screens of this entity (every player_widget_component subclass)
     GetWidgets<public>()<transacts>:[]player_widget_component =
         Entity.GetPlayerWidgets()
 
-# 役割：Widget ツールセット（宛先 "widget"）。開いている画面の一覧、ボタンを押す（本物のクリックと同じく AwaitClick / AwaitChoice に届く）、出す・閉じる
-#   対象は mcp_widget_control_component を置いた entity の画面だけ（画面ごとに作り手が選ぶオプトイン）。それ以外の画面は見えない（no_target）
-#   画面はラウンドの中でだけ出る（WidgetSystem の決まり）。ラウンドの外では screens は空、press は not_shown、show は not_in_round
-# 置き方：受け箱と同じ entity に付けるとよい（1 つ）
-# タグ：自分の entity に mcp_controllable_tag
+# Role: Widget toolset (destination "widget"). Lists open screens, presses buttons (reaches AwaitClick / AwaitChoice like a real click), shows and closes screens
+#   Only screens on entities that carry mcp_widget_control_component are targets (the author opts in per screen). Other screens are invisible (no_target)
+#   Screens only show during a round (a WidgetSystem rule). Outside a round, screens is empty, press gives not_shown and show gives not_in_round
+# Placement: best attached to the same entity as the inbox (one only)
+# Tags: mcp_controllable_tag on its own entity
 mcp_widget_toolset_component<public> := class<final_super>(component, mcp_controllable):
 
-    # 同じツールセットを複数置くときの名前（空なら "widget" だけで届く）
+    # Name used when the same toolset is placed more than once (when empty, "widget" alone reaches it)
     @editable:
         ToolTip := McpToolsetIdToolTip
         Categories := array{McpCategory}
@@ -77,13 +77,13 @@ mcp_widget_toolset_component<public> := class<final_super>(component, mcp_contro
 
     McpTools<override>()<transacts>:[]mcp_tool =
         array:
-            McpTool("list", "オプトインした画面の一覧（出しているかに関係なく）。data に [\{screen,entity,widgets:[\{widget,mode,audience,shown_to\}]\}]", array{})
-            McpTool("screens", "今出ている画面と、待っているボタン。data に [\{player,screen,widget,mode,buttons:[\{id,index,label,enabled\}]\}]", array{McpOptArg("player", "player", "この人だけ")})
-            McpTool("press", "ボタンを押す（ID・文字・番号のどれか。本物のクリックと同じく AwaitClick / AwaitChoice に届く）", array{McpArg("player", "player", "番号"), McpArg("screen", "string", "画面の名前（ScreenId）"), McpArg("button", "string", "ボタンの ID・文字・番号"), McpOptArg("widget", "int", "同じ entity に画面が複数あるときの番号（既定は、出ているもの全部から探す）")})
-            McpTool("pointer", "画面にポインターを差し込む（widget_view.InjectPointer。Virtual Pointer の押下と同じに扱われ、カードなら押した位置が沈む）。x, y は画面の割合（左上 0,0 〜 右下 1,1）", array{McpArg("player", "player", "番号"), McpArg("screen", "string", "画面の名前（ScreenId）"), McpArg("x", "float", "横の割合 0〜1"), McpArg("y", "float", "縦の割合 0〜1"), McpOptArg("down", "bool", "押している（既定 true。false で離す）"), McpOptArg("widget", "int", "画面の番号（既定は出ているもの全部）")})
-            McpTool("show", "画面を出す（ShowFor）", array{McpArg("player", "player", "番号"), McpArg("screen", "string", "画面の名前"), McpOptArg("widget", "int", "画面の番号（既定 0）")})
-            McpTool("close", "画面を閉じる（HideFor）", array{McpArg("player", "player", "番号"), McpArg("screen", "string", "画面の名前"), McpOptArg("widget", "int", "画面の番号（既定は全部）")})
-            McpTool("state", "オプトインした画面の数・今出ている数", array{})
+            McpTool("list", "List of opted-in screens (whether shown or not). data: [\{screen,entity,widgets:[\{widget,mode,audience,shown_to\}]\}]", array{})
+            McpTool("screens", "Screens currently shown and the buttons waiting. data: [\{player,screen,widget,mode,buttons:[\{id,index,label,enabled\}]\}]", array{McpOptArg("player", "player", "only this player")})
+            McpTool("press", "Presses a button (by id, label or index; reaches AwaitClick / AwaitChoice like a real click)", array{McpArg("player", "player", "player index"), McpArg("screen", "string", "screen name (ScreenId)"), McpArg("button", "string", "button id, label or index"), McpOptArg("widget", "int", "widget index when the entity has several screens (default: search all shown ones)")})
+            McpTool("pointer", "Injects a pointer into the screen (widget_view.InjectPointer; treated like a Virtual Pointer press, so a card sinks where pressed). x, y are screen fractions (top-left 0,0 to bottom-right 1,1)", array{McpArg("player", "player", "player index"), McpArg("screen", "string", "screen name (ScreenId)"), McpArg("x", "float", "horizontal fraction 0-1"), McpArg("y", "float", "vertical fraction 0-1"), McpOptArg("down", "bool", "pressed (default true; false releases)"), McpOptArg("widget", "int", "widget index (default: all shown ones)")})
+            McpTool("show", "Shows the screen (ShowFor)", array{McpArg("player", "player", "player index"), McpArg("screen", "string", "screen name"), McpOptArg("widget", "int", "widget index (default 0)")})
+            McpTool("close", "Closes the screen (HideFor)", array{McpArg("player", "player", "player index"), McpArg("screen", "string", "screen name"), McpOptArg("widget", "int", "widget index (default: all)")})
+            McpTool("state", "Number of opted-in screens and of screens currently shown", array{})
 
     McpHandle<override>(Call:mcp_call):mcp_reply =
         Tool := Call.Tool
@@ -122,7 +122,7 @@ mcp_widget_toolset_component<public> := class<final_super>(component, mcp_contro
                 if (Control := Matches[0]):
                     HandleScreen(Call, Player, Control)
                 else:
-                    McpFail("no_target", "screen {ScreenName}（mcp_widget_control_component の ScreenId）")
+                    McpFail("no_target", "screen {ScreenName} (the ScreenId of an mcp_widget_control_component)")
             else:
                 McpBadArg("screen")
         else:
@@ -171,7 +171,7 @@ mcp_widget_toolset_component<public> := class<final_super>(component, mcp_contro
                 if (Target.IsOutsideRound[]):
                     return McpFail("not_in_round", "")
                 Target.ShowFor(Player)
-                if (Target.IsShownFor[Player]) then McpOk("shown") else McpFail("failed", "not shown（絞り込み・メニューの重なりなど）")
+                if (Target.IsShownFor[Player]) then McpOk("shown") else McpFail("failed", "not shown (filtered out, overlapping menu etc.)")
             else:
                 var Closed:int = 0
                 for (Index -> Widget : Widgets, WidgetIndex < 0 or WidgetIndex = Index, Widget.IsShownFor[Player]):
@@ -187,7 +187,7 @@ mcp_widget_toolset_component<public> := class<final_super>(component, mcp_contro
         else:
             array{}
 
-# 出ている画面 1 つ（{"player","screen","widget","mode","buttons"}）
+# One shown screen ({"player","screen","widget","mode","buttons"})
 ScreenJson<internal>(PlayerIndex:int, ScreenName:string, WidgetIndex:int, Widget:player_widget_component, Infos:[]widget_button_info)<transacts>:string =
     Buttons := for (Info : Infos):
         McpObject(array{McpField("id", McpQuote(Info.Id)), McpField("index", "{Info.Index}"), McpField("label", McpQuote(Info.Label)), McpField("enabled", McpLogic(Info.Enabled))})
@@ -204,7 +204,7 @@ AudienceName<internal>(Audience:player_widget_audience)<computes>:string =
         player_widget_audience.Everyone => "Everyone"
         player_widget_audience.Chosen => "Chosen"
 
-# PressButton の結果を返事のエラーの種類にする
+# Maps a PressButton result to a reply error code
 PressResultName<internal>(Result:widget_press_result)<computes>:string =
     case (Result):
         widget_press_result.Pressed => "pressed"

@@ -10,32 +10,32 @@ using { ScheduleSystem }
 using { ScheduleSystem.DisplayKit }
 using { ScheduleSystem.TooltipKit }
 
-# 役割：スケジュールの開始の ShowWithinSeconds 秒前から開始まで、区画の全プレイヤー（途中参加も）の画面にカウントダウンの文字を出す。開始したら消す。窓の外では画面に何も出さず、毎秒の処理は残り秒の比較 1 回だけ（UI への書き込みは無い）
-# 置き方：エディターで entity に付け、schedule_component の entity の子孫に置く
-# 前提：区画（または世界）に player_manager_component が 1 つ
-# 前提・注意：スケジュールから届く activated_event / deactivated_event（期間の始まり・終わり）は無視する（表示の切り替えは窓の判定だけで決め、Activate / Deactivate を直接呼ぶ）
+# Role: from ShowWithinSeconds seconds before the schedule starts until it starts, shows countdown text on the screen of every player in the scope (late joiners too). Removed at the start. Outside the window nothing is shown and the per-second work is one comparison of the remaining seconds (no UI writes)
+# Placement: attach to an entity in the editor, as a descendant of the schedule_component entity
+# Requirements: one player_manager_component in the scope (or the world)
+# Requirements / notes: the activated_event / deactivated_event from the schedule (start / end of the period) are ignored (showing is decided only by the window check, calling Activate / Deactivate directly)
 schedule_countdown_hud_component<public> := class<final_super>(player_widget_component):
 
-    # 開始の何秒前から画面にカウントダウンを出すか（秒）。既定 300
+    # How many seconds before the start to show the countdown on screen (seconds). Default 300
     @editable_number(float):
         ToolTip := ScheduleHudShowWithinToolTip
         Categories := array{ScheduleDisplayCategory}
         MinValue := option{1.0}
     ShowWithinSeconds<public>:float = 300.0
 
-    # 文字の形（schedule_text_format）。既定 MinutesSeconds
+    # Text format (schedule_text_format). Default MinutesSeconds
     @editable:
         ToolTip := ScheduleTextFormatToolTip
         Categories := array{ScheduleDisplayCategory}
     Format<public>:schedule_text_format = schedule_text_format.MinutesSeconds
 
-    # 文字の前に付ける固定の文字列。空なら付けない（既定）
+    # Fixed string put before the text. Nothing is added when empty (default)
     @editable:
         ToolTip := ScheduleTextPrefixToolTip
         Categories := array{ScheduleDisplayCategory}
     Prefix<public>:string = ""
 
-    # 文字の大きさ（8〜200）。既定 48
+    # Text size (8-200). Default 48
     @editable_number(float):
         ToolTip := ScheduleHudTextSizeToolTip
         Categories := array{ScheduleDisplayCategory}
@@ -43,7 +43,7 @@ schedule_countdown_hud_component<public> := class<final_super>(player_widget_com
         MaxValue := option{200.0}
     TextSize<public>:float = 48.0
 
-    # 置く位置（画面の横の割合。0 = 左端、0.5 = 中央、1 = 右端。その点を文字の真ん中にする）。既定 0.5。WidgetSystem/HudKit の HUD と同じ名前・同じ意味
+    # Position (horizontal ratio of the screen. 0 = left edge, 0.5 = center, 1 = right edge; the text is centered on that point). Default 0.5. Same name and meaning as the WidgetSystem/HudKit HUDs
     @editable_number(float):
         ToolTip := WidgetPositionXToolTip
         Categories := array{ScheduleDisplayCategory}
@@ -51,7 +51,7 @@ schedule_countdown_hud_component<public> := class<final_super>(player_widget_com
         MaxValue := option{1.0}
     PositionXRatio<public>:float = 0.5
 
-    # 置く位置（画面の縦の割合。0 = 上端、0.5 = 中央、1 = 下端。その点を文字の真ん中にする）。既定 0.15。WidgetSystem/HudKit の HUD と同じ名前・同じ意味
+    # Position (vertical ratio of the screen. 0 = top edge, 0.5 = center, 1 = bottom edge; the text is centered on that point). Default 0.15. Same name and meaning as the WidgetSystem/HudKit HUDs
     @editable_number(float):
         ToolTip := WidgetPositionYToolTip
         Categories := array{ScheduleDisplayCategory}
@@ -67,14 +67,14 @@ schedule_countdown_hud_component<public> := class<final_super>(player_widget_com
         (super:)OnBeginSimulation()
         Attached := Follower.Attach(Entity, Refresh, option{Refresh})
         if (not Attached?):
-            Print("[schedule_countdown_hud_component] schedule_component がこの entity にも祖先にも見つかりません")
+            Print("[schedule_countdown_hud_component] schedule_component not found on this entity or any ancestor")
 
     OnEndSimulation<override>():void =
         Follower.Detach()
         (super:)OnEndSimulation()
 
     OnReceive<override>(SceneEvent:scene_event):logic =
-        # スケジュールの期間の始まり・終わり（activated / deactivated）では切り替えない
+        # Do not toggle on the start / end of the schedule period (activated / deactivated)
         if (activated_event[SceneEvent] or deactivated_event[SceneEvent]):
             false
         else:
@@ -86,7 +86,7 @@ schedule_countdown_hud_component<public> := class<final_super>(player_widget_com
         spawn{FollowText(View, Label)}
         MakeScreenCanvas(Label, PositionXRatio, PositionYRatio)
 
-    # 閉じるまで、schedule_text_changed_event を受けて文字を変える
+    # Until closed, receive schedule_text_changed_event and change the text
     FollowText<private>(View:widget_view, Label:text_block)<suspends>:void =
         Updater := schedule_label_updater{Label := Label}
         Subscription := View.ReceivedEvent.Subscribe(Updater.Handle)
@@ -115,7 +115,7 @@ schedule_countdown_hud_component<public> := class<final_super>(player_widget_com
         else:
             Deactivate()
 
-# schedule_text_changed_event を受けて、1 人分の文字を変える
+# Receives schedule_text_changed_event and changes one player's text
 schedule_label_updater<internal> := class<internal>:
     Label<internal>:text_block
 

@@ -3,10 +3,10 @@ using { /Verse.org/SpatialMath }
 using { /Fortnite.com/Characters }
 using { SceneGraphSystem }
 
-# MovementSystem：fort_character を Verse の座標（/Verse.org/SpatialMath の vector3。Forward・Left・Up、センチメートル、世界の座標）で扱う小道具。
-# 名前は v43.00 の digest（/Fortnite.com・/Verse.org・/UnrealEngine.com）にある fort_character のメンバーと重ならないことを確かめてある（Epic 側の GetViewLocation / GetViewRotation / TeleportTo は Temporary の座標を使う別物）
+# MovementSystem: helpers that handle fort_character in Verse coordinates (vector3 from /Verse.org/SpatialMath: Forward / Left / Up, centimeters, world space).
+# The names were checked against the fort_character members in the v43.00 digest (/Fortnite.com, /Verse.org, /UnrealEngine.com) so they do not collide (Epic's GetViewLocation / GetViewRotation / TeleportTo are different things that use the Temporary coordinates)
 
-# キャラクターを今の位置から真上（世界の Up）へ HeightCm センチメートル動かす（向き・大きさはそのまま。当たり判定は見ずに、キャラクターの entity の位置を直接変える。負なら下へ）。キャラクターの entity が取れなければ何もしない
+# Move the character straight up (world Up) by HeightCm centimeters from its current position (rotation and scale unchanged; ignores collision and changes the character entity's position directly; negative moves down). Does nothing if the character's entity cannot be obtained
 (FortCharacter:fort_character).LiftBy<public>(HeightCm:float)<transacts>:void =
     if (CharacterEntity := FortCharacter.GetEntity[]):
         Start := CharacterEntity.GetGlobalTransform()

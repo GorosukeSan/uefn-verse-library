@@ -3,10 +3,10 @@ using { /Verse.org/Simulation }
 using { ConditionSystem }
 using { ScheduleSystem }
 
-# 役割：スケジュールが Active のあいだ満たす条件（ゲームの流れの遷移、ability_grant_condition などに渡す）
-# 置き方：エディターで entity に付ける。schedule_component の entity かその子孫に置く（一番近い祖先のスケジュールを見る）
-# 親：game_transition_component か condition_all / condition_any（または ability_grant_condition_component）の entity の直下。そのうえで schedule_component の entity の子孫
-# 知らせ：スケジュールの状態が変わったときだけ condition_changed_event を上へ送り、ChangedEvent に届ける（毎秒の処理は無い）
+# Role: a condition satisfied while the schedule is Active (pass it to game flow transitions, ability_grant_condition, ...)
+# Placement: attach to an entity in the editor, on the schedule_component entity or a descendant (follows the nearest ancestor schedule)
+# Parent: directly under the entity of game_transition_component or condition_all / condition_any (or ability_grant_condition_component), which is itself a descendant of the schedule_component entity
+# Notifies: only when the schedule state changes, sends condition_changed_event up and fires ChangedEvent (no per-second work)
 schedule_active_condition_component<public> := class<final_super>(condition_component):
 
     var<private> Active:logic = false
@@ -19,7 +19,7 @@ schedule_active_condition_component<public> := class<final_super>(condition_comp
         (super:)OnBeginSimulation()
         Attached := Follower.Attach(Entity, OnScheduleChanged, false)
         if (not Attached?):
-            Print("[schedule_active_condition_component] schedule_component がこの entity にも祖先にも見つかりません")
+            Print("[schedule_active_condition_component] schedule_component not found on this entity or any ancestor")
 
     OnEndSimulation<override>():void =
         Follower.Detach()

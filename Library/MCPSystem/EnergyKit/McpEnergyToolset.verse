@@ -7,13 +7,13 @@ using { EnergySystem }
 using { MCPSystem }
 using { MCPSystem.TooltipKit }
 
-# 役割：Energy ツールセット（宛先 "energy"）。エネルギー（EnergySystem の energy_component）の一覧・量を決める・足す・使う・満たす・最大を決める
-#   対象は "energy"（entity の番号か名前）か "player"（番号。その人のエネルギー＝ FindEnergyFor）で指す
-# 置き方：受け箱と同じ entity に付けるとよい
-# タグ：自分の entity に mcp_controllable_tag と mcp_session_restorable_tag（キー "energies"：量と最大。持ち主のいるものは "p<番号>"）
+# Role: Energy toolset (destination "energy"). Lists energies (EnergySystem's energy_component); set, add, use, fill, set the maximum
+#   The target is addressed by "energy" (entity id or name) or "player" (index; that player's energy = FindEnergyFor)
+# Placement: best attached to the same entity as the inbox
+# Tags: mcp_controllable_tag and mcp_session_restorable_tag on its own entity (key "energies": amount and max; owned ones are keyed "p<index>")
 mcp_energy_toolset_component<public> := class<final_super>(component, mcp_controllable, mcp_session_restorable):
 
-    # 同じツールセットを複数置くときの名前（空なら "energy" だけで届く）
+    # Name used when the same toolset is placed more than once (when empty, "energy" alone reaches it)
     @editable:
         ToolTip := McpToolsetIdToolTip
         Categories := array{McpCategory}
@@ -36,14 +36,14 @@ mcp_energy_toolset_component<public> := class<final_super>(component, mcp_contro
 
     McpTools<override>()<transacts>:[]mcp_tool =
         array:
-            McpTool("list", "エネルギーの一覧。data に [\{id,name,owner,amount,max,ratio\}]（owner は持ち主のプレイヤーの番号、いなければ -1）", array{})
-            McpTool("get", "量（energy か player のどちらか）", array{McpOptArg("energy", "entity", "energy_component の entity"), McpOptArg("player", "player", "その人のエネルギー")})
-            McpTool("set", "量を決める（0〜最大に丸める）", array{McpOptArg("energy", "entity", "対象"), McpOptArg("player", "player", "対象"), McpArg("amount", "float", "量")})
-            McpTool("restore", "足す（最大を超える分は捨てる）", array{McpOptArg("energy", "entity", "対象"), McpOptArg("player", "player", "対象"), McpArg("amount", "float", "量")})
-            McpTool("consume", "使う（足りなくても 0 で止まる）", array{McpOptArg("energy", "entity", "対象"), McpOptArg("player", "player", "対象"), McpArg("amount", "float", "量")})
-            McpTool("spend", "足りれば使う（足りなければ failed で何も変えない）", array{McpOptArg("energy", "entity", "対象"), McpOptArg("player", "player", "対象"), McpArg("amount", "float", "量")})
-            McpTool("fill", "満たす", array{McpOptArg("energy", "entity", "対象"), McpOptArg("player", "player", "対象")})
-            McpTool("set_max", "最大を決める", array{McpOptArg("energy", "entity", "対象"), McpOptArg("player", "player", "対象"), McpArg("max", "float", "最大")})
+            McpTool("list", "List of energies. data: [\{id,name,owner,amount,max,ratio\}] (owner is the owning player's index, -1 if none)", array{})
+            McpTool("get", "Amount (either energy or player)", array{McpOptArg("energy", "entity", "an entity with energy_component"), McpOptArg("player", "player", "that player's energy")})
+            McpTool("set", "Sets the amount (clamped to 0-max)", array{McpOptArg("energy", "entity", "target"), McpOptArg("player", "player", "target"), McpArg("amount", "float", "amount")})
+            McpTool("restore", "Adds (the part above max is discarded)", array{McpOptArg("energy", "entity", "target"), McpOptArg("player", "player", "target"), McpArg("amount", "float", "amount")})
+            McpTool("consume", "Uses (stops at 0 even if short)", array{McpOptArg("energy", "entity", "target"), McpOptArg("player", "player", "target"), McpArg("amount", "float", "amount")})
+            McpTool("spend", "Uses only if enough (otherwise failed and nothing changes)", array{McpOptArg("energy", "entity", "target"), McpOptArg("player", "player", "target"), McpArg("amount", "float", "amount")})
+            McpTool("fill", "Fills to max", array{McpOptArg("energy", "entity", "target"), McpOptArg("player", "player", "target")})
+            McpTool("set_max", "Sets the maximum", array{McpOptArg("energy", "entity", "target"), McpOptArg("player", "player", "target"), McpArg("max", "float", "maximum")})
 
     McpHandle<override>(Call:mcp_call):mcp_reply =
         Tool := Call.Tool
@@ -80,9 +80,9 @@ mcp_energy_toolset_component<public> := class<final_super>(component, mcp_contro
             else:
                 McpBadArg("amount")
         else:
-            McpFail("no_entity", "energy か player（energy_component）")
+            McpFail("no_entity", "energy or player (energy_component)")
 
-    # energy（entity）か player（その人のエネルギー）。どちらも無ければ失敗する
+    # energy (entity) or player (that player's energy). Fails when neither is given
     FindTarget<private>(Call:mcp_call)<transacts><decides>:energy_component =
         if (Call.HasArg["energy"]):
             Call.FindEntity["energy"].GetComponent[energy_component]
@@ -96,14 +96,14 @@ mcp_energy_toolset_component<public> := class<final_super>(component, mcp_contro
         else:
             array{}
 
-    # 状態のキー：持ち主がいれば "p<番号>"、いなければ名前か置いた位置
+    # State key: "p<index>" when owned, otherwise the name or the placed position
     EnergyKey<private>(Energy:energy_component)<transacts>:string =
         if (Owner := Energy.Entity.FindOwningPlayer[]):
             "p{Entity.McpGetPlayerIndex(Owner)}"
         else:
             Energy.Entity.GetMcpKey()
 
-    # ---- 状態（キー "energies"：{"<キー>":{"amount","max"}}） ----
+    # ---- State (key "energies": {"<key>":{"amount","max"}}) ----
 
     McpSessionKey<override>()<transacts>:string = "energies"
 

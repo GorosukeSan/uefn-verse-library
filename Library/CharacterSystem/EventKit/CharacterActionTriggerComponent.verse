@@ -4,33 +4,33 @@ using { ActivationSystem }
 using { CharacterSystem }
 using { CharacterSystem.TooltipKit }
 
-# 独自キャラクターに起きたことの知らせ
-# 方向：character_action_trigger_component の entity から根へ（SendUp）
-# 送り手：character_action_trigger_component（Trigger）。受け手：祖先の component。消費しない
+# Notification of something that happened to the custom character
+# Direction: from the character_action_trigger_component entity to the root (SendUp)
+# Sender: character_action_trigger_component (Trigger). Receivers: ancestor components. Not consumed
 character_action_event<public> := class(scene_event):
-    # 送った部品
+    # The component that sent it
     Trigger<public>:character_action_trigger_component
-    # 起きたこと
+    # What happened
     Action<public>:character_action
 
-# 役割：独自キャラクターに Action（着地・ジャンプ・ダッシュ・動き始め・壁に当たったなど）が起きるたびに、Targets へ起動の合図（activated_event）を送り、character_action_event を上へ送る
-#   反応（音・パーティクル・通知・有効化・アイテム）は、Targets の entity に置いた起動を待つ部品が受け持つ（コードを書かずに組み合わせる）
-#   CooldownSeconds のあいだは次を無視する（続けて何度も起きることの重複を防ぐ）
-# 置き方：エディターで、独自キャラクターの entity（character_motor_component と同じ entity）か、その子孫に付ける
-# 知らせ：character_action_event を上へ、TriggeredEvent に届ける
+# Role: whenever Action (landed, jumped, dashed, started moving, hit a wall, ...) happens to the custom character, sends an activation signal (activated_event) to Targets and sends character_action_event upward
+#   The reaction (sound, particles, notification, enabling, items) is handled by activation-awaiting components placed on the Targets entities (combine without writing code)
+#   Ignores further occurrences during CooldownSeconds (avoids duplicates when it happens many times in a row)
+# Placement: in the editor, attach to the custom character's entity (the same entity as character_motor_component) or a descendant
+# Notifications: character_action_event upward, and TriggeredEvent
 character_action_trigger_component<public> := class<final_super>(component):
 
-    # 見張ること。既定 Landed
+    # What to watch for. Default Landed
     @editable:
         ToolTip := ActionTriggerActionToolTip
         Categories := array{CharacterEventCategory}
     Action<public>:character_action = character_action.Landed
-    # 起動の合図を送る entity（その entity と子孫に届く）。空なら、この entity とその子孫へ送る
+    # Entities to send the activation signal to (reaches each entity and its descendants). If empty, sends to this entity and its descendants
     @editable:
         ToolTip := ActionTriggerTargetsToolTip
         Categories := array{CharacterEventCategory}
     Targets<public>:[]entity = array{}
-    # 次を無視する時間（秒）。0 なら無視しない。既定 0
+    # Time to ignore further occurrences (seconds). 0 never ignores. Default 0
     @editable_number(float):
         ToolTip := ActionTriggerCooldownToolTip
         Categories := array{CharacterEventCategory}
@@ -40,7 +40,7 @@ character_action_trigger_component<public> := class<final_super>(component):
 
     TriggeredEventInternal<private><final>:event(character_action) = event(character_action){}
 
-    # Action が起きるたびに届く（Await / Subscribe する。外から Signal はできない）
+    # Arrives whenever Action happens (Await / Subscribe. Cannot be Signaled from outside)
     TriggeredEvent<public><final>:listenable(character_action) = MakeProxyListenable(TriggeredEventInternal)
 
     var<private> Subscription:?cancelable = false
@@ -51,7 +51,7 @@ character_action_trigger_component<public> := class<final_super>(component):
         if (Motor := Entity.FindCharacterMotorAbove[]):
             set Subscription = option{Motor.ActionEvent.Subscribe(OnAction)}
         else:
-            Print("[character_action_trigger_component] character_motor_component が見つかりません（独自キャラクターの entity か子孫に置いてください）")
+            Print("[character_action_trigger_component] character_motor_component not found (place it on the custom character's entity or a descendant)")
 
     OnEndSimulation<override>():void =
         if (Current := Subscription?):

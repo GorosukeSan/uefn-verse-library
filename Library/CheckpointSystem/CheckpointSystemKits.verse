@@ -1,9 +1,9 @@
-# CheckpointSystem の Kit をライブラリの外（利用者のコード）から使えるように public にする。
-# フォルダから作られるモジュールは既定で internal なので、宣言しないと外から using できない。
+# Make the CheckpointSystem Kits public so they can be used from outside the library (your code).
+# Modules created from folders are internal by default; without this declaration they cannot be imported with using.
 PresenceKit<public> := module {}
-# チェックポイントに乗ったらエネルギー（EnergySystem）を満たす Kit（checkpoint_energy_refill_component）
+# Kit that refills energy (EnergySystem) when a checkpoint is reached (checkpoint_energy_refill_component)
 EnergyKit<public> := module {}
-# チェックポイントを spawner で出す Kit（checkpoint_factory_component）
+# Kit that spawns checkpoints through a spawner (checkpoint_factory_component)
 SpawnKit<public> := module {}
-# エディターに出す説明（message）を置く Kit
+# Kit holding the descriptions (message) shown in the editor
 TooltipKit<public> := module {}

@@ -7,20 +7,20 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { GravitySystem.TooltipKit }
 
-# 役割：引力を持つ点。毎フレーム（TickEvents.PrePhysics）、この entity から RadiusCm 以内のプレイヤーを、中心へ向けて StrengthCmPerSecondSquared（中心で最大、RadiusCm で 0）で引く（速度に足す）。動きを操られている人（体に controlled_movement_tag が付いている。スイング中など）は引かない（その動きを優先する）
-# 置き方：エディターで entity に付ける（実行時に gravity_point_ability_component が作ることもある）
-# 同じ entity：見た目のメッシュ（当たり判定があれば、スイングでもつかめる）
-# 前提：区画（または世界）に player_manager_component が 1 つ（引く相手）。最初に 1 度だけ探して覚える（見つかるまでは 1 秒ごとに探し直す）
+# Role: a point with gravity. Every frame (TickEvents.PrePhysics), pulls players within RadiusCm of this entity toward the center with StrengthCmPerSecondSquared (maximum at the center, 0 at RadiusCm) (added to their velocity). Players whose movement is being controlled (body carries controlled_movement_tag; swinging, etc.) are not pulled (their movement takes priority)
+# Placement: attach to an entity in the editor (gravity_point_ability_component may also create it at run time)
+# Same entity: the visual mesh (with collision, it can also be grabbed by a swing)
+# Requirements: one player_manager_component in the scope (or the world) (the players to pull). Looked up once at the start and remembered (retrying every second until found)
 gravity_well_component<public> := class<final_super>(component):
 
-    # 引力が届く半径（センチメートル。既定 1500）。中心で一番強く、この距離で 0
+    # Radius the pull reaches (centimeters; default 1500). Strongest at the center, 0 at this distance
     @editable_number(float):
         ToolTip := GravityRadiusToolTip
         Categories := array{GravityCategory}
         MinValue := option{100.0}
         MaxValue := option{20000.0}
     RadiusCm<public>:float = 1500.0
-    # 中心での引く強さ（センチメートル毎秒毎秒。既定 1200）。毎秒この速さずつ中心へ向かう速さが増える
+    # Pull strength at the center (centimeters per second squared; default 1200). The speed toward the center grows by this much every second
     @editable_number(float):
         ToolTip := GravityStrengthToolTip
         Categories := array{GravityCategory}
@@ -29,7 +29,7 @@ gravity_well_component<public> := class<final_super>(component):
     StrengthCmPerSecondSquared<public>:float = 1200.0
 
     OnSimulate<override>()<suspends>:void =
-        # player_manager_component が見つかるまで、1 秒ごとに探し直す（見つけたら覚えて、二度と探さない）
+        # Retry every second until a player_manager_component is found (once found, remember it and never look again)
         Found := Entity.AwaitScopedComponent(player_manager_component)
         loop:
             DeltaTime := TickEvents.PrePhysics.Await()
@@ -50,6 +50,6 @@ gravity_well_component<public> := class<final_super>(component):
             Gap < RadiusCm
         then:
             Falloff := 1.0 - Gap / RadiusCm
-            # GetLinearVelocity / SetLinearVelocity はメートル毎秒なので、センチメートルから直す
+            # GetLinearVelocity / SetLinearVelocity are in meters per second, so convert from centimeters
             Push := Offset.MakeUnitVector() * (StrengthCmPerSecondSquared / 100.0 * Falloff * DeltaTime)
             FortCharacter.SetLinearVelocity(FortCharacter.GetLinearVelocity() + Push)

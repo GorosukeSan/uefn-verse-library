@@ -1,8 +1,8 @@
-# PickupSystem の Kit をライブラリの外（利用者のコード）から使えるように public にする。
-# フォルダから作られるモジュールは既定で internal なので、宣言しないと外から using できない。
-# ステージへの影響（効果の中から、タグで探した相手へ起動・停止の合図を送る）
+# Make the Kits of PickupSystem public so that code outside the library (your code) can use them.
+# A module created from a folder is internal by default, so it cannot be used from outside without this declaration.
+# Stage effects (from inside an effect, send activate / deactivate signals to targets found by tag)
 StageKit<public> := module {}
-# エディターに出す説明（message）
+# Descriptions shown in the editor (message)
 TooltipKit<public> := module {}
-# 拾った効果を画面に出す HUD（拾ったときの知らせと、続いている効果の一覧。WidgetSystem の部品で作る）
+# HUD that shows picked-up effects on screen (a notice on pickup and a list of ongoing effects; built from WidgetSystem parts)
 HudKit<public> := module {}

@@ -5,34 +5,34 @@ using { /Verse.org/SpatialMath }
 using { /UnrealEngine.com/JSON }
 using { MCPSystem.TooltipKit }
 
-# 命令を受けられる部品の entity に付ける役割のタグ。受け箱（mcp_inbox_component）はこのタグの entity の component から mcp_controllable を集める
-# 付けるのは mcp_controllable を実装した component 自身（OnBeginSimulation で付け、OnEndSimulation で外す。MCP はタグを書けないため）
+# Role tag attached to the entity of a part that can receive commands. The inbox (mcp_inbox_component) collects mcp_controllable from the components of entities with this tag
+# The component that implements mcp_controllable attaches it itself (added in OnBeginSimulation, removed in OnEndSimulation, because MCP cannot write tags)
 mcp_controllable_tag<public> := class<concrete>(tag){}
 
-# 命令の受け口（ツールセット）。component が実装し、自分の entity に mcp_controllable_tag を付ける
-#   宛先 "to" は "ツールセット" か "ツールセット@インスタンス"（同じツールセットの部品が複数あるとき。インスタンスは McpId）
-#   受け箱は、宣言にないツール（unknown_tool）と、省略できない引数が無いとき（bad_args）を、McpHandle を呼ぶ前に返す
+# Command receiver (toolset). A component implements it and attaches mcp_controllable_tag to its own entity
+#   The destination "to" is "toolset" or "toolset@instance" (when several parts of the same toolset exist; the instance is McpId)
+#   The inbox answers undeclared tools (unknown_tool) and missing required arguments (bad_args) before calling McpHandle
 mcp_controllable<public> := interface:
-    # ツールセットの名前（"entity" / "widget" など。英小文字）
+    # Toolset name ("entity", "widget" etc.; lowercase ASCII)
     McpToolset<public>()<transacts>:string
-    # インスタンスの名前（空なら "ツールセット" だけで届く。"ツールセット@名前" でも届く）
+    # Instance name (when empty, "toolset" alone reaches it; "toolset@name" also reaches it)
     McpId<public>()<transacts>:string
-    # 受けられるツールの説明（describe が集める）
+    # Descriptions of the tools it accepts (collected by describe)
     McpTools<public>()<transacts>:[]mcp_tool
-    # ツールを実行して返事を返す。同じフレームで終わらないものは spawn してすぐ "accepted" を返し、終わったら Call.Notify で知らせる
-    #   何度実行しても同じ結果になる形にする（受け箱が作り直されると、返事を見る前の命令がもう一度届くことがある）
-    #   読んだ値を信用しない（失敗しうる変換は Call.Find*[] / if の中で。範囲を確かめる）
+    # Runs the tool and returns the reply. Work that does not finish in the same frame is spawned; return "accepted" right away and notify with Call.Notify when done
+    #   Make it idempotent (when the inbox is rebuilt, a command whose reply was not yet seen may arrive again)
+    #   Do not trust the values read (conversions that can fail go in Call.Find*[] / if; check ranges)
     McpHandle<public>(Call:mcp_call):mcp_reply
 
-# ---- 名前（Verse は entity の名前を読めないので、MCP から名前で指す entity にはこれを付ける） ----
+# ---- Names (Verse cannot read entity names, so attach this to any entity you address by name from MCP) ----
 
-# mcp_name_component が自分の entity に付けるタグ
+# Tag that mcp_name_component attaches to its own entity
 mcp_name_tag<public> := class<concrete>(tag){}
 
-# 役割：entity に MCP から指せる名前を付ける（entity.find の name、引数の "entity":"<名前>"、widget の画面・session のキーなど）
-# 置き方：名前で指したい entity に付ける。同じ名前が複数あってもよい（探すと全部返る。引数で 1 つを指すときは最初に見つけたもの）
+# Role: gives an entity a name that MCP can address (the name in entity.find, the argument "entity":"<name>", widget screens, session keys etc.)
+# Placement: attach to any entity you want to address by name. The same name may appear more than once (find returns them all; an argument that addresses one picks the first found)
 mcp_name_component<public> := class<final_super>(component):
-    # 名前（英数字を勧める。空なら付けていないのと同じ）
+    # The name (alphanumeric recommended; empty is the same as not attached)
     @editable:
         ToolTip := McpNameToolTip
         Categories := array{McpCategory}
@@ -49,63 +49,63 @@ mcp_name_component<public> := class<final_super>(component):
         set TagKey = false
         (super:)OnEndSimulation()
 
-# InEntity に付いた mcp_name_component の名前。無ければ空
+# Name of the mcp_name_component on InEntity; empty when none
 (InEntity:entity).GetMcpName<public>()<reads>:string =
     if (Named := InEntity.GetComponent[mcp_name_component]) then Named.McpName else ""
 
-# ---- タグの名前（Verse のタグは型なので、文字列から探すには名前と型の表が要る） ----
+# ---- Tag names (Verse tags are types, so looking one up from a string needs a name -> type table) ----
 
-# 名前を付けたタグの型。Concrete があれば付け外しにも使える（抽象のタグは探す・確かめるだけ）
+# A named tag type. With Concrete it can also be added and removed (abstract tags can only be searched and checked)
 mcp_tag_entry<public> := class<final>:
     Name<public>:string
     TagType<public>:castable_subtype(tag)
     Concrete<public>:?castable_concrete_subtype(tag) = false
 
-# 探す・付け外しに使えるタグ（具体的な型）
+# A tag usable for find, add and remove (concrete type)
 McpTagEntry<public>(Name:string, TagType:castable_concrete_subtype(tag))<transacts>:mcp_tag_entry =
     mcp_tag_entry{Name := Name, TagType := TagType, Concrete := option{TagType}}
 
-# 探す・確かめるだけのタグ（抽象の基底など）
+# A tag for find and check only (an abstract base etc.)
 McpFindOnlyTagEntry<public>(Name:string, TagType:castable_subtype(tag))<transacts>:mcp_tag_entry =
     mcp_tag_entry{Name := Name, TagType := TagType}
 
-# タグの名前を MCP に知らせる部品が実装する（entity.find / player.has_tag などがタグの名前を型に直すときに集める）
-#   実装した component の entity には mcp_controllable_tag を付ける（受け箱がそのタグで集める。mcp_controllable を実装しなくてよい）
+# Implemented by parts that tell MCP their tag names (collected when entity.find / player.has_tag etc. turn a tag name into a type)
+#   Attach mcp_controllable_tag to the implementing component's entity (the inbox collects by that tag; implementing mcp_controllable is not required)
 mcp_tag_provider<public> := interface:
     McpTagEntries<public>()<transacts>:[]mcp_tag_entry
 
-# Entry のタグの型から新しいタグを作る。抽象のタグ（Concrete が無い）なら失敗する
+# Creates a new tag from Entry's tag type. Fails for an abstract tag (no Concrete)
 (Entry:mcp_tag_entry).MakeTag<public>()<transacts><decides>:tag =
     TagType:castable_concrete_subtype(tag) = Entry.Concrete?
     TagType{}
 
-# ---- 状態の書き出し・復元（session_restorable の土台。SessionKit の session ツールセットが集める） ----
+# ---- State snapshot / restore (the base of session_restorable; collected by SessionKit's session toolset) ----
 
-# 状態を書き出し・戻せる部品の entity に付ける役割のタグ（実装した component 自身が付ける）
+# Role tag attached to the entity of a part whose state can be snapshotted and restored (the implementing component attaches it itself)
 mcp_session_restorable_tag<public> := class<concrete>(tag){}
 
-# 状態を JSON に書き出し、JSON から戻せる部品が実装する（DESIGN の session_restorable）
-#   キーはセッションをまたいで変わらないもの（"character"、名前・置いた位置から作る "countdown@race" など）
+# Implemented by parts that can write their state to JSON and restore it from JSON (session_restorable in DESIGN)
+#   The key must stay the same across sessions ("character", or one built from the name / placed position such as "countdown@race")
 mcp_session_restorable<public> := interface:
-    # 変わらないキー（同じキーが複数あると、後に集めたものが上書きする）
+    # Stable key (when the same key appears more than once, the one collected later overwrites)
     McpSessionKey<public>()<transacts>:string
-    # 今の状態を JSON の文字列（オブジェクトか配列）にする
+    # Writes the current state as a JSON string (object or array)
     McpSessionSave<public>(Context:mcp_session_context):string
-    # State（McpSessionSave が返した JSON を読み直したもの）に戻す。結果を短い文で返す（"ok" か、戻せなかった理由）
+    # Restores State (the JSON returned by McpSessionSave, parsed again). Returns a short result text ("ok" or why it could not restore)
     McpSessionRestore<public>(Context:mcp_session_context, State:value):string
 
-# 書き出し・復元のときに渡す情報。プレイヤーは「その回の番号」（core.players の並び）で当てる
-#   保存した人数より今が少なければ余りは捨て、多ければ足りない人はそのまま（決めた規則。README）
-#   復元する位置どうしが MinSeparationCm より近いときは、ClaimPosition が左（Left）へずらす（当たりの掃引はしない）
+# Context passed on snapshot / restore. Players are matched by "the index in that run" (the order of core.players)
+#   When fewer players than saved are present the extras are dropped; when more, the missing ones stay as they are (by design; see README)
+#   When restored positions are closer than MinSeparationCm, ClaimPosition shifts them to the left (Left) (no collision sweep)
 mcp_session_context<public> := class<internal>:
-    # 今のプレイヤー（番号の順）
+    # Current players (in index order)
     Players<public>:[]player
-    # 復元する位置どうしを離す距離（cm）
+    # Minimum distance between restored positions (cm)
     MinSeparationCm<public>:float = 120.0
 
     var<private> Claimed:[]vector3 = array{}
 
-    # Desired に置いてよい位置を返し、使った位置として覚える。もう覚えた位置と近ければ、左へ MinSeparationCm ずつ（最大 16 回）ずらす
+    # Returns a position where Desired may be placed and remembers it as used. When close to a remembered position, shifts left by MinSeparationCm at a time (up to 16 times)
     ClaimPosition<public>(Desired:vector3)<transacts>:vector3 =
         var Position:vector3 = Desired
         var Tries:int = 0
@@ -121,37 +121,37 @@ mcp_session_context<public> := class<internal>:
         Near := for (Other : Claimed, DistanceSquared(Other, Position) < MinSeparationCm * MinSeparationCm) { Other }
         Near.Length > 0
 
-    # 番号 Index のプレイヤー。いなければ失敗する
+    # Player at Index. Fails when absent
     FindPlayer<public>(Index:int)<transacts><decides>:player =
         Players[Index]
 
-# mcp_session_context を作る（SessionKit 以外から書き出し・復元を呼ぶとき・テスト）
+# Creates an mcp_session_context (for calling snapshot / restore from outside SessionKit, or in tests)
 MakeMcpSessionContext<public>(Players:[]player, MinSeparationCm:float)<transacts>:mcp_session_context =
     mcp_session_context{Players := Players, MinSeparationCm := MinSeparationCm}
 
-# 置いた位置からキーを作る（"@left,up,forward" の cm を丸めた値）。名前の無い部品のキーに使う（置いた物は動かないかぎり同じキーになる）
+# Builds a key from the placed position ("@left,up,forward" in rounded cm). Used as the key of unnamed parts (a placed object keeps the same key as long as it does not move)
 McpPositionKey<public>(Position:vector3)<transacts>:string =
     "@{McpRoundText(Position.Left)},{McpRoundText(Position.Up)},{McpRoundText(Position.Forward)}"
 
-# 名前があれば名前、無ければ置いた位置のキー
+# The name when present, otherwise the placed-position key
 (InEntity:entity).GetMcpKey<public>()<transacts>:string =
     Name := InEntity.GetMcpName()
     if (Name <> "") then Name else McpPositionKey(InEntity.GetGlobalTransform().Translation)
 
-# float を四捨五入した整数の文字（範囲外・有限でないなら "x"）
+# Text of the float rounded to an integer ("x" when out of range or not finite)
 McpRoundText<public>(F:float)<transacts>:string =
     if (F.IsFinite[], F > -9.0e15, F < 9.0e15, R := Round[F]) then "{R}" else "x"
 
-# 1 つの component が entity に付けたタグを覚えておき、止まるときに自分の付けた分だけ外す（ツールセットの component が mcp_controllable_tag を付けるときなどに使う）
-# 使い方：RoleTags:mcp_role_tags = mcp_role_tags{} を持ち、OnBeginSimulation で RoleTags.Add(Entity, mcp_controllable_tag{})、OnEndSimulation で RoleTags.RemoveAll()
+# Remembers the tags one component attached to entities and removes only its own when it stops (used e.g. when a toolset component attaches mcp_controllable_tag)
+# Usage: hold RoleTags:mcp_role_tags = mcp_role_tags{}, call RoleTags.Add(Entity, mcp_controllable_tag{}) in OnBeginSimulation and RoleTags.RemoveAll() in OnEndSimulation
 mcp_role_tags<public> := class:
     var<private> Keys:[]tuple(entity, tag_key, tag) = array{}
 
-    # Target に Tag を付ける（Tag は呼ぶたびに作ったものを渡す）
+    # Attaches Tag to Target (pass a freshly created Tag on every call)
     Add<public>(Target:entity, Tag:tag)<transacts>:void =
         set Keys += array{(Target, Target.AddTag(Tag), Tag)}
 
-    # Target に付けたタグのうち、TagType の型（派生を含む）のものを外す。1 つでも外したら成功する
+    # Removes the tags attached to Target whose type is TagType (including subtypes). Succeeds when at least one was removed
     Remove<public>(Target:entity, TagType:castable_subtype(tag))<transacts><decides>:void =
         var Kept:[]tuple(entity, tag_key, tag) = array{}
         var Removed:int = 0
@@ -164,11 +164,11 @@ mcp_role_tags<public> := class:
         set Keys = Kept
         Removed > 0
 
-    # この holder で付けたタグをすべて外す
+    # Removes every tag attached through this holder
     RemoveAll<public>()<transacts>:void =
         for (Item : Keys):
             if (Item(0).RemoveTag[Item(1)]) {}
         set Keys = array{}
 
-    # 付けている数
+    # Number of tags currently attached
     GetCount<public>()<transacts>:int = Keys.Length

@@ -3,27 +3,27 @@ using { /Verse.org/Simulation }
 using { SwingSystem }
 using { SwingSystem.TooltipKit }
 
-# 役割：寿命の的。同じ entity の swing_target_component が最初につかまれた時点から LifeSeconds 経つと、Shatter で壊す（放しても延びない。つかんでいる人のスイングは途切れる）
-# 知らせ：0.1 秒ごとに残りの割合（1 → 0）を swing_life_changed_event で自分の entity へ送り、最後の BlinkSeconds は BlinkCount 回、Visible を切り替えて点滅を知らせる（見た目の切り替え用）
-# 置き方：エディターで、swing_target_component と同じ entity に付ける（スイングでつかませたいキューブ）。mover と同じ entity にも置ける。実行時に作るときも同じ（swing_target_component{Entity := E} と swing_life_component{Entity := E, LifeSeconds := 5.0} を一緒に AddComponents する）
-# 同じ entity：swing_target_component（必須）、当たり判定のあるメッシュ。見た目を変えるなら swing_life_changed_event を受ける component
+# Role: lifetime target. LifeSeconds after the swing_target_component on the same entity is first grabbed, breaks it with Shatter (releasing does not extend it; the swing of whoever holds it is cut)
+# Notifies: every 0.1 s sends the remaining ratio (1 -> 0) to its own entity as swing_life_changed_event, and during the last BlinkSeconds toggles Visible BlinkCount times to signal blinking (for switching the look)
+# Placement: attach in the editor to the same entity as swing_target_component (the cube you want players to grab). May share an entity with a mover. Same when created at runtime (AddComponents swing_target_component{Entity := E} and swing_life_component{Entity := E, LifeSeconds := 5.0} together)
+# Same entity: swing_target_component (required), a mesh with collision. To change the look, a component that receives swing_life_changed_event
 swing_life_component<public> := class<final_super>(component):
 
-    # 最初につかまれてから壊れるまでの時間（秒。既定 5）。最後の点滅の時間も含む
+    # Time from the first grab until it breaks (seconds; default 5). Includes the final blinking time
     @editable_number(float):
         ToolTip := SwingLifeSecondsToolTip
         Categories := array{SwingCategory, SwingLifeCategory}
         MinValue := option{0.5}
         MaxValue := option{120.0}
     LifeSeconds<public>:float = 5.0
-    # 壊れる直前に点滅する回数（既定 3）
+    # Number of blinks just before it breaks (default 3)
     @editable_number(int):
         ToolTip := SwingLifeBlinkCountToolTip
         Categories := array{SwingCategory, SwingLifeCategory}
         MinValue := option{1}
         MaxValue := option{10}
     BlinkCount<public>:int = 3
-    # 壊れる直前に点滅する時間（秒。既定 0.9）
+    # Blinking time just before it breaks (seconds; default 0.9)
     @editable_number(float):
         ToolTip := SwingLifeBlinkSecondsToolTip
         Categories := array{SwingCategory, SwingLifeCategory}
@@ -31,7 +31,7 @@ swing_life_component<public> := class<final_super>(component):
         MaxValue := option{10.0}
     BlinkSeconds<public>:float = 0.9
 
-    # 残りを知らせる間隔（秒）。見た目の更新用なので毎フレームにはしない
+    # Interval between remaining-time notifications (seconds). Meant for look updates, so not every frame
     NotifyIntervalSeconds<private>:float = 0.1
 
     OnSimulate<override>()<suspends>:void =
@@ -64,12 +64,12 @@ swing_life_component<public> := class<final_super>(component):
             Sleep(HalfSeconds)
             set Count += 1
 
-# 寿命の的（swing_life_component）の残り。0.1 秒ごとと、最後の点滅で届く
-# 向き：swing_life_component が自分の entity へ SendDown する。受け手：同じ entity・子孫の見た目の component。消費しない
+# Remaining lifetime of a lifetime target (swing_life_component). Arrives every 0.1 s and during the final blinking
+# Direction: swing_life_component SendDowns it to its own entity. Receivers: look components on the same entity / descendants. Not consumed
 swing_life_changed_event<public> := class(scene_event):
-    # 送り元
+    # Sender
     Life<public>:swing_life_component
-    # 残りの割合（1 → 0）
+    # Remaining ratio (1 -> 0)
     RemainingRatio<public>:float
-    # 点滅中に false になる（見た目を隠す）
+    # false while blinking (hide the look)
     Visible<public>:logic

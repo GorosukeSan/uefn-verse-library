@@ -8,67 +8,67 @@ using { VolumeSystem }
 using { CharacterSystem.SurfaceKit }
 using { PickupSystem.TooltipKit }
 
-# 拾った知らせ
-# 方向：拾われた物の entity から根へ（SendUp）
-# 送り手：pickup_component（Pickup）。受け手：祖先の component（マップの根・ゲームの根など）。消費しない
+# Notification that a pickup was picked up
+# Direction: from the picked-up object's entity to the root (SendUp)
+# Sender: pickup_component (Pickup). Receivers: ancestor components (the map root, the game root, etc.). Not consumed
 pickup_picked_event<public> := class(scene_event):
-    # 拾われた物（送り元）
+    # The picked-up object (sender)
     Pickup<public>:pickup_component
-    # 拾った人
+    # Agent who picked it up
     Agent<public>:agent
-    # 作った効果のプレハブの entity。作れなかった（Effect が空・slot が無い）ときは false
+    # Entity of the created effect prefab. false if it could not be created (Effect is empty or there is no slot)
     Effect<public>:?entity
 
-# 役割：拾える人を絞る条件の基底（コードで条件を書くときに派生を作る。中身は CanPick だけ）。pickup_component は同じ entity のこの派生がすべて成功した人だけに拾わせる
-#   例：ゲームの「遊んでいる人だけ」。タグで絞るなら Agent.HasPlayerTag[タグ] を書く
-# 置き方：エディターで、pickup_component と同じ entity に付ける。派生どうしは 1 entity に 1 つまで（エディターは同じ基底を 2 つ付けられない）
+# Role: base class for conditions that restrict who can pick up (subclass it to write a condition in code; the only member is CanPick). pickup_component lets only agents pass every subclass on the same entity pick up
+#   Example: "only players currently playing" in a game. To filter by tag, write Agent.HasPlayerTag[tag]
+# Placement: attach in the editor to the same entity as pickup_component. At most one subclass per entity (the editor cannot attach two components with the same base)
 pickup_filter_component<public> := class<abstract><final_super>(component):
-    # Agent が Pickup を拾えるなら成功する
+    # Succeeds if Agent may pick up Pickup
     CanPick<public>(Pickup:pickup_component, Agent:agent)<decides><transacts>:void
 
-# 役割：拾える物（オーブ）。触れた人に、効果のプレハブ（Effect）を作って与える（PickupSystem の pickup_effect_component が根にあるプレハブ。その人の slot の下に作られ、持ち主 = 拾った人）
-#   拾ったら見た目（この entity と子孫のメッシュ）を消し、RespawnSeconds 秒で戻す（0 なら戻さない。Restore か起動の合図で戻す）
-#   触れたことの決め方（どれか。両方あってもよい）：
-#     独自キャラクター（CharacterSystem）：同じ entity の character_surface_component（SurfaceKit）に触れた（Touched）
-#     Fortnite のキャラクター：同じ entity の player_volume_component（VolumeSystem）に入った
-#     コード：TryPickup(Agent)
-#   拾える人：RequireGroupMember なら、祖先の一番近い player_group_component（PlayerSystem）の組にいる人だけ（マップを遊んでいる人など）。同じ entity の pickup_filter_component の派生でも絞れる
-# 置き方：エディターで、拾える物の entity に付ける（見た目のメッシュと、触れたことを決める部品も同じ entity に）。メッシュは当たり判定なしにする
-#   見た目を差し替える：この entity のメッシュを替えるか、Visual に見た目のプレハブを入れる（開始時にこの entity の子に作る）
-# いつ：開始から（ActiveOnBegin がオフなら、起動の合図から）。起動の合図で戻し（拾える状態にし）、停止の合図で隠す（拾えない）
-# 知らせ：PickedEvent（拾った人）、RestoredEvent、pickup_picked_event（SendUp）
-# 外から：TryPickup / Restore / Hide / IsAvailable / CanPick
-# 前提：区画か世界に player_manager_component が 1 つ（効果をその人の slot の下に作るため）
+# Role: a pickup (orb). Creates the effect prefab (Effect) for the agent who touches it and gives it to them (a prefab with PickupSystem's pickup_effect_component on the root; created under that agent's slot, owner = the picker)
+#   On pickup, hides the look (meshes on this entity and its descendants) and brings it back after RespawnSeconds (0 means it does not return; Restore or the activate signal brings it back)
+#   How touching is detected (any of these; both may be present):
+#     Custom character (CharacterSystem): touched (Touched) the character_surface_component (SurfaceKit) on the same entity
+#     Fortnite character: entered the player_volume_component (VolumeSystem) on the same entity
+#     Code: TryPickup(Agent)
+#   Who can pick up: with RequireGroupMember, only members of the nearest ancestor player_group_component (PlayerSystem) group (e.g. players currently playing the map). pickup_filter_component subclasses on the same entity can filter too
+# Placement: attach in the editor to the pickup entity (the look mesh and the parts that detect touching go on the same entity). Give the mesh no collision
+#   To replace the look: change this entity's mesh, or put a look prefab in Visual (created as a child of this entity at start)
+# When: from the start (from the activate signal if ActiveOnBegin is off). The activate signal restores it (makes it available), the deactivate signal hides it (unavailable)
+# Notifies: PickedEvent (the picker), RestoredEvent, pickup_picked_event (SendUp)
+# From outside: TryPickup / Restore / Hide / IsAvailable / CanPick
+# Requirements: one player_manager_component in the scope or the world (to create the effect under the agent's slot)
 pickup_component<public> := class<final_super>(component):
 
-    # 拾った人に与える効果のプレハブ（根に pickup_effect_component）。既定の entity のままだと、既定（10 秒）の空の効果になる
+    # Prefab of the effect given to the picker (pickup_effect_component on the root). Leaving the default entity gives an empty effect with the default duration (10 s)
     @editable:
         ToolTip := PickupEffectToolTip
         Categories := array{PickupCategory}
     Effect<public>:concrete_subtype(entity) = entity
-    # 拾われてから戻るまでの秒数。0 なら戻さない（1 回だけ。Restore・起動の合図・ゲームのやり直しで戻す）。既定 10
+    # Seconds until it returns after being picked up. 0 means it does not return (one time only; Restore, the activate signal or a game reset brings it back). Default 10
     @editable_number(float):
         ToolTip := PickupRespawnToolTip
         Categories := array{PickupCategory}
         MinValue := option{0.0}
         MaxValue := option{3600.0}
     RespawnSeconds<public>:float = 10.0
-    # 見た目のプレハブ。開始時にこの entity の子に作り、拾われたら一緒に消す（この entity のメッシュの代わり・足し）。既定の entity のままなら何も足さない
+    # Look prefab. Created as a child of this entity at start and removed together on pickup (instead of or in addition to this entity's mesh). Leaving the default entity adds nothing
     @editable:
         ToolTip := PickupVisualToolTip
         Categories := array{PickupCategory}
     Visual<public>:concrete_subtype(entity) = entity
-    # オンなら、祖先の一番近い player_group_component の組にいる人だけが拾える（組が無ければだれも拾えない）。既定オフ
+    # When on, only members of the nearest ancestor player_group_component's group can pick it up (nobody if there is no group). Default off
     @editable:
         ToolTip := PickupRequireGroupToolTip
         Categories := array{PickupCategory}
     RequireGroupMember<public>:logic = false
-    # オンなら、開始から拾える。オフなら、起動の合図まで隠しておく（ステージへの合図で出すオーブなど）。既定オン
+    # When on, it can be picked up from the start. When off, it stays hidden until the activate signal (e.g. an orb revealed by a stage signal). Default on
     @editable:
         ToolTip := PickupActiveOnBeginToolTip
         Categories := array{PickupCategory}
     ActiveOnBegin<public>:logic = true
-    # 表示名（出力ログと、利用者の HUD 用。効果そのものには使わない）。既定 空
+    # Display name (for the output log and your HUD; not used by the effect itself). Default empty
     @editable:
         ToolTip := PickupDisplayNameToolTip
         Categories := array{PickupCategory}
@@ -77,14 +77,14 @@ pickup_component<public> := class<final_super>(component):
     PickedEventInternal<private><final>:event(agent) = event(agent){}
     RestoredEventInternal<private><final>:event(tuple()) = event(tuple()){}
 
-    # 拾われるたびに、拾った人で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires with the picker each time it is picked up (Await / Subscribe it; it cannot be Signaled from outside)
     PickedEvent<public><final>:listenable(agent) = MakeProxyListenable(PickedEventInternal)
 
-    # 拾える状態に戻るたびに届く（時間で戻った・Restore・起動の合図）
+    # Fires each time it becomes available again (returned after the timer, Restore, the activate signal)
     RestoredEvent<public><final>:listenable(tuple()) = MakeProxyListenable(RestoredEventInternal)
 
     var<private> Available:logic = false
-    # 古い「戻す」待ちを無効にするための番号
+    # Counter that invalidates stale "restore" waits
     var<private> Generation:int = 0
     var<private> VisualEntity:?entity = false
 
@@ -97,7 +97,7 @@ pickup_component<public> := class<final_super>(component):
         set VisualEntity = option{Made}
 
     OnSimulate<override>()<suspends>:void =
-        # 同じ entity のメッシュ・触れる箱がそろってから見た目を合わせる
+        # Sync the look once the mesh and the touch volume on the same entity are in place
         Sleep(0.0)
         if (ActiveOnBegin?):
             Restore()
@@ -125,7 +125,7 @@ pickup_component<public> := class<final_super>(component):
             Hide()
         false
 
-    # Agent に拾わせる：拾える状態で、Agent が拾える人なら、効果を与えて見た目を消し、RespawnSeconds 後に戻す。拾わせたら true
+    # Let Agent pick it up: if available and Agent may pick up, gives the effect, hides the look and restores after RespawnSeconds. true if picked up
     TryPickup<public>(Agent:agent):logic =
         if (not Available?):
             return false
@@ -141,24 +141,24 @@ pickup_component<public> := class<final_super>(component):
             spawn{RestoreAfter(Generation)}
         true
 
-    # すぐ拾える状態に戻す（見た目を出す）。戻す待ちは取り消す
+    # Make it available again right away (shows the look). Cancels any pending restore
     Restore<public>():void =
         set Generation += 1
         set Available = true
         Show(true)
         RestoredEventInternal.Signal(())
 
-    # 隠して拾えなくする（Restore か起動の合図まで）。戻す待ちは取り消す
+    # Hide it and make it unavailable (until Restore or the activate signal). Cancels any pending restore
     Hide<public>():void =
         set Generation += 1
         set Available = false
         Show(false)
 
-    # 今拾えるなら成功する
+    # Succeeds if it can be picked up now
     IsAvailable<public>()<decides><transacts>:void =
         Available?
 
-    # Agent が拾える人なら成功する（RequireGroupMember の組と、同じ entity の pickup_filter_component の派生すべて）
+    # Succeeds if Agent may pick up (the RequireGroupMember group and every pickup_filter_component subclass on the same entity)
     CanPick<public>(Agent:agent)<decides><transacts>:void =
         if (RequireGroupMember?):
             Entity.FindAncestorGroup[].IsMember[Agent]
@@ -171,7 +171,7 @@ pickup_component<public> := class<final_super>(component):
         if (MyGeneration = Generation):
             Restore()
 
-    # この entity と子孫のメッシュを出す・消す。触れる箱（character_surface_component）も切り替える
+    # Shows / hides the meshes on this entity and its descendants. Also toggles the touch volume (character_surface_component)
     Show<private>(Visible:logic):void =
         for (Mesh : Entity.FindDescendantComponents(mesh_component)):
             ShowMesh(Mesh, Visible)

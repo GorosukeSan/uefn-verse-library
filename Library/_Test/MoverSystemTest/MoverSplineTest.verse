@@ -6,10 +6,10 @@ using { MoverSystem.RouteKit }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：曲線の道のり（RouteKit の mover_spline_route_component）の動作確認。数値で確かめる：曲線の長さ（2 点は直線でちょうどの長さ・円の上の 8 点の輪は円周の 1% 以内）、地点を通ること、長さの表で等間隔に取った点が等間隔に並ぶこと、輪の継ぎ目（最後 → 最初の区間が曲線でつながり、向きの変わり方が途中と同じ・1 周で同じ位置）、PingPong の折り返し（番号の順、戻りの途中の点が行きの逆の順）、開いた道の Loop はまっすぐ戻ること
-#   動かして確かめる（Keyframe）：輪を 1 周する時間が 長さ ÷ 速さ、途中の速さが一定で円から外れないこと、PingPong で折り返して戻る時間と戻りの途中の位置、FaceTravelDirection で進む向きを向き（位置もずれない）、Restart で最初の向きに戻ること
-# テストのレベル：このテストの component を、まわり 10 メートルに何も無い空中の entity に付けるだけ（動かす entity はテストが自分の子に作る。見た目は無い。プレイヤーは要らない）。約 7 秒
-# 結果：出力ログの [TEST] MoverSpline
+# Role: verification of curved routes (RouteKit's mover_spline_route_component). Checked numerically: curve length (2 points are a straight line of exact length; a loop of 8 points on a circle is within 1% of the circumference), passing through the points, that points sampled at equal lengths from the length table are evenly spaced, the loop seam (the last -> first segment is a curve, its turn rate matches the middle, one lap returns to the same position), PingPong turnaround (index order; the points on the way back are the reverse of the way out), and that Loop on an open route returns in a straight line
+#   Checked by moving (Keyframe): one lap of the loop takes length / speed, the speed stays constant midway and does not leave the circle, PingPong turnaround time and position midway on the way back, FaceTravelDirection faces the travel direction (without shifting the position), and Restart returns to the initial facing
+# Test level: just attach this test component to an entity in the air with nothing within 10 meters (the moved entity is created by the test under its children; no visuals; no player needed). About 7 seconds
+# Result: [TEST] MoverSpline in the output log
 mover_spline_test_component<public> := class<final_super>(component):
 
     CircleRadiusCm<private>:float = 400.0
@@ -28,7 +28,7 @@ mover_spline_test_component<public> := class<final_super>(component):
         TestFaceDirection(Results)
         if (Results.Finish[]) {}
 
-    # 地点が 2 つなら直線：分けない・長さがちょうど・途中の点なし
+    # Two points make a straight line: not subdivided, exact length, no intermediate points
     TestStraight<private>(Results:test_log):void =
         Route := mover_spline_route_component{Entity := entity{}, IncludeStart := false, Mode := mover_path_mode.Once, Points := array{vector3{}, vector3{Forward := 1000.0}}}
         First := Route.NextTarget(vector3{}, vector3{})
@@ -41,7 +41,7 @@ mover_spline_test_component<public> := class<final_super>(component):
             Results.Fail("2 points: second target", "NextTarget failed")
         Results.Check("2 points: first target is point 0", if (Target := First?, Target.Index = 0) then true else false)
 
-    # 円の上の 8 点を閉じた輪にする
+    # 8 points on a circle as a closed loop
     TestCircleShape<private>(Results:test_log):void =
         Radius := 1000.0
         Circle := MakeCirclePoints(vector3{}, Radius, 8)
@@ -57,7 +57,7 @@ mover_spline_test_component<public> := class<final_super>(component):
                 set Passes = false
         Results.Check("closed: the curve passes every point", Passes)
         Results.Check("closed: FindDistanceAtPoint[8] is one lap", if (Lap := Route.FindDistanceAtPoint[8], Abs(Lap - LapCm) < 0.01) then true else false)
-        # 継ぎ目：最後の点は最初の点。継ぎ目の向きの変わり方は途中と同じくらい（円なら 360 / 128 度）
+        # Seam: the last point is the first point. The turn rate at the seam is about the same as midway (360 / 128 degrees for a circle)
         if (Head := Curve[0], Next := Curve[1], Tail := Curve[Curve.Length - 1], BeforeTail := Curve[Curve.Length - 2], Mid0 := Curve[63], Mid1 := Curve[64], Mid2 := Curve[65]):
             Results.CheckFloat("seam: the last curve point is the first", Distance(Head, Tail), 0.0, 0.01)
             SeamCos := DotProduct((Next - Head).MakeUnitVector(), (Tail - BeforeTail).MakeUnitVector())
@@ -66,7 +66,7 @@ mover_spline_test_component<public> := class<final_super>(component):
         else:
             Results.Fail("seam: curve points", "not enough curve points")
         Results.CheckFloat("seam: SampleAtDistance wraps after one lap", Distance(Route.SampleAtDistance(LapCm + 250.0), Route.SampleAtDistance(250.0)), 0.0, 0.5)
-        # 長さの表：等しい長さごとに取った点は等間隔（弦なので少し短い）
+        # Length table: points sampled at equal lengths are evenly spaced (slightly shorter because they are chords)
         var Worst:float = 0.0
         var Previous:vector3 = Route.SampleAtDistance(0.0)
         for (Step := 1..60):
@@ -74,7 +74,7 @@ mover_spline_test_component<public> := class<final_super>(component):
             set Worst = Max(Worst, Abs(Distance(Previous, Point) - 100.0))
             set Previous = Point
         Results.CheckFloat("arc length table: equal distances give equal steps (worst error cm)", Worst, 0.0, 1.0)
-        # 輪の順：7 の次は 0、7 → 0 の区間も曲線（途中の点が 15）
+        # Loop order: 7 is followed by 0, and the 7 -> 0 segment is a curve too (15 intermediate points)
         for (Index := 1..7):
             Route.NextTarget(vector3{}, vector3{})
         SeamTarget := Route.NextTarget(vector3{}, vector3{})
@@ -87,7 +87,7 @@ mover_spline_test_component<public> := class<final_super>(component):
         else:
             Results.Fail("closed: target after point 7", "NextTarget failed")
 
-    # 開いた道の PingPong の番号の順と、戻りの途中の点。Loop はまっすぐ戻る
+    # Index order of PingPong on an open route, and the points midway on the way back. Loop returns in a straight line
     TestPingPongOrder<private>(Results:test_log):void =
         Points := MakeSPoints(vector3{})
         Route := mover_spline_route_component{Entity := entity{}, IncludeStart := false, Mode := mover_path_mode.PingPong, Points := Points}
@@ -120,7 +120,7 @@ mover_spline_test_component<public> := class<final_super>(component):
                 set LastLeg = Looping.GetLeg(vector3{}, Target).Via.Length
         Results.CheckInt("open Loop: last -> first goes straight (no via points)", LastLeg, 0)
 
-    # Keyframe の mover で輪を 1 周：時間、途中の速さ、円から外れないこと
+    # One lap of the loop with a Keyframe mover: time, speed midway, staying on the circle
     TestCircleMover<private>(Results:test_log)<suspends>:void =
         Center := Entity.GetGlobalTranslation() + vector3{Up := 300.0}
         Circle := MakeCirclePoints(Center, CircleRadiusCm, 6)
@@ -128,7 +128,7 @@ mover_spline_test_component<public> := class<final_super>(component):
         MoverEntity := Made(0)
         Mover := Made(1)
         Route := Made(2)
-        # 地点 0（置いた位置）にはすぐ着くので、Play の前から待つ
+        # Point 0 (the placed position) is reached immediately, so wait from before Play
         FirstReached := spawn{AwaitWithin(Mover.TargetReachedEvent, 1.0)}
         Mover.Play()
         Started := FirstReached.Await()
@@ -147,7 +147,7 @@ mover_spline_test_component<public> := class<final_super>(component):
         Results.CheckFloat("circle mover: stays on the curve (cm from the circle)", Lap(1)(1), 0.0, PositionToleranceCm)
         MoverEntity.RemoveFromParent()
 
-    # PingPong で 2 → 1 に戻る時間と、戻りの途中の位置
+    # Time to return 2 -> 1 with PingPong, and the position midway on the way back
     TestPingPongMover<private>(Results:test_log)<suspends>:void =
         Base := Entity.GetGlobalTranslation() + vector3{Up := 600.0, Forward := -300.0}
         Points := array{Base, Base + vector3{Forward := 300.0, Left := 300.0}, Base + vector3{Forward := 600.0}}
@@ -172,7 +172,7 @@ mover_spline_test_component<public> := class<final_super>(component):
             Results.Fail("PingPong mover: reaches point 2", "point 2 was not reached within 4 s")
         MoverEntity.RemoveFromParent()
 
-    # FaceTravelDirection：左へ進むと前が左を向く（位置もずれない）。Restart で最初の向きへ戻る
+    # FaceTravelDirection: moving left makes forward face left (without shifting the position). Restart returns to the initial facing
     TestFaceDirection<private>(Results:test_log)<suspends>:void =
         Start := Entity.GetGlobalTranslation() + vector3{Up := 900.0}
         Goal := Start + vector3{Left := 400.0}
@@ -208,7 +208,7 @@ mover_spline_test_component<public> := class<final_super>(component):
         TickEvents.PrePhysics.Await()
         (MoverEntity, Mover, Route)
 
-    # Mover が地点 Index に着くまで待つ（ほかの地点は見送る）。Seconds 秒までに着けば true
+    # Waits until Mover reaches point Index (other points are skipped). True when reached within Seconds
     AwaitPoint<private>(Mover:mover_component, Index:int, Seconds:float)<suspends>:logic =
         race:
             block:
@@ -221,7 +221,7 @@ mover_spline_test_component<public> := class<final_super>(component):
                 Sleep(Seconds)
                 false
 
-    # Seconds 秒のあいだ 0.2 秒ごとに位置を読み、（速さの外れの最大の割合, 円 Center からの距離と半径の差の最大 cm）を返す
+    # Reads the position every 0.2 seconds for Seconds and returns (max speed deviation ratio, max cm difference between the distance from Center and the radius)
     SampleMotion<private>(MoverEntity:entity, Center:vector3, Seconds:float)<suspends>:tuple(float, float) =
         var WorstSpeed:float = 0.0
         var WorstRadius:float = 0.0
@@ -242,12 +242,12 @@ mover_spline_test_component<public> := class<final_super>(component):
             set PreviousTime = Time
         (WorstSpeed, WorstRadius)
 
-    # Center を中心に、半径 RadiusCm の水平の円の上に等間隔に Count 点（前から左回り）
+    # Count evenly spaced points on a horizontal circle of radius RadiusCm around Center (counter-clockwise from the front)
     MakeCirclePoints<private>(Center:vector3, RadiusCm:float, Count:int)<transacts>:[]vector3 =
         for (Index := 0..Count - 1):
             Angle := (Index * 2.0) * PiFloat / (Count * 1.0)
             Center + vector3{Forward := RadiusCm * Cos(Angle), Left := RadiusCm * Sin(Angle)}
 
-    # S 字の 4 点
+    # 4 points of an S shape
     MakeSPoints<private>(Base:vector3)<transacts>:[]vector3 =
         array{Base, Base + vector3{Forward := 400.0, Left := 400.0}, Base + vector3{Forward := 800.0, Left := -400.0}, Base + vector3{Forward := 1200.0}}

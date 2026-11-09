@@ -4,54 +4,54 @@ using { /Verse.org/SpatialMath }
 using { GridSystem }
 using { SceneGraphSystem }
 
-# 方向：spawner の entity から SendDown（spawner 自身と子孫。出したものは spawner の子なので、出したもの自身にも届く）
-# 送り手：spawner_component（Spawner）。1 つ出して置いたあと（SpawnedEvent と同じタイミング）
-# 受け手：出したものに見た目を足す component など。消費しない
+# Direction: SendDown from the spawner's entity (the spawner itself and its descendants; spawned items are children of the spawner, so they receive it too)
+# Sender: spawner_component (Spawner). After one item is spawned and placed (same timing as SpawnedEvent)
+# Receivers: components that add a look to the spawned item, etc. Not consumed
 spawned_event<public> := class(scene_event):
-    # 出した spawner
+    # The spawner that spawned it
     Spawner<public>:spawner_component
-    # 出した entity（spawner の子）
+    # The spawned entity (a child of the spawner)
     Spawned<public>:entity
-    # 出した場所（借りた範囲）
+    # Where it was spawned (the reserved area)
     Area<public>:spawn_area
 
-# 方向：spawner の entity から SendDown（spawner 自身と子孫）
-# 送り手：spawner_component（Spawner）。出したものが世界から外れたとき（縮んで消えた・ClearAll・停止。DespawnedEvent と同じタイミング）
-# 受け手：数を数える component など。消費しない
+# Direction: SendDown from the spawner's entity (the spawner itself and its descendants)
+# Sender: spawner_component (Spawner). When a spawned item leaves the world (shrank away, ClearAll, stop; same timing as DespawnedEvent)
+# Receivers: components that count, etc. Not consumed
 despawned_event<public> := class(scene_event):
-    # 出した spawner
+    # The spawner that spawned it
     Spawner<public>:spawner_component
-    # 世界から外れた entity
+    # The entity that left the world
     Spawned<public>:entity
 
-# 役割：spawner が出したもの 1 つ分の場所。Inner は使ってよい範囲（マス）、Reservation は Inner のまわりに空ける分（GapCells）も含めた借用
-# 作り方：spawner_component が作る（外からは作らない）
+# Role: the place of one item spawned by a spawner. Inner is the usable range (cells); Reservation is the reservation including the gap around Inner (GapCells)
+# Creation: created by spawner_component (not from outside)
 spawn_area<public> := class:
 
-    # 借りた先のグリッド
+    # The grid the reservation was made on
     Grid<public>:grid_component
-    # 使ってよい範囲（マス）
+    # The usable range (cells)
     Inner<public>:grid_box
-    # Inner のまわりの空きも含めた借用。出したものが世界から外れると返る
+    # The reservation including the gap around Inner. Released when the spawned item leaves the world
     Reservation<public>:grid_reservation
 
-    # 使ってよい範囲（Inner）の始まりの角の世界での位置（センチメートル）
+    # World position (centimeters) of the start corner of the usable range (Inner)
     GetMinPosition<public>()<transacts>:vector3 =
         Grid.CellToPosition(Inner.Start)
 
-    # 使ってよい範囲（Inner）の終わりの角の世界での位置（センチメートル）
+    # World position (centimeters) of the end corner of the usable range (Inner)
     GetMaxPosition<public>()<transacts>:vector3 =
         Grid.CellToPosition(Inner.GetEnd())
 
-    # 使ってよい範囲（Inner）の真ん中の世界での位置（センチメートル）
+    # World position (centimeters) of the center of the usable range (Inner)
     GetCenter<public>()<transacts>:vector3 =
         (GetMinPosition() + GetMaxPosition()) / 2.0
 
-    # 使ってよい範囲（Inner）の各軸の長さ（センチメートル）
+    # Length of the usable range (Inner) along each axis (centimeters)
     GetSize<public>()<transacts>:vector3 =
         GetMaxPosition() - GetMinPosition()
 
-    # 範囲の真ん中に、範囲いっぱいの大きさで置く transform（回転なし）。MeshSizeCm はメッシュの大きさ 1 のときの 1 辺（センチメートル。エンジンのキューブなら 100）。0 以下なら大きさ 1
+    # A transform placed at the center of the range, stretched to fill it (no rotation). MeshSizeCm is the edge length of the mesh at scale 1 (centimeters; 100 for the engine cube). 0 or less gives scale 1
     MakeFitTransform<public>(MeshSizeCm:float)<transacts>:transform =
         Scale := if (MeshSizeCm > 0.0) then GetSize() / MeshSizeCm else vector3{Forward := 1.0, Left := 1.0, Up := 1.0}
         transform:
@@ -59,25 +59,25 @@ spawn_area<public> := class:
             Rotation := IdentityRotation()
             Scale := Scale
 
-# 役割：spawner が出した entity に付く目印。spawner はこれが付いた子だけを数える（Leave で消えはじめたものは数えない）。世界から外れるときに借用を返し、spawner に知らせる
-# 置き方：実行時に spawner_component が付ける（エディターでは置かない）
+# Role: marker attached to an entity spawned by a spawner. The spawner counts only children carrying this (items that started disappearing via Leave are not counted). Releases the reservation and notifies the spawner when leaving the world
+# Placement: attached at runtime by spawner_component (not placed in the editor)
 spawned_component<public> := class<final_super>(component):
 
-    # 出した spawner
+    # The spawner that spawned it
     Spawner<public>:spawner_component
-    # 出した場所
+    # Where it was spawned
     Area<public>:spawn_area
 
-    # Leave で消えはじめたら true（外からは読むだけ）
+    # True once it started disappearing via Leave (read-only from outside)
     var<private> Leaving<public>:logic = false
 
-    # Seconds 秒かけて小さくしてから entity を消す（消えると借用を返す）。すぐ戻り、消えるのを待たない。2 回目以降は何もしない
+    # Shrinks over Seconds seconds, then removes the entity (the reservation is released when it is gone). Returns right away without waiting. Does nothing the second time and later
     Leave<public>(Seconds:float):void =
         if (not Leaving?):
             set Leaving = true
             spawn{ShrinkAndRemove(Seconds)}
 
-    # Leave で消えはじめていれば成功する
+    # Succeeds if it started disappearing via Leave
     IsLeaving<public>()<decides><reads>:void =
         Leaving?
 
@@ -92,19 +92,19 @@ spawned_component<public> := class<final_super>(component):
 
 AppearMinScale<internal>:float = 0.01
 
-# 大きさを 0 に近い所から今の大きさへ、Seconds 秒かけて変える（位置と向きは毎フレーム今のまま。Tick は持ち主の component の TickEvents.PrePhysics）
-# 注意：毎フレーム SetGlobalTransform するので、keyframed_movement_component で動いている entity には使わない（AppearSeconds を 0 にする）
+# Changes the scale from near 0 to the current scale over Seconds seconds (position and rotation stay as they are every frame. Tick is the owning component's TickEvents.PrePhysics)
+# Note: calls SetGlobalTransform every frame, so do not use it on an entity moved by keyframed_movement_component (set AppearSeconds to 0)
 (InEntity:entity).GrowIn<public>(Seconds:float, Tick:listenable(float))<suspends>:void =
     Final := InEntity.GetGlobalTransform().Scale
     InEntity.ScaleTo(Final * AppearMinScale)
     InEntity.AnimateScale(Final * AppearMinScale, Final, Seconds, Tick)
 
-# 大きさを今の大きさから 0 に近い所へ、Seconds 秒かけて変える（Tick は持ち主の component の TickEvents.PrePhysics）
+# Changes the scale from the current scale to near 0 over Seconds seconds (Tick is the owning component's TickEvents.PrePhysics)
 (InEntity:entity).ShrinkOut<public>(Seconds:float, Tick:listenable(float))<suspends>:void =
     Start := InEntity.GetGlobalTransform().Scale
     InEntity.AnimateScale(Start, Start * AppearMinScale, Seconds, Tick)
 
-# 経過時間は Tick の DeltaTime の足し合わせ（フレーム数では数えない）
+# Elapsed time is the sum of Tick's DeltaTime (not counted in frames)
 (InEntity:entity).AnimateScale<internal>(From:vector3, To:vector3, Seconds:float, Tick:listenable(float))<suspends>:void =
     var Elapsed:float = 0.0
     loop:

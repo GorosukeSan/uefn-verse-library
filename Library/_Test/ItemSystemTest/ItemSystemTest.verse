@@ -9,18 +9,18 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：ItemSystem の動作確認。プレイヤーの inventory の探し方（GetRootInventories / FindRootInventory / GetAgentItems）、入力の取り出し（FindPlayerInput）、
-#   item_equip_lock_component の回数の数え方、item_grant_component（実行時に作って GrantToAgent）、item_holder_component（Rule が Owned）、ConsumeOne / RemoveFromInventory、ロック中に装備を外せないことを確かめる
-# テストのレベル：
-#   - player_manager_component を付けた entity を 1 つ
-#   - テスト用の entity に item_system_test_component を付け、TestItem にテスト用のアイテムの prefab を選ぶ
-#   - テスト用のアイテムの prefab：item_component、item_holder_component（Rule = Owned）、item_equip_lock_component を付ける。重ねて持てない（stackable でない）もの
-#     （TestItem が既定の entity のままなら、アイテムを使う項目は飛ばす）
-# 人の操作：なし
-# 結果：出力ログの [TEST] ItemSystem
+# Role: verification of ItemSystem. Checks finding the player's inventory (GetRootInventories / FindRootInventory / GetAgentItems), getting the input (FindPlayerInput),
+#   the reference counting of item_equip_lock_component, item_grant_component (created at runtime, GrantToAgent), item_holder_component (Rule = Owned), ConsumeOne / RemoveFromInventory, and that equipment cannot be removed while locked
+# Test level:
+#   - one entity with player_manager_component
+#   - attach item_system_test_component to the test entity and choose the test item prefab in TestItem
+#   - test item prefab: carries item_component, item_holder_component (Rule = Owned) and item_equip_lock_component. Not stackable
+#     (if TestItem is left as the default entity, the checks that use the item are skipped)
+# Human input: none
+# Result: [TEST] ItemSystem in the output log
 item_system_test_component<public> := class<final_super>(component):
 
-    # テスト用のアイテムの prefab（item_component・item_holder_component（Owned）・item_equip_lock_component 付き、重ねて持てないもの）
+    # Test item prefab (with item_component, item_holder_component (Owned) and item_equip_lock_component; not stackable)
     @editable
     TestItem<public>:concrete_subtype(entity) = entity
 

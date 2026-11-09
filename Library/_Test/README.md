@@ -1,56 +1,56 @@
-# _Test — Library の動作確認テスト
+# _Test — Library verification tests
 
-Library の各 System を、UEFN 上で実際に動かして確かめるための component 置き場。公開 API だけを使って書いているので、使い方の見本も兼ねる。
+A home for the components that exercise each System of the Library for real in UEFN. They are written against the public API only, so they also serve as usage samples.
 
-## 使い方
-1. テスト用のレベル（またはテスト用の区画）に、確かめたい System の部品と、`_Test/<System>Test/` のテスト component を置く（置き方は各テスト component の先頭のコメント）。
-2. セッションを始める。テストはシミュレーション開始（または起動の合図）から自動で進む。
-3. 出力ログを `[TEST]` / `[FAIL]` で検索する。
-   - `[PASS] テスト名: 項目` … 期待どおり
-   - `[FAIL] テスト名: 項目 (詳細)` … 期待と違う
-   - `[TEST] テスト名: n passed, m failed` … そのテストのまとめ
+## How to use
+1. In a test level (or a test scope), place the parts of the System you want to check together with the test component from `_Test/<System>Test/` (placement is described in the header comment of each test component).
+2. Start the session. The test runs automatically from the start of simulation (or from the activate signal).
+3. Search the output log for `[TEST]` / `[FAIL]`.
+   - `[PASS] TestName: item` ... as expected
+   - `[FAIL] TestName: item (detail)` ... not as expected
+   - `[TEST] TestName: n passed, m failed` ... summary of that test
 
-## テストの一覧
+## List of tests
 
-置き方と確かめる項目の詳しい説明は、各ファイルの先頭のコメントと、各 System の README の「確かめ方」にあります。結果のログは `[TEST] <System 名>`（例 `[TEST] CountdownSystem`）。
+Detailed placement and the items checked are in the header comment of each file and in "Verifying" in each System's README. The result log is `[TEST] <System name>` (e.g. `[TEST] CountdownSystem`).
 
-| フォルダ | component | 確かめるもの | プレイヤー・人の操作 |
+| Folder | component | What it checks | Player / human input |
 |---|---|---|---|
-| `AbilitySystemTest/` | `ability_system_test_component` | コードからの Grant / Revoke と回数の数え方、イベント、付与の component | 要る |
-| `ActivationSystemTest/` | `activation_system_test_component` | `SendActivated` / `SendDeactivated` が子孫に届くこと、`activate_on_begin_component` が開始の次のフレームで 1 回だけ送ること | 要らない |
-| `CharacterSystemTest/` | `character_system_test_component`、`character_surface_test_component`（SurfaceKit）、`character_buff_test_component`（変更・BuffKit。プレイヤー不要） | 持ち主のいない体（`character_motor_component`）が重力で落ちて接地すること、`AxisLock`、`SetVelocity`、`TeleportTo`。SurfaceKit の触れた・乗った・離れた、動く面に運ばれること、`GetBox` | 要る（平らな床に立つ） |
-| `CheckpointSystemTest/` | `checkpoint_system_test_component` | 乗った・降りた知らせと `IsStanding`、足場が消えたとき、まとめて見ているときの引き継ぎ、EnergyKit の回復（`checkpoint_energy_refill_component`） | 要る（床の上で動かない。下から通り抜ける動きはログの `[HUMAN]` の手順で人が見る） |
-| `ConditionSystemTest/` | `condition_system_test_component` | `condition_all` / `condition_any` の組み合わせと入れ子、`ChangedEvent`、`event_received_condition_component` | 要らない |
-| `CountdownSystemTest/` | `countdown_system_test_component` | 数え終わりまでの実時間、残り秒数の知らせ、`Pause` / `Resume`、`AddSeconds`、`Stop`、起動の合図での開始とやり直し、`Restart`、`AlsoSendUp` | 要らない |
-| `EnergySystemTest/` | `energy_system_test_component` | `energy_component` の増減と知らせ（`Spend[]`・`SetAmount`・`StartFull`）、`FindEnergy` / `FindEnergyFor`、`energy_restore_ability_component` | 要る（最後に射撃のボタンを押す） |
-| `GameSequenceSystemTest/` | `game_sequence_system_test_component` | 最初のノード、遷移、終わり、`Restart`、`JumpTo`、`Stop`、出た理由、`StartOnActivate` の入れ子の流れ | 要らない |
-| `GravitySystemTest/` | `gravity_system_test_component` | `gravity_well_component` が引くこと、`gravity_point_ability_component` の付与と置く・消す・時間切れ | 要る（頭の上 3 m を空ける。射撃のボタンを押す） |
-| `GridSystemTest/` | `grid_system_test_component` | `grid_box` の計算、位置とマスの変換、借りる・返す、GridPath の道 | 要らない |
-| `HoverSystemTest/` | `hover_system_test_component` | `hover_ability_component` の付与・剥奪、エネルギーの消費、ホバーのイベント | 要る（空中でジャンプを押し続ける） |
-| `InputSystemTest/` | `input_system_test_component` | `player_ready_component` の操作（`FindInput`・`ToggleReady` も）、`ReadyChangedEvent`・`player_ready_changed_event`・`all_players_ready_condition_component`、押して準備 OK が切り替わること | 要る（E キーを押す） |
-| `InteractSystemTest/` | `interact_system_test_component` | `interact_gate_component` の開け閉め、押したときの知らせ、`interacted_condition_component` | 要る（ボタンを押す） |
-| `ItemSystemTest/` | `item_system_test_component` | プレイヤーの inventory の探し方、入力の取り出し など | 要る |
-| `JetpackSystemTest/` | `jetpack_system_test_component` | `jetpack_ability_component` の付与・剥奪、ゲージ、チャージして飛ぶときのエネルギー | 要る（空中でジャンプを押し続ける） |
-| `LoadoutSystemTest/` | `loadout_system_test_component` | `ApplyTo` で slot の下にロードアウトができること、2 回目で増えないこと、同じ `Group` の入れ替え、`RemoveFrom` | 要る |
-| `MCPSystemTest/` | `mcp_system_test_component`（受け口の見本 `mcp_test_echo_component`） | JSON の小道具（逃がし・長い文字列・数の読み取り・範囲の確認）、`ExecuteJson` での振り分け（Core・宛先・インスタンス・ツールの有無・省略できない引数・並びの引数・data の確かめ・batch・help・describe）、タグの名前の表、`mcp_role_tags`、`ClaimPosition` | 要らない |
-| `ModeSystemTest/` | `mode_system_test_component` | 候補の並び、受け付け、`Select` の決め方、`Clear`、選んだ知らせ、投票 | 要らない |
-| `MovementSystemTest/` | `movement_system_test_component` | 位置の取り出し、`LiftBy`、視線の向きと位置 | 要る（頭の上 3 m を空ける） |
-| `MoverSystemTest/` | `mover_system_test_component`、`mover_spline_test_component`（曲線の道のり） | 道のりの回り方、目印の `Order`、着くまでの時間、`Pause` / `Play`、道のりの `Reset`、`Restart`（開始の位置へ戻る・今の位置から）、`AlsoSendUp`。曲線の長さ・長さの表・輪の継ぎ目・PingPong の折り返し・一定の速さ・`FaceTravelDirection` | 要らない |
-| `PickupSystemTest/` | `pickup_system_test_component` | 効果の寿命（次のフレームの起動の合図・持ち主・`pickup_effect_tag`・時間で消える・Instant）、重ねがけ（Extend / Stack と MaxStacks / Replace）、`EndPickupEffectsFor`、オーブの拾う・戻る・`RequireGroupMember`、StageKit の合図と重なりの数え方 | 要る（いるだけ） |
-| `PlayerSystemTest/` | `player_system_test_component` | slot、`player_count_condition_component`、`player_view_set`、`SubscribePlayers`、プレイヤーのタグ、組と `player_group_count_condition_component` | 要る |
-| `SceneGraphSystemTest/` | `scene_graph_system_test_component` | 区画（`game_scope_component`）の中・世界から探すこと、直下の子だけを見ること、一番近い祖先（`FindNearestAncestorComponent`）、`ResolveScopedComponent` | 要らない |
-| `ScheduleSystemTest/` | `schedule_system_test_component` | 時刻の計算、時計とデバッグの時刻移動、状態の変化の知らせ、子への合図 | 要らない |
-| `SpawnSystemTest/` | `spawn_system_test_component` | `spawner_component` が `Count` 個を出して保つこと、帯の中にあること、グリッドの借用、出した・消えた知らせ、`spawn_prefab_component`（出す場所の順・起動の合図・`MaxCount`・`TrySpawnAt`・`Despawn` / `DespawnAll`）、関数の `SpawnPrefab` | 要らない |
-| `SwingSystemTest/` | `swing_system_test_component` | 倍率の重ね方、コードからの `Grant` / `Revoke`、倍率の登録、寿命の的・リフトの的、状態のタグ（`Agent.IsSwinging[]`・`Agent.GetSwingState()`・派生のタグ）、人の操作でのスイング | 要る（人の操作は `RunHumanTests` のとき） |
-| `VolumeSystemTest/` | `volume_system_test_component` | 入った・出た（`PlayerEnteredEvent`・`IsInside`・`in_volume_tag`）と合図 | 要る（地面に立つ） |
-| `WidgetSystemTest/` | `widget_system_test_component` | 起動で全員に出ること、`SendToWidgets`、`Audience = Chosen` の `ShowFor` / `HideFor`、メニューの 1 人 1 枚、HudKit / MenuKit | 要る |
+| `AbilitySystemTest/` | `ability_system_test_component` | Grant / Revoke from code and the reference counting, events, the grant component | needed |
+| `ActivationSystemTest/` | `activation_system_test_component` | `SendActivated` / `SendDeactivated` reach descendants; `activate_on_begin_component` sends exactly once on the frame after begin | not needed |
+| `CharacterSystemTest/` | `character_system_test_component`, `character_surface_test_component` (SurfaceKit), `character_buff_test_component` (modifiers / BuffKit; no player needed) | An ownerless body (`character_motor_component`) falls under gravity and lands, `AxisLock`, `SetVelocity`, `TeleportTo`. SurfaceKit touched / stepped on / left, being carried by a moving surface, `GetBox` | needed (standing on a flat floor) |
+| `CheckpointSystemTest/` | `checkpoint_system_test_component` | Reached / left notifications and `IsStanding`, platform disposed, hand-over when watched together, EnergyKit refill (`checkpoint_energy_refill_component`) | needed (stand still on the floor; passing through from below is checked by a human following the `[HUMAN]` steps in the log) |
+| `ConditionSystemTest/` | `condition_system_test_component` | Combinations and nesting of `condition_all` / `condition_any`, `ChangedEvent`, `event_received_condition_component` | not needed |
+| `CountdownSystemTest/` | `countdown_system_test_component` | Real time until the count ends, remaining-seconds notifications, `Pause` / `Resume`, `AddSeconds`, `Stop`, start and restart on the activate signal, `Restart`, `AlsoSendUp` | not needed |
+| `EnergySystemTest/` | `energy_system_test_component` | `energy_component` changes and notifications (`Spend[]`, `SetAmount`, `StartFull`), `FindEnergy` / `FindEnergyFor`, `energy_restore_ability_component` | needed (press the fire button at the end) |
+| `GameSequenceSystemTest/` | `game_sequence_system_test_component` | First node, transitions, end, `Restart`, `JumpTo`, `Stop`, exit reasons, nested `StartOnActivate` sequence | not needed |
+| `GravitySystemTest/` | `gravity_system_test_component` | `gravity_well_component` pulls; `gravity_point_ability_component` granting, place / remove, expiry | needed (keep 3 m above the head clear; press the fire button) |
+| `GridSystemTest/` | `grid_system_test_component` | `grid_box` math, position / cell conversion, borrow / return, GridPath paths | not needed |
+| `HoverSystemTest/` | `hover_system_test_component` | `hover_ability_component` grant / revoke, energy drain, hover events | needed (hold jump in the air) |
+| `InputSystemTest/` | `input_system_test_component` | Driving `player_ready_component` (`FindInput`, `ToggleReady` too), `ReadyChangedEvent` / `player_ready_changed_event` / `all_players_ready_condition_component`, pressing toggles ready | needed (press the E key) |
+| `InteractSystemTest/` | `interact_system_test_component` | `interact_gate_component` open / close, notification on press, `interacted_condition_component` | needed (press the button) |
+| `ItemSystemTest/` | `item_system_test_component` | Finding the player's inventory, getting the input, etc. | needed |
+| `JetpackSystemTest/` | `jetpack_system_test_component` | `jetpack_ability_component` grant / revoke, gauge, energy while charging and flying | needed (hold jump in the air) |
+| `LoadoutSystemTest/` | `loadout_system_test_component` | `ApplyTo` creates a loadout under the slot, a second call does not add another, swapping within the same `Group`, `RemoveFrom` | needed |
+| `MCPSystemTest/` | `mcp_system_test_component` (sample receiver `mcp_test_echo_component`) | JSON helpers (escaping, long strings, reading numbers, range checks), dispatch through `ExecuteJson` (Core, toolset, instance, unknown tool, required args, positional args, data validation, batch, help, describe), tag-name table, `mcp_role_tags`, `ClaimPosition` | not needed |
+| `ModeSystemTest/` | `mode_system_test_component` | Candidate order, accepting, how `Select` decides, `Clear`, selected notification, voting | not needed |
+| `MovementSystemTest/` | `movement_system_test_component` | Reading the position, `LiftBy`, view direction and origin | needed (keep 3 m above the head clear) |
+| `MoverSystemTest/` | `mover_system_test_component`, `mover_spline_test_component` (curved routes) | Route traversal, waypoint `Order`, time to arrive, `Pause` / `Play`, route `Reset`, `Restart` (back to the start / from the current position), `AlsoSendUp`. Curve length, length table, loop seam, PingPong turnaround, constant speed, `FaceTravelDirection` | not needed |
+| `PickupSystemTest/` | `pickup_system_test_component` | Effect lifetime (activate signal on the next frame, owner, `pickup_effect_tag`, expiry, Instant), stacking (Extend / Stack with MaxStacks / Replace), `EndPickupEffectsFor`, orb pickup / respawn / `RequireGroupMember`, StageKit signals and overlap counting | needed (just be present) |
+| `PlayerSystemTest/` | `player_system_test_component` | Slots, `player_count_condition_component`, `player_view_set`, `SubscribePlayers`, player tags, groups and `player_group_count_condition_component` | needed |
+| `SceneGraphSystemTest/` | `scene_graph_system_test_component` | Finding inside a scope (`game_scope_component`) / in the world, direct children only, nearest ancestor (`FindNearestAncestorComponent`), `ResolveScopedComponent` | not needed |
+| `ScheduleSystemTest/` | `schedule_system_test_component` | Time math, clock and debug time travel, state change notifications, signals to children | not needed |
+| `SpawnSystemTest/` | `spawn_system_test_component` | `spawner_component` spawns and keeps `Count`, inside the band, grid borrows, spawned / despawned notifications, `spawn_prefab_component` (spawn point order, activate signal, `MaxCount`, `TrySpawnAt`, `Despawn` / `DespawnAll`), the `SpawnPrefab` function | not needed |
+| `SwingSystemTest/` | `swing_system_test_component` | Stacking of multipliers, `Grant` / `Revoke` from code, modifier registration, lifetime / lift targets, state tags (`Agent.IsSwinging[]`, `Agent.GetSwingState()`, subclass tags), swinging by human input | needed (human input only when `RunHumanTests`) |
+| `VolumeSystemTest/` | `volume_system_test_component` | Entered / exited (`PlayerEnteredEvent`, `IsInside`, `in_volume_tag`) and signals | needed (standing on the ground) |
+| `WidgetSystemTest/` | `widget_system_test_component` | Shown to everyone on activation, `SendToWidgets`, `ShowFor` / `HideFor` with `Audience = Chosen`, one menu per player, HudKit / MenuKit | needed |
 
-FNDeviceSystem のテストはありません（デバイスはレベルに置いたものを選ぶので、テストが実行時に作れない）。共通の数え方は `TestLog.verse`（`test_log`）。
+There is no test for FNDeviceSystem (devices are chosen from those placed in the level, so a test cannot create them at runtime). The shared counting is in `TestLog.verse` (`test_log`).
 
-## 書き方（テストを足すとき）
-- 1 ファイル 1 System。`_Test/<System>Test/<System>Test.verse` に `<system>_test_component` を置く（フォルダを `_Test/<System>/` にすると、モジュール名が本体の System とぶつかって `using` が曖昧になる）。
-- 変数名に `Log` を使わない（Verse の組み込みの `Log` とぶつかる）。`Results := test_log{Name := "..."}` とする。
-- `<suspends>` の呼び出し（`Task.Await()` など）を `if (...)` の条件の中に書かない（UEFN では 3512。先に `Got := Task.Await()` と受けてから `if (Got?)`）。`<suspends>` と `<decides>` は同じ関数に付けられない。
-- 結果は `test_log`（`_Test/TestLog.verse`）で数える。「〜秒以内に知らせが来る」は `AwaitWithin(Event, 秒)`。
-- 公開 API（`<public>`）だけを使う。内部（`<internal>`）を使わないと確かめられないなら、それは公開 API が足りないというサインなので、Library 側に足す。
-- テストの component は Library の利用者のレベルには置かない（`_Test` は配布物に含めるが、使うのは確認するときだけ）。
+## Writing a test
+- One file per System. Put `<system>_test_component` in `_Test/<System>Test/<System>Test.verse` (a folder named `_Test/<System>/` would make the module name clash with the System itself and the `using` ambiguous).
+- Do not name a variable `Log` (it clashes with Verse's built-in `Log`). Use `Results := test_log{Name := "..."}`.
+- Do not write a `<suspends>` call (`Task.Await()` etc.) inside an `if (...)` condition (error 3512 in UEFN; take it first with `Got := Task.Await()`, then `if (Got?)`). `<suspends>` and `<decides>` cannot be on the same function.
+- Count results with `test_log` (`_Test/TestLog.verse`). For "a notification arrives within N seconds" use `AwaitWithin(Event, Seconds)`.
+- Use the public API (`<public>`) only. If something cannot be checked without internals (`<internal>`), that is a sign the public API is missing something; add it to the Library.
+- Do not place the test components in a Library user's level (`_Test` ships with the distribution, but it is only used when verifying).

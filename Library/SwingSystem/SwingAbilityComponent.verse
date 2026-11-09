@@ -11,241 +11,241 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { SwingSystem.TooltipKit }
 
-# 役割：スイングの能力。付与された人ごとに swing_runner を動かす（動きの詳しいことは swing_runner の説明）。つかむのは GrabAction（既定は射撃）
-# 付与の仕方は同じ entity に置く component で選ぶ：
-#   - 全員に最初から／起動しているあいだ → ability_grant_players_component
-#   - アイテムとして（装備しているあいだ） → アイテムの entity に item_component・item_holder_component・ability_grant_item_component と一緒に置く
-#   - 条件を満たしているあいだ → ability_grant_condition_component（子に条件）
-#   - コードから → Grant / Revoke
-# 知らせ：swing_runner の知らせ（swing_target_changed_event・swing_grabbed_event・swing_rope_detached_event・swing_released_event・swing_state_changed_event・swing_reel_hint_event・swing_stats_changed_event）を、その人の slot の下へ player_event として送り（同じ人の HUD などの view が受ける）、この entity から上へも送る。コードからは StateChangedEvent / GrabbedEvent / RopeDetachedEvent / ReleasedEvent を購読する
-# 外から：Release(Agent) で離させる。今の状態は能力ではなくタグで読む（Agent.IsSwinging[] / Agent.GetSwingState()。SwingEvent.verse）
-# タグ：つかんでいるあいだ、その人（agent）に地面で待つなら swing_anchored_tag、振っているなら swing_pendulum_tag（どちらも swinging_tag ← controlled_movement_tag の派生）を付ける。ほかの System は Agent.HasPlayerTag[swinging_tag] で確かめられる
-# 演出：この entity に fort_item_ability_component があれば、振っているあいだ ItemEquippedAbilities をその人に使う
-# 前提：区画（または世界）に player_manager_component（slot へ送るため）と swing_registry_component（ロープを引く・倍率のため。任意）。どちらも最初に 1 回だけ探して覚える
-# 設定：この component に直接並べている（同じ設定を複数の能力で共有するには、能力の entity をプレハブにする）。長さは cm、速さは cm/s、加速は cm/s²、時間は秒
+# Role: the swing ability. Runs a swing_runner for each agent it is granted to (the movement details are in the swing_runner description). Grabbing uses GrabAction (default: fire)
+# How it is granted is chosen by the component placed on the same entity:
+#   - everyone from the start / while activated -> ability_grant_players_component
+#   - as an item (while equipped) -> place on the item entity together with item_component, item_holder_component and ability_grant_item_component
+#   - while a condition is satisfied -> ability_grant_condition_component (condition on a child)
+#   - from code -> Grant / Revoke
+# Notifies: the swing_runner notifications (swing_target_changed_event, swing_grabbed_event, swing_rope_detached_event, swing_released_event, swing_state_changed_event, swing_reel_hint_event, swing_stats_changed_event) are sent under the agent's slot as player_event (received by that agent's HUD and other views) and also sent up from this entity. From code, subscribe to StateChangedEvent / GrabbedEvent / RopeDetachedEvent / ReleasedEvent
+# From outside: Release(Agent) forces a release. Read the current state from the tags, not the ability (Agent.IsSwinging[] / Agent.GetSwingState(); SwingEvent.verse)
+# Tags: while grabbing, the agent gets swing_anchored_tag when waiting on the ground or swing_pendulum_tag when swinging (both swinging_tag <- controlled_movement_tag subclasses). Other Systems can check with Agent.HasPlayerTag[swinging_tag]
+# Effects: if this entity has a fort_item_ability_component, its ItemEquippedAbilities are used on the agent while swinging
+# Requirements: a player_manager_component (to send to the slot) and a swing_registry_component (for rope pulling and modifiers; optional) in the scope (or the world). Both are looked up once and remembered
+# Settings: listed directly on this component (to share the same settings among several abilities, make the ability entity a prefab). Lengths in cm, speeds in cm/s, accelerations in cm/s^2, times in seconds
 swing_ability_component<public> := class<final_super>(ability_component):
 
-    # 押すとレティクルの先の物にロープをかけてつかむ操作。つかんでいるあいだは押し直すと縮める。既定は WeaponPrimary
+    # Input that attaches a rope to the object beyond the reticle and grabs it. Pressing it again while grabbing reels in. Default WeaponPrimary
     @editable:
         ToolTip := SwingGrabActionToolTip
         Categories := array{SwingCategory, SwingInputCategory}
     GrabAction<public>:input_action(logic) = Character.WeaponPrimary
-    # GrabAction を含むキー割り当て。既定は RangedWeaponMapping（外さずに残す）
+    # Input mapping that contains GrabAction. Default RangedWeaponMapping (kept, not removed)
     @editable:
         ToolTip := SwingGrabMappingToolTip
         Categories := array{SwingCategory, SwingInputCategory}
     GrabMapping<public>:input_mapping = Character.RangedWeaponMapping
-    # つかんだあと押し続けると加速し、離すとロープを外す操作。地面で待っているあいだは振り出す。既定は Jump
+    # Input that accelerates while held after grabbing and releases the rope when let go. Launches while waiting on the ground. Default Jump
     @editable:
         ToolTip := SwingReleaseActionToolTip
         Categories := array{SwingCategory, SwingInputCategory}
     ReleaseAction<public>:input_action(logic) = Character.Jump
-    # ReleaseAction を含むキー割り当て。既定は TraversalMapping（外さずに残す）
+    # Input mapping that contains ReleaseAction. Default TraversalMapping (kept, not removed)
     @editable:
         ToolTip := SwingReleaseMappingToolTip
         Categories := array{SwingCategory, SwingInputCategory}
     ReleaseMapping<public>:input_mapping = Character.TraversalMapping
-    # つかんでいるあいだ押しているとロープを伸ばす操作。地面で待っているあいだはロープを外す。既定は WeaponSecondary
+    # Input that reels out while held during a grab. Releases the rope while waiting on the ground. Default WeaponSecondary
     @editable:
         ToolTip := SwingReelOutActionToolTip
         Categories := array{SwingCategory, SwingInputCategory}
     ReelOutAction<public>:input_action(logic) = Character.WeaponSecondary
-    # ReelOutAction を含むキー割り当て。既定は RangedWeaponMapping（外さずに残す）
+    # Input mapping that contains ReelOutAction. Default RangedWeaponMapping (kept, not removed)
     @editable:
         ToolTip := SwingReelOutMappingToolTip
         Categories := array{SwingCategory, SwingInputCategory}
     ReelOutMapping<public>:input_mapping = Character.RangedWeaponMapping
 
-    # つかめる距離（センチメートル。既定 4000）。ロープを伸ばせる長さの上限にもなる
+    # Grab range (centimeters; default 4000). Also the rope length limit when reeling out
     @editable_number(float):
         ToolTip := SwingMaxRangeToolTip
         Categories := array{SwingCategory, SwingGrabCategory}
         MinValue := option{100.0}
         MaxValue := option{20000.0}
     MaxRangeCm<public>:float = 4000.0
-    # つかむ判定の球の半径（センチメートル。既定 50）。0 なら点で判定する
+    # Radius of the grab test sphere (centimeters; default 50). 0 uses a point test
     @editable_number(float):
         ToolTip := SwingGrabRadiusToolTip
         Categories := array{SwingCategory, SwingGrabCategory}
         MinValue := option{0.0}
         MaxValue := option{500.0}
     GrabRadiusCm<public>:float = 50.0
-    # レティクルが外れても最後に見つけた点をつかめる時間（秒。既定 0.5）
+    # Time the last point found can still be grabbed after the reticle leaves it (seconds; default 0.5)
     @editable_number(float):
         ToolTip := SwingGrabGraceSecondsToolTip
         Categories := array{SwingCategory, SwingGrabCategory}
         MinValue := option{0.0}
         MaxValue := option{3.0}
     GrabGraceSeconds<public>:float = 0.5
-    # つかんでいるあいだの押下を、離す前この秒数以内なら離した直後のつかみに使う（秒。既定 0.3）
+    # A press made while grabbing is used for a grab right after release if the release follows within this time (seconds; default 0.3)
     @editable_number(float):
         ToolTip := SwingGrabBufferSecondsToolTip
         Categories := array{SwingCategory, SwingGrabCategory}
         MinValue := option{0.0}
         MaxValue := option{1.0}
     GrabBufferSeconds<public>:float = 0.3
-    # 地面から振り出す前に位置を直接動かして持ち上げる高さ（センチメートル。既定 20）
+    # Height the body is lifted by moving its position directly before launching from the ground (centimeters; default 20)
     @editable_number(float):
         ToolTip := SwingGrabLiftHeightToolTip
         Categories := array{SwingCategory, SwingGrabCategory}
         MinValue := option{0.0}
         MaxValue := option{300.0}
     GrabLiftHeightCm<public>:float = 20.0
-    # 振り出す瞬間に動いている向きへ足す速さ（センチメートル毎秒。既定 300）
+    # Speed added in the direction of motion at the moment of launch (centimeters per second; default 300)
     @editable_number(float):
         ToolTip := SwingGrabKickSpeedToolTip
         Categories := array{SwingCategory, SwingGrabCategory}
         MinValue := option{0.0}
         MaxValue := option{3000.0}
     GrabKickSpeedCmPerSecond<public>:float = 300.0
-    # 地面でつかんでジャンプしたときの振り出しの勢いの倍率（空中でつかんだときに対して。既定 2）
+    # Multiplier for the launch momentum when grabbing on the ground and jumping (relative to grabbing in the air; default 2)
     @editable_number(float):
         ToolTip := SwingGroundLaunchMultiplierToolTip
         Categories := array{SwingCategory, SwingGrabCategory}
         MinValue := option{1.0}
         MaxValue := option{10.0}
     GroundLaunchMultiplier<public>:float = 2.0
-    # 振り出してから、地面に触れても着地とみなさない時間（秒。既定 1）
+    # Time after launch during which touching the ground does not count as landing (seconds; default 1)
     @editable_number(float):
         ToolTip := SwingLandingGraceSecondsToolTip
         Categories := array{SwingCategory, SwingGrabCategory}
         MinValue := option{0.0}
         MaxValue := option{5.0}
     LandingGraceSeconds<public>:float = 1.0
-    # ロープを縮められる一番短い長さ（センチメートル。既定 200）
+    # Shortest length the rope can be reeled in to (centimeters; default 200)
     @editable_number(float):
         ToolTip := SwingMinRopeLengthToolTip
         Categories := array{SwingCategory, SwingRopeCategory}
         MinValue := option{50.0}
         MaxValue := option{5000.0}
     MinRopeLengthCm<public>:float = 200.0
-    # 押して縮める・伸ばすときのロープの長さが変わる速さ（センチメートル毎秒。既定 500）
+    # How fast the rope length changes when reeling in / out by input (centimeters per second; default 500)
     @editable_number(float):
         ToolTip := SwingReelSpeedToolTip
         Categories := array{SwingCategory, SwingRopeCategory}
         MinValue := option{0.0}
         MaxValue := option{5000.0}
     ReelSpeedCmPerSecond<public>:float = 500.0
-    # ロープからはみ出した長さを毎秒どれだけの割合で引き戻すか（既定 5。大きいほど硬い）
+    # Fraction of the excess beyond the rope length pulled back per second (default 5; larger is stiffer)
     @editable_number(float):
         ToolTip := SwingRopeCorrectionRateToolTip
         Categories := array{SwingCategory, SwingRopeCategory}
         MinValue := option{0.0}
         MaxValue := option{50.0}
     RopeCorrectionRate<public>:float = 5.0
-    # 振り子が始まってからロープを自動で縮める時間（秒。既定 1）。0 なら縮めない
+    # Time after the pendulum starts during which the rope reels in automatically (seconds; default 1). 0 disables it
     @editable_number(float):
         ToolTip := SwingAutoReelSecondsToolTip
         Categories := array{SwingCategory, SwingRopeCategory}
         MinValue := option{0.0}
         MaxValue := option{5.0}
     AutoReelSeconds<public>:float = 1.0
-    # 振り出したときのロープの長さの、どこまで自動で縮めるかの割合（既定 0.67。1 なら縮めない）
+    # How far the rope reels in automatically, as a ratio of its length at launch (default 0.67; 1 disables it)
     @editable_number(float):
         ToolTip := SwingAutoReelRatioToolTip
         Categories := array{SwingCategory, SwingRopeCategory}
         MinValue := option{0.1}
         MaxValue := option{1.0}
     AutoReelRatio<public>:float = 0.67
-    # はみ出しを引き戻す速さの上限（センチメートル毎秒。既定 1000）
+    # Upper limit of the speed at which the excess is pulled back (centimeters per second; default 1000)
     @editable_number(float):
         ToolTip := SwingMaxRopeCorrectionSpeedToolTip
         Categories := array{SwingCategory, SwingRopeCategory}
         MinValue := option{0.0}
         MaxValue := option{5000.0}
     MaxRopeCorrectionSpeedCmPerSecond<public>:float = 1000.0
-    # 離したときに動いている向きへ足す速さ（センチメートル毎秒。既定 600）
+    # Speed added in the direction of motion on release (centimeters per second; default 600)
     @editable_number(float):
         ToolTip := SwingReleaseBoostToolTip
         Categories := array{SwingCategory, SwingReleaseCategory}
         MinValue := option{0.0}
         MaxValue := option{5000.0}
     ReleaseBoostCmPerSecond<public>:float = 600.0
-    # 振っているあいだ ReleaseAction を押し続けたときの加速（センチメートル毎秒毎秒。既定 1000）
+    # Acceleration while ReleaseAction is held during a swing (centimeters per second squared; default 1000)
     @editable_number(float):
         ToolTip := SwingHoldAccelerationToolTip
         Categories := array{SwingCategory, SwingBoostCategory}
         MinValue := option{0.0}
         MaxValue := option{10000.0}
     HoldAccelerationCmPerSecondSquared<public>:float = 1000.0
-    # 長押しで加速しているあいだの速さの上限（センチメートル毎秒。既定 4500）
+    # Upper limit of the speed while accelerating with hold (centimeters per second; default 4500)
     @editable_number(float):
         ToolTip := SwingMaxHoldSpeedToolTip
         Categories := array{SwingCategory, SwingBoostCategory}
         MinValue := option{100.0}
         MaxValue := option{15000.0}
     MaxHoldSpeedCmPerSecond<public>:float = 4500.0
-    # 振り出してから SwingEaseSeconds かけて足す速さの合計（センチメートル毎秒。既定 400）
+    # Total speed added over SwingEaseSeconds after launch (centimeters per second; default 400)
     @editable_number(float):
         ToolTip := SwingStartSpeedToolTip
         Categories := array{SwingCategory, SwingPendulumCategory}
         MinValue := option{0.0}
         MaxValue := option{5000.0}
     SwingStartSpeedCmPerSecond<public>:float = 400.0
-    # 振り始めの速さを足し終えるまでの時間（秒。既定 0.3）
+    # Time until the start speed has been fully added (seconds; default 0.3)
     @editable_number(float):
         ToolTip := SwingEaseSecondsToolTip
         Categories := array{SwingCategory, SwingPendulumCategory}
         MinValue := option{0.05}
         MaxValue := option{3.0}
     SwingEaseSeconds<public>:float = 0.3
-    # 振り子の計算で使う重力（センチメートル毎秒毎秒。既定 980）
+    # Gravity used by the pendulum calculation (centimeters per second squared; default 980)
     @editable_number(float):
         ToolTip := SwingGravityToolTip
         Categories := array{SwingCategory, SwingPendulumCategory}
         MinValue := option{0.0}
         MaxValue := option{6000.0}
     SwingGravityCmPerSecondSquared<public>:float = 980.0
-    # つかんでいるあいだ見ている向きへ足す加速（センチメートル毎秒毎秒。既定 300）
+    # Acceleration added toward the look direction while grabbing (centimeters per second squared; default 300)
     @editable_number(float):
         ToolTip := SwingSteerAccelerationToolTip
         Categories := array{SwingCategory, SwingPendulumCategory}
         MinValue := option{0.0}
         MaxValue := option{5000.0}
     SwingSteerAccelerationCmPerSecondSquared<public>:float = 300.0
-    # 振り子の空気の抵抗（毎秒、速さのこの割合が減る。既定 0.15）
+    # Air drag of the pendulum (this fraction of the speed is lost per second; default 0.15)
     @editable_number(float):
         ToolTip := SwingDragToolTip
         Categories := array{SwingCategory, SwingPendulumCategory}
         MinValue := option{0.0}
         MaxValue := option{5.0}
     SwingDrag<public>:float = 0.15
-    # 振り子の速さの上限（センチメートル毎秒。既定 2500）
+    # Upper limit of the pendulum speed (centimeters per second; default 2500)
     @editable_number(float):
         ToolTip := SwingMaxSpeedToolTip
         Categories := array{SwingCategory, SwingPendulumCategory}
         MinValue := option{100.0}
         MaxValue := option{10000.0}
     MaxSwingSpeedCmPerSecond<public>:float = 2500.0
-    # 同時にかけられるロープの本数（既定 1）。2 以上で振りながら別の点にもかけられる
+    # Number of ropes that can be attached at the same time (default 1). 2 or more lets you attach to another point while swinging
     @editable_number(int):
         ToolTip := SwingMaxRopesToolTip
         Categories := array{SwingCategory, SwingMultiCategory}
         MinValue := option{1}
         MaxValue := option{5}
     MaxRopes<public>:int = 1
-    # 相手にロープをかけているあいだ、自分が引き戻される強さの倍率（既定 0.5）
+    # Multiplier for how strongly you are pulled back while your rope is attached to another player (default 0.5)
     @editable_number(float):
         ToolTip := SwingPullerCorrectionRatioToolTip
         Categories := array{SwingCategory, SwingPullCategory}
         MinValue := option{0.0}
         MaxValue := option{1.0}
     PullerCorrectionRatio<public>:float = 0.5
-    # 「ロープを引く」で引かれた人が引き寄せられる速さ（センチメートル毎秒。既定 800）
+    # Speed at which a player pulled by a rope pull is dragged toward you (centimeters per second; default 800)
     @editable_number(float):
         ToolTip := SwingReelPullSpeedToolTip
         Categories := array{SwingCategory, SwingPullCategory}
         MinValue := option{0.0}
         MaxValue := option{6000.0}
     ReelPullSpeedCmPerSecond<public>:float = 800.0
-    # 「ロープを引く」で引き寄せる長さ（センチメートル。既定 1000）
+    # Distance a rope pull drags the other player (centimeters; default 1000)
     @editable_number(float):
         ToolTip := SwingReelPullLengthToolTip
         Categories := array{SwingCategory, SwingPullCategory}
         MinValue := option{0.0}
         MaxValue := option{20000.0}
     ReelPullLengthCm<public>:float = 1000.0
-    # 相手にかけて地面で待っているとき、MaxRangeCm のこの倍まで離れたらついていく（既定 0.25）
+    # While waiting on the ground with a rope attached to another player, follow once they are this many times MaxRangeCm away (default 0.25)
     @editable_number(float):
         ToolTip := SwingFollowDistanceRatioToolTip
         Categories := array{SwingCategory, SwingPullCategory}
@@ -258,26 +258,26 @@ swing_ability_component<public> := class<final_super>(ability_component):
     RopeDetachedEventInternal<private><final>:event(tuple(agent, entity)) = event(tuple(agent, entity)){}
     ReleasedEventInternal<private><final>:event(agent) = event(agent){}
 
-    # だれかのスイングの状態（待機 / 地面で待つ / 振り子）が変わるたびに、（その人, 新しい状態）で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires with (agent, new state) each time someone's swing state (idle / waiting on the ground / pendulum) changes (Await / Subscribe it; it cannot be Signaled from outside)
     StateChangedEvent<public><final>:listenable(tuple(agent, swing_state)) = MakeProxyListenable(StateChangedEventInternal)
 
-    # ロープを 1 本かけるたびに、（その人, つかんだ点の entity）で届く
+    # Fires with (agent, entity of the grabbed point) each time one rope is attached
     GrabbedEvent<public><final>:listenable(tuple(agent, entity)) = MakeProxyListenable(GrabbedEventInternal)
 
-    # 複数かけたロープのうち 1 本だけ外れるたびに、（その人, 外れた点の entity）で届く
+    # Fires with (agent, entity of the detached point) each time only one of several ropes detaches
     RopeDetachedEvent<public><final>:listenable(tuple(agent, entity)) = MakeProxyListenable(RopeDetachedEventInternal)
 
-    # ロープをすべて外して離したとき（自分で離した・点が壊れた・Release）に、その人で届く
+    # Fires with the agent when all ropes are removed and released (released by the player, the point broke, or Release)
     ReleasedEvent<public><final>:listenable(agent) = MakeProxyListenable(ReleasedEventInternal)
 
     var<private> Runners:[agent]swing_runner = map{}
     var<private> Effects:[agent][]ability_effect = map{}
     var<private> Registry:?swing_registry_component = false
     var<private> PlayerManager:?player_manager_component = false
-    # スイング中の人（agent）に付けたタグ（swing_anchored_tag / swing_pendulum_tag）
+    # Tags attached to swinging agents (swing_anchored_tag / swing_pendulum_tag)
     var<private> SwingingTags:player_tag_holder = player_tag_holder{}
 
-    # Agent がつかんでいれば（地面で待つ・振っている）離させる。加速（ReleaseBoost）は足さない。つかんでいなければ・付与されていなければ何もしない
+    # If Agent is grabbing (waiting on the ground or swinging), forces a release. No boost (ReleaseBoost) is added. Does nothing if not grabbing or not granted
     Release<public>(Agent:agent):void =
         if (Runner := Runners[Agent]):
             Runner.ForceRelease()
@@ -299,14 +299,14 @@ swing_ability_component<public> := class<final_super>(ability_component):
                 SwingingTags.Remove(Agent)
             Runner.Run()
         else if (not player[Agent]):
-            Print("[swing_ability_component] プレイヤーでない agent に付与されました。入力が取れないので動きません")
+            Print("[swing_ability_component] Granted to a non-player agent. No input can be read, so it does nothing")
 
-    # 区画の swing_registry_component を探して覚える（覚えていれば探さない）。見つからなければ false
+    # Looks up the scope's swing_registry_component and remembers it (no search once remembered). false if not found
     FindRegistry<private>()<transacts>:?swing_registry_component =
         set Registry = Entity.ResolveScopedComponent(Registry, swing_registry_component)
         Registry
 
-    # 区画の player_manager_component を探して覚える（覚えていれば探さない）。見つからなければ false
+    # Looks up the scope's player_manager_component and remembers it (no search once remembered). false if not found
     FindPlayerManager<private>()<transacts>:?player_manager_component =
         set PlayerManager = Entity.ResolveScopedComponent(PlayerManager, player_manager_component)
         PlayerManager
@@ -332,14 +332,14 @@ swing_ability_component<public> := class<final_super>(ability_component):
         SendToSlot(Agent, SceneEvent)
         Entity.SendUp(SceneEvent)
 
-    # 状態に合わせてタグを付け替える（Idle なら外す）
+    # Swaps the tag to match the state (removes it for Idle)
     UpdateStateTag<private>(Agent:agent, State:swing_state):void =
         SwingingTags.Remove(Agent)
         if (Tag := MakeSwingStateTag(State)?):
             SwingingTags.Add(Agent, Tag)
 
     SendToSlot<private>(Agent:agent, SceneEvent:scene_event):void =
-        # 探して覚えるのは if の外で（条件の中で set すると、slot が無いときに覚えたことまで巻き戻る）
+        # Look up and remember outside the if (a set inside the condition would be rolled back, losing the lookup, when there is no slot)
         MaybeManager := FindPlayerManager()
         if:
             Player := player[Agent]

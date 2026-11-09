@@ -1,75 +1,75 @@
 # FNDeviceSystem
 
-Fortnite のクリエイティブ デバイス（`creative_device`）に頼る処理をまとめた System です。起動・停止の合図（ActivationSystem）と、デバイスでしかできないこと（トリガー・ゲーム終了・職業とチーム・スコア・シネマティック シーケンス・音）をつなぎます。Library の中でデバイスに依存するのはこの System だけです。ほかの System でデバイスを使いたいときは、この System の部品を置きます。
+A System that gathers everything relying on Fortnite creative devices (`creative_device`). It connects the activation / deactivation signals (ActivationSystem) with things only devices can do (triggers, ending the game, class and team, score, cinematic sequences, audio). It is the only System in the Library that depends on devices. To use a device from another System, place a part of this System.
 
-## 置き方
+## Placement
 
-| component | 置く場所 | すること |
+| component | Where to place | What it does |
 |---|---|---|
-| `device_trigger_component` | 合図が届く entity（ノード、インタラクト・ボリューム・メニューの `Targets` など） | 起動の合図で `Trigger` のトリガー デバイスを鳴らす（起こした人が分かればその人で）。停止の合図で `StopTrigger` を鳴らす |
-| `device_event_component` | どこでもよい。`Targets` が空なら、この entity と子孫が送り先 | `Trigger` のトリガー デバイスが鳴るたびに、`Targets` へ起動の合図を送る（鳴らした人が分かれば `activated_by_agent_event`） |
-| `device_end_game_component` | 合図が届く entity（ゴールのボリューム、流れの最後のノードなど） | 起動の合図で、ゲーム終了デバイスを `Recipients` に `Activate` する |
-| `device_class_component` | 合図が届く entity。ロードアウト（LoadoutSystem）の中に置いてもよい | 起動の合図で、職業とチームの選択デバイスで `Recipients` の職業・チームを変える |
-| `device_score_component` | 合図が届く entity（コイン・ゴールなど） | 起動の合図で、スコア マネージャー デバイスを `Recipients` に使う |
-| `device_sequence_component` | 合図が届く entity | 起動の合図でシネマティック シーケンス デバイスを再生し、停止の合図で止める |
-| `device_audio_component` | 合図が届く entity | 起動の合図でオーディオ プレイヤー デバイスを鳴らし、停止の合図で止める |
-| `schedule_sequence_component`（ScheduleKit） | `schedule_component`（ScheduleSystem）の entity かその子孫 | スケジュールが Active のあいだシネマティック シーケンス デバイスを再生し、期間の途中なら経過時間に合わせる |
+| `device_trigger_component` | the entity where the signal arrives (a node, the `Targets` of an interact, a volume or a menu, ...) | fires the trigger device in `Trigger` on the activation signal (with the agent who caused it when known). Fires `StopTrigger` on the deactivation signal |
+| `device_event_component` | anywhere. When `Targets` is empty, this entity and its descendants are the destination | every time the trigger device in `Trigger` fires, sends the activation signal to `Targets` (`activated_by_agent_event` when the firing agent is known) |
+| `device_end_game_component` | the entity where the signal arrives (the goal volume, the last node of the flow, ...) | on the activation signal, `Activate`s the end game device for the `Recipients` |
+| `device_class_component` | the entity where the signal arrives. May be placed inside a loadout (LoadoutSystem) | on the activation signal, changes the class / team of the `Recipients` with the class and team selector device |
+| `device_score_component` | the entity where the signal arrives (coins, goals, ...) | on the activation signal, uses the score manager device on the `Recipients` |
+| `device_sequence_component` | the entity where the signal arrives | plays the cinematic sequence device on the activation signal and stops it on the deactivation signal |
+| `device_audio_component` | the entity where the signal arrives | plays the audio player device on the activation signal and stops it on the deactivation signal |
+| `schedule_sequence_component` (ScheduleKit) | the entity of `schedule_component` (ScheduleSystem) or a descendant | plays the cinematic sequence device while the schedule is Active, aligning to the elapsed time when entering mid-period |
 
-デバイスはレベルに置いたものを `@editable` で選びます。1 つの部品で選べるデバイスは 1 つです（デバイスの配列は MCP で書けないため）。複数のデバイスを使うときは、子の entity に部品を 1 つずつ置きます。
+Devices placed in the level are chosen through `@editable`. One part selects one device (an array of devices cannot be written through MCP). To use several devices, place one part on each child entity.
 
-例：「ゴールのボリュームに入った人を勝ちにして、スコアも足す」
+Example: "make the player who enters the goal volume win, and add to their score"
 ```
-ゴール（player_volume_component + volume_activation_component）
-├ 終了（device_end_game_component、EndGame = ゲーム終了デバイス、Recipients = Activator）
-└ 加点（device_score_component、ScoreManager = スコア マネージャー デバイス、Change = Award）
+Goal (player_volume_component + volume_activation_component)
+├ End (device_end_game_component, EndGame = the end game device, Recipients = Activator)
+└ Score (device_score_component, ScoreManager = the score manager device, Change = Award)
 ```
-`volume_activation_component` は最初の 1 人が入ったとき、その人の分かる起動の合図（`activated_by_agent_event`）を子の entity へ送ります。子の部品はその人に対してデバイスを使います。
+When the first player enters, `volume_activation_component` sends an activation signal identifying that player (`activated_by_agent_event`) to the child entities. The child parts use their devices on that player.
 
-## 設定（@editable）
-- `device_trigger_component.Trigger : ?trigger_device = false` — 起動の合図で鳴らすトリガー デバイス。
-- `device_trigger_component.StopTrigger : ?trigger_device = false` — 停止の合図で鳴らすトリガー デバイス（だれでもなく鳴らす）。
-- `device_event_component.Trigger : ?trigger_device = false` — 鳴ったら合図を送るトリガー デバイス。
-- `device_event_component.Targets : []entity = array{}` — 起動の合図を送る entity。空なら、この entity とその子孫。
-- `device_end_game_component.EndGame : ?end_game_device = false` — 終わらせるゲーム終了デバイス（勝ち負けの設定はデバイス側）。
-- `device_end_game_component.Recipients : device_target_agents = Activator` — だれに対して終えるか。
-- `device_class_component.Selector : ?class_and_team_selector_device = false` — 使う職業とチームの選択デバイス（どの職業・チームにするかはデバイス側）。
-- `device_class_component.Change : device_class_change = Class` — 何を変えるか（`Class` / `Team` / `TeamAndClass`）。
-- `device_class_component.Recipients : device_target_agents = Owner` — だれを変えるか。
-- `device_score_component.ScoreManager : ?score_manager_device = false` — 使うスコア マネージャー デバイス（点数はデバイス側）。
-- `device_score_component.Change : device_score_change = Award` — `Award` はデバイスの設定どおりに加点（`Activate`）、`Increment` / `Decrement` は 1 段上げ下げ。
-- `device_score_component.Recipients : device_target_agents = Activator` — だれのスコアを変えるか。
-- `device_sequence_component.Sequence : ?cinematic_sequence_device = false` — 再生するシネマティック シーケンス デバイス。
-- `device_audio_component.AudioPlayer : ?audio_player_device = false` — 鳴らすオーディオ プレイヤー デバイス。
-- `device_sequence_component` / `device_audio_component` の `Scope : device_play_scope = Everyone` — `Everyone` は全員に（デバイスの Visibility の設定に従う）、`Activator` は合図を起こした人にだけ（`Play(Agent)`。デバイスの Visibility を Instigator にしておく。起こした人が分からなければ全員に）。
-- `device_sequence_component` / `device_audio_component` の `StopOnDeactivate : logic = true` — オンなら停止の合図で止める。
-- `schedule_sequence_component.Sequence : ?cinematic_sequence_device = false` — 期間中に再生するデバイス（Visibility = Everyone のもの）。
-- `schedule_sequence_component.MaxLateStartSeconds : float = 0.0` — 期間に入った時点で開始からこの秒数より経っていたら再生しない（0 以上。0 なら制限なし）。
-- `schedule_sequence_component.ResyncOnPlayerJoin : logic = true` — オンなら期間中にプレイヤーが参加するたびに、Play し直して経過時間に合わせる。
+## Settings (@editable)
+- `device_trigger_component.Trigger : ?trigger_device = false` — the trigger device fired on the activation signal.
+- `device_trigger_component.StopTrigger : ?trigger_device = false` — the trigger device fired on the deactivation signal (fired with no agent).
+- `device_event_component.Trigger : ?trigger_device = false` — the trigger device that sends the signal when it fires.
+- `device_event_component.Targets : []entity = array{}` — the entities the activation signal is sent to. When empty, this entity and its descendants.
+- `device_end_game_component.EndGame : ?end_game_device = false` — the end game device that ends the game (the win / loss setting is on the device).
+- `device_end_game_component.Recipients : device_target_agents = Activator` — whom to end the game for.
+- `device_class_component.Selector : ?class_and_team_selector_device = false` — the class and team selector device to use (which class / team is set on the device).
+- `device_class_component.Change : device_class_change = Class` — what to change (`Class` / `Team` / `TeamAndClass`).
+- `device_class_component.Recipients : device_target_agents = Owner` — whom to change.
+- `device_score_component.ScoreManager : ?score_manager_device = false` — the score manager device to use (the points are set on the device).
+- `device_score_component.Change : device_score_change = Award` — `Award` adds points as configured on the device (`Activate`); `Increment` / `Decrement` move one step up or down.
+- `device_score_component.Recipients : device_target_agents = Activator` — whose score to change.
+- `device_sequence_component.Sequence : ?cinematic_sequence_device = false` — the cinematic sequence device to play.
+- `device_audio_component.AudioPlayer : ?audio_player_device = false` — the audio player device to play.
+- `Scope : device_play_scope = Everyone` of `device_sequence_component` / `device_audio_component` — `Everyone` plays for everyone (following the device's Visibility setting); `Activator` plays only for the agent who caused the signal (`Play(Agent)`; set the device's Visibility to Instigator. For everyone when the agent is unknown).
+- `StopOnDeactivate : logic = true` of `device_sequence_component` / `device_audio_component` — when on, stops on the deactivation signal.
+- `schedule_sequence_component.Sequence : ?cinematic_sequence_device = false` — the device played during the period (one with Visibility = Everyone).
+- `schedule_sequence_component.MaxLateStartSeconds : float = 0.0` — does not play if more than this many seconds have passed since the start when the period is entered (0 or more; 0 means no limit).
+- `schedule_sequence_component.ResyncOnPlayerJoin : logic = true` — when on, every time a player joins during the period, Plays again and aligns to the elapsed time.
 
-`Recipients`（`device_target_agents`）の意味：
-- `Activator` — 合図を起こした人（`activated_by_agent_event` の `Agent`）。分からなければ何もしない。
-- `Owner` — 持ち主（slot の下に置いたとき）。いなければ合図を起こした人。どちらも無ければ何もしない。
-- `Everyone` — 区画（または世界）の `player_manager_component` の slot にいる全員。見つからなければ何もしない。
+Meaning of `Recipients` (`device_target_agents`):
+- `Activator` — the agent who caused the signal (the `Agent` of `activated_by_agent_event`). Does nothing when unknown.
+- `Owner` — the owner (when placed under a slot). The agent who caused the signal when there is none. Does nothing when neither exists.
+- `Everyone` — everyone in the slots of the `player_manager_component` of the zone (or the world). Does nothing when it is not found.
 
-## イベント
-この System は scene_event の型を作りません。送る・受けるのは ActivationSystem の起動・停止の合図です。
-- `device_event_component.TriggeredEvent : listenable(?agent)` — `Trigger` が鳴るたびに、鳴らした人（分からなければ false）で届く。
-- 送るもの: `device_event_component` は、鳴るたびに `Targets`（空なら自分の entity）から下へ `activated_by_agent_event`（鳴らした人が分かるとき。`SendActivatedBy`）か `activated_event`（`SendActivated`）を送る。停止の合図は送らない。
-- 受けるもの: `device_trigger_component` / `device_sequence_component` / `device_audio_component` は `activated_event` と `deactivated_event`。`device_end_game_component` / `device_class_component` / `device_score_component` は `activated_event` だけ。どれも `FindActivatingAgent[]` で起こした人を読む。どれも消費しない。
-- `schedule_sequence_component` は合図を受けません。一番近い `schedule_component` の状態の変化（`StateChangedEvent`）を `schedule_follower` で受けます。
+## Events
+This System defines no scene_event types. What it sends and receives are the activation / deactivation signals of ActivationSystem.
+- `device_event_component.TriggeredEvent : listenable(?agent)` — fires with the firing agent (false when unknown) every time `Trigger` fires.
+- Sent: every time it fires, `device_event_component` sends `activated_by_agent_event` (when the firing agent is known; `SendActivatedBy`) or `activated_event` (`SendActivated`) downward from `Targets` (its own entity when empty). It never sends the deactivation signal.
+- Received: `device_trigger_component` / `device_sequence_component` / `device_audio_component` receive `activated_event` and `deactivated_event`. `device_end_game_component` / `device_class_component` / `device_score_component` receive only `activated_event`. All read the causing agent with `FindActivatingAgent[]`. None consumes.
+- `schedule_sequence_component` receives no signal. It receives the state changes (`StateChangedEvent`) of the nearest `schedule_component` through `schedule_follower`.
 
-## 持ち主
-- `device_target_agents.Owner` を選んだ部品（`device_class_component` の既定）は、プレイヤーの slot の下（LoadoutSystem のロードアウトの中など）に置くと持ち主（`FindOwningPlayer`）に対して使います。slot の下に無ければ合図を起こした人に使います。
-- ロードアウトは作った次のフレームに配下へ起動の合図を送るので、ロードアウトの中の `device_class_component` は、ロードアウトを付けたときに持ち主の職業を変えます。
-- `Activator` / `Everyone` を選んだ部品と、`device_trigger_component` / `device_event_component` / `device_sequence_component` / `device_audio_component` / `schedule_sequence_component` は、持ち主がいても動きを変えません。
+## Owner
+- Parts with `device_target_agents.Owner` selected (the default of `device_class_component`), when placed under a player's slot (inside a LoadoutSystem loadout, etc.), act on the owner (`FindOwningPlayer`). When not under a slot, they act on the agent who caused the signal.
+- A loadout sends the activation signal to its descendants the frame after it is created, so a `device_class_component` inside a loadout changes the owner's class when the loadout is attached.
+- Parts with `Activator` / `Everyone` selected, and `device_trigger_component` / `device_event_component` / `device_sequence_component` / `device_audio_component` / `schedule_sequence_component`, do not change their behavior when there is an owner.
 
-## 公開 API
+## Public API
 ```verse
 device_trigger_component<public> := class<final_super>(component):
     Trigger<public>:?trigger_device
     StopTrigger<public>:?trigger_device
-    Fire<public>():void                                     # Trigger をだれでもなく鳴らす
-    FireFor<public>(Agent:agent):void                       # Trigger を Agent が起こしたものとして鳴らす
+    Fire<public>():void                                     # fires Trigger with no agent
+    FireFor<public>(Agent:agent):void                       # fires Trigger as caused by Agent
 
 device_event_component<public> := class<final_super>(component):
     Trigger<public>:?trigger_device
@@ -113,43 +113,43 @@ device_sequence_component<public> := class<final_super>(component):
     Sequence<public>:?cinematic_sequence_device
     Scope<public>:device_play_scope
     StopOnDeactivate<public>:logic
-    Play<public>():void                                     # （全員に）再生する
-    Stop<public>():void                                     # 止める
+    Play<public>():void                                     # plays (for everyone)
+    Stop<public>():void                                     # stops
 
 device_audio_component<public> := class<final_super>(component):
     AudioPlayer<public>:?audio_player_device
     Scope<public>:device_play_scope
     StopOnDeactivate<public>:logic
-    Play<public>():void                                     # （全員に）鳴らす
-    Stop<public>():void                                     # 止める
+    Play<public>():void                                     # plays (for everyone)
+    Stop<public>():void                                     # stops
 
 # ScheduleKit
 schedule_sequence_component<public> := class<final_super>(component):
     Sequence<public>:?cinematic_sequence_device
     MaxLateStartSeconds<public>:float
     ResyncOnPlayerJoin<public>:logic
-    IsPlaying<public>()<decides><transacts>:void            # 再生しているあいだ成功する
-    Resync<public>():void                                   # 再生中なら今の経過時間に合わせ直す。再生していなければ何もしない
+    IsPlaying<public>()<decides><transacts>:void            # succeeds while playing
+    Resync<public>():void                                   # if playing, re-aligns to the current elapsed time. Does nothing when not playing
 ```
 
-## 前提・注意
-- デバイスはレベルに置き、component の `@editable` で選びます。デバイス側の設定（勝ち負け・職業・点数・Visibility など）はデバイスで決めます。
-- デバイスの `@editable` はどれも 1 つずつ（`?デバイスの型`）です。デバイスの配列は MCP で書けないためです。複数のデバイスを使うときは、子の entity に部品を 1 つずつ置きます（例：トリガー デバイスを 3 つ鳴らすなら、合図が届く entity の子に `device_trigger_component` を 3 つ、それぞれ別の entity に置く）。
-- MCP でレベルを組むとき：Fortnite 標準の `input_action` / `input_mapping`（`Character.Jump`・`TraversalMapping` など）は、MCP の `SetComponentProperty` で参照として設定できません。コードの既定値として使うのはかまいません。別のものにしたいときはエディターで選びます。文字列の配列（`choice_menu_component.Options` など）は、MCP では長さと中身を同時に変えられないので、いったん空にしてから入れ直します。
-- `device_trigger_component` の停止の合図（`StopTrigger`）と `Fire` は、だれでもなく鳴らします。起こした人が要るデバイスの設定には `FireFor` か、起こした人の分かる合図を使います。
-- `device_event_component` は起動の合図だけを送ります。停止させたいときは別の部品から停止の合図を送ります。
-- `device_end_game_component` などの `Recipients = Activator` は、起こした人の分からない合図（`activated_event` だけ。ゲームの流れのノードに入ったときなど）では何もしません。だれにでも効かせたいときは `Everyone` にします。`Everyone` には区画（または世界）に `player_manager_component` が要ります。
-- `device_sequence_component` / `device_audio_component` の `Play` / `Stop`（コードから呼ぶもの）は、`Scope` に関係なく全員に対して呼びます。
-- デバイスを選んでいない（`false` のまま）部品は、合図を受けても何もしません（Print もしません）。
-- `schedule_sequence_component`（`FNDeviceSystem/ScheduleKit/ScheduleSequenceComponent.verse`）は ScheduleSystem から移ってきました。ScheduleSystem の `schedule_follower` で、自分の entity か一番近い祖先の `schedule_component` を見ます。見つからなければ Print して何もしません。ツールチップとカテゴリは ScheduleSystem の TooltipKit（`ScheduleCategory` など）を使います。
-- `schedule_sequence_component` は実機で確かめていない点があります（コードの `前提・注意（実機で確認すること）`）：
-  - 途中参加の人に映像が合うかはデバイス側の仕様に依ります。`ResyncOnPlayerJoin` がオンなら参加のたびに Play ＋ `SetPlaybackTime` をやり直すので、全員の再生が一瞬跳ねるかもしれません。合わないなら、人ごとのデバイス（Visibility = Instigator）を人数分用意して `Play(Agent)` する作りに変えます。
-  - `SetPlaybackTime` は Play の直後に呼びます。経過が 0.5 秒未満なら呼びません。
-  - シーケンスが Active の長さより短いと、終わったあとは止まったままです（ループは設定しません）。
-  - `ResyncOnPlayerJoin` には区画（または世界）に `player_manager_component` が要ります（無いと参加で合わせ直しません）。
-- この System は `@experimental` の API を使っていません。
+## Requirements, caveats and limits
+- Devices are placed in the level and chosen through the component's `@editable`. Device-side settings (win / loss, class, points, Visibility, ...) are decided on the device.
+- Every device `@editable` takes one device (`?device_type`), because an array of devices cannot be written through MCP. To use several devices, place one part on each child entity (e.g. to fire three trigger devices, place three `device_trigger_component`, each on its own child entity of the entity where the signal arrives).
+- When building the level through MCP: Fortnite's standard `input_action` / `input_mapping` (`Character.Jump`, `TraversalMapping`, ...) cannot be set as references with MCP's `SetComponentProperty`. Using them as code defaults is fine. To choose a different one, select it in the editor. An array of strings (`choice_menu_component.Options`, etc.) cannot have its length and contents changed at once through MCP, so clear it first and then fill it again.
+- The deactivation signal (`StopTrigger`) and `Fire` of `device_trigger_component` fire with no agent. For device settings that need a causing agent, use `FireFor` or a signal that identifies the agent.
+- `device_event_component` sends only the activation signal. To deactivate, send the deactivation signal from another part.
+- `Recipients = Activator` on `device_end_game_component` etc. does nothing for a signal that does not identify the agent (plain `activated_event`, e.g. when a node of the game flow is entered). To affect anyone, use `Everyone`. `Everyone` needs a `player_manager_component` in the zone (or the world).
+- `Play` / `Stop` of `device_sequence_component` / `device_audio_component` (called from code) act on everyone regardless of `Scope`.
+- A part with no device selected (left `false`) does nothing when it receives a signal (no Print either).
+- `schedule_sequence_component` (`FNDeviceSystem/ScheduleKit/ScheduleSequenceComponent.verse`) moved here from ScheduleSystem. Through ScheduleSystem's `schedule_follower` it watches the `schedule_component` on its own entity or the nearest ancestor. When none is found it Prints and does nothing. Tooltips and categories come from ScheduleSystem's TooltipKit (`ScheduleCategory`, etc.).
+- `schedule_sequence_component` has points not yet confirmed in UEFN (the `Requirements (to be confirmed in UEFN)` in the code):
+  - Whether late joiners see the video in sync depends on the device. When `ResyncOnPlayerJoin` is on, Play + `SetPlaybackTime` are redone on every join, so everyone's playback may jump for a moment. If it does not sync, change to one device per player (Visibility = Instigator) and `Play(Agent)`.
+  - `SetPlaybackTime` is called right after Play. Not called when the elapsed time is under 0.5 s.
+  - When the sequence is shorter than the Active length, it stays stopped after it ends (no loop is set).
+  - `ResyncOnPlayerJoin` needs a `player_manager_component` in the zone (or the world) (without one, no re-alignment on join).
+- This System uses no `@experimental` API.
 
-## 確かめ方
-- `_Test/FNDeviceSystemTest/` はありません（デバイスはレベルに置いたものを選ぶので、テストが実行時に作れません）。この System の component を使うテストも `_Test` にはありません。`_Samples/` にも見本はありません。
-- 確かめるときは、UEFN でデバイスをレベルに置き、合図の送り手（`interact_trigger_component`・`volume_activation_component`・ゲームの流れのノードなど）の配下にこの System の component を置いて動かします。
-- 関係するもの：`schedule_sequence_component` が見るスケジュールの側は `_Test/ScheduleSystemTest/`、`Everyone` などが使う区画での探し方（`FindScopedComponent[player_manager_component]`）は `_Samples/ScopeSample/` で確かめられます。起こした人の分かる合図（`activated_by_agent_event` / `FindActivatingAgent`）を確かめるテストは今のところありません。
+## Verifying
+- There is no `_Test/FNDeviceSystemTest/` (devices are chosen from those placed in the level, so a test cannot create them at runtime). No test in `_Test` uses the components of this System either. There is no sample in `_Samples/` either.
+- To verify, place devices in the level in UEFN, place the components of this System under a signal sender (`interact_trigger_component`, `volume_activation_component`, a node of the game flow, ...) and run.
+- Related: the schedule side watched by `schedule_sequence_component` can be checked with `_Test/ScheduleSystemTest/`; the zone lookup used by `Everyone` etc. (`FindScopedComponent[player_manager_component]`) with `_Samples/ScopeSample/`. There is currently no test for signals identifying the agent (`activated_by_agent_event` / `FindActivatingAgent`).

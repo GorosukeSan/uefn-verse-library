@@ -7,156 +7,156 @@ using { GridSystem }
 using { SceneGraphSystem }
 using { SpawnSystem.TooltipKit }
 
-# 役割：動いているあいだ、RefillSeconds ごとに、基準の点（同じ entity の spawn_origin_component の派生が UpdateOrigins で返す点。無ければこの entity の位置）のまわりの帯に、同じ entity の spawn_factory_component の派生が作る entity を Count 個ずつ保つ。中身（何を出すか）は factory、場所の基準（だれのまわりか）は origin が決め、この component は数と範囲と出し入れだけを受け持つ
-# 帯：点ごとに、水平 ±RangeCells マス、縦は点のマスから下に DespawnBelowCells（下限）〜上に MaxHeightCells（上限）。新しく出すのは上に MinHeightCells〜上限のあいだ（グリッドの高さ FloorCells マスより下には出さない）で、帯の中にもう Count の半分以上あるときは上限から RefillDepthCells マスのあいだに出す。点が変わったときだけ帯を作り直す。帯どうしが MergeGapCells マス以内で重なるときは 1 つにまとめる（まとめた帯の Count は 1 つ分）
-# 消す：どの帯（origin の DespawnPoints から作る）にも入らないものを、1 回に DespawnPerRefill 個ずつ消す（DespawnBelowCells が 0 なら消さない。origin の KeepPoints から KeepNearCells マス以内のものは消さない。消す順は決まっていない）
-# 置く場所：1 つ分の範囲（マス）は FootprintX × FootprintY × FootprintZ（高さは LevelIntervalCells が 0 ならランダム、0 より大きければ段ごとに 1 つ）。そのまわりに GapCells マスの空き（だれも借りられない）を足して、区画の grid_component から借りる。借りられなければ MaxAttempts 回まで選び直し、だめならその回は出さない。出した entity はこの entity の子にして spawned_component を付け、FitToArea なら範囲いっぱいに伸ばし、そうでなければ範囲の真ん中に置く。出すときは AppearSeconds 秒で大きさを 0 から元へ、消すときは元から 0 へ変えてから消す。消えたものの借用は返す
-# いつ：StartOnBegin なら始めから。起動の合図（activated_event）か Start で動き出し、停止の合図（deactivated_event）か Stop で止まって全部消す
-# 置き方：エディターで entity に付ける
-# 親：起動の合図が届く場所（ゲームの流れなら、ノードの entity かその子孫）
-# 同じ entity：spawn_factory_component の派生を 1 つ（必須。無ければ何も出さない）。基準を変えるなら spawn_origin_component の派生を 1 つ
-# 知らせ：出したとき spawned_event と SpawnedEvent、外れたとき despawned_event と DespawnedEvent（scene event はこの entity から SendDown）
-# 外から：Start / Stop / RefillNow / ClearAll、GetSpawned / GetSpawnedCount / IsRunning
-# 前提：区画（game_scope_component。無ければ世界）に grid_component が 1 つ（無ければ何も出さない。見つかるまで補充のたびに探し、見つかったら覚えておく）
+# Role: while running, every RefillSeconds keeps Count entities, created by the spawn_factory_component subclass on the same entity, in the band around each reference point (the points the spawn_origin_component subclass on the same entity returns from UpdateOrigins; this entity's position if there is none). The factory decides the content (what to spawn), the origin decides the reference (around whom), and this component handles only count, range and spawning / despawning
+# Band: per point, +/- RangeCells cells horizontally; vertically from DespawnBelowCells below the point's cell (lower limit) to MaxHeightCells above it (upper limit). New items go between MinHeightCells above and the upper limit (never below the grid height FloorCells), and when the band already holds half of Count or more, within RefillDepthCells of the upper limit. Bands are rebuilt only when the points change. Bands overlapping within MergeGapCells are merged into one (a merged band keeps the Count of one)
+# Despawn: items in no band (built from the origin's DespawnPoints) are despawned DespawnPerRefill at a time (never when DespawnBelowCells is 0; items within KeepNearCells of the origin's KeepPoints are not despawned; the order is undefined)
+# Placement of items: one item's range (cells) is FootprintX x FootprintY x FootprintZ (height random when LevelIntervalCells is 0, one per level when greater than 0). A gap of GapCells (nobody can reserve it) is added around it and the whole is reserved from the scope's grid_component. If it cannot be reserved, re-picked up to MaxAttempts times; if still not, nothing is spawned that round. The spawned entity becomes a child of this entity with spawned_component attached, stretched to fill the range when FitToArea, otherwise placed at the center of the range. On spawn the scale goes from 0 to full over AppearSeconds, on despawn from full to 0 before removal. Reservations of removed items are released
+# When: from the start if StartOnBegin. Starts on the activation signal (activated_event) or Start, stops and removes everything on the deactivation signal (deactivated_event) or Stop
+# Placement: attach to an entity in the editor
+# Parent: wherever the activation signal reaches (in a game flow, the node's entity or a descendant)
+# Same entity: one spawn_factory_component subclass (required; nothing is spawned without it). One spawn_origin_component subclass to change the reference
+# Notifies: spawned_event and SpawnedEvent on spawn, despawned_event and DespawnedEvent on leaving (scene events are SendDown from this entity)
+# From outside: Start / Stop / RefillNow / ClearAll, GetSpawned / GetSpawnedCount / IsRunning
+# Requirements: one grid_component in the scope (game_scope_component; the world if there is none) (nothing is spawned without it; looked up on every refill until found, then remembered)
 spawner_component<public> := class<final_super>(component):
 
-    # 帯ごとにいつも保つ数。0 なら何も出さない。既定 20
+    # Number always kept per band. 0 spawns nothing. Default 20
     @editable_number(int):
         ToolTip := SpawnerCountToolTip
         Categories := array{SpawnerCategory, SpawnerCountCategory}
         MinValue := option{0}
         MaxValue := option{200}
     Count<public>:int = 20
-    # 数を確かめて足りない分を足す間隔（秒）。既定 1.0
+    # Interval (seconds) at which the count is checked and missing items are added. Default 1.0
     @editable_number(float):
         ToolTip := SpawnerRefillSecondsToolTip
         Categories := array{SpawnerCategory, SpawnerCountCategory}
         MinValue := option{0.1}
         MaxValue := option{60.0}
     RefillSeconds<public>:float = 1.0
-    # どの帯にも入らないものを、1 回の補充で消す数の上限。既定 2
+    # Maximum number of items in no band despawned per refill. Default 2
     @editable_number(int):
         ToolTip := SpawnerDespawnPerRefillToolTip
         Categories := array{SpawnerCategory, SpawnerCountCategory}
         MinValue := option{1}
         MaxValue := option{100}
     DespawnPerRefill<public>:int = 2
-    # 出すとき・消すときに大きさを変える時間（秒）。0 ならすぐ出し入れする。既定 0.5
+    # Time (seconds) over which the scale changes on spawn and despawn. 0 spawns and despawns instantly. Default 0.5
     @editable_number(float):
         ToolTip := SpawnerAppearSecondsToolTip
         Categories := array{SpawnerCategory, SpawnerCountCategory}
         MinValue := option{0.0}
         MaxValue := option{5.0}
     AppearSeconds<public>:float = 0.5
-    # オンならゲームの始めから出し入れする。オフなら起動の合図（activated_event）か Start で動き出す。既定オフ
+    # When on, runs from the start of the game. When off, starts on the activation signal (activated_event) or Start. Default off
     @editable:
         ToolTip := SpawnerStartOnBeginToolTip
         Categories := array{SpawnerCategory, SpawnerCountCategory}
     StartOnBegin<public>:logic = false
-    # 基準のマスから水平に、前後左右それぞれ何マスまでを帯にするか。既定 12
+    # How many cells horizontally from the reference cell, in each of the four directions, the band covers. Default 12
     @editable_number(int):
         ToolTip := SpawnerRangeCellsToolTip
         Categories := array{SpawnerCategory, SpawnerRangeCategory}
         MinValue := option{0}
         MaxValue := option{400}
     RangeCells<public>:int = 12
-    # 基準のマスから少なくとも何マス上に出すか（マイナスなら下にも出す）。既定 4
+    # How many cells above the reference cell items are spawned at least (negative also spawns below). Default 4
     @editable_number(int):
         ToolTip := SpawnerMinHeightCellsToolTip
         Categories := array{SpawnerCategory, SpawnerRangeCategory}
         MinValue := option{-2000}
         MaxValue := option{2000}
     MinHeightCells<public>:int = 4
-    # 帯の上限。基準のマスから何マス上まで出すか。既定 32
+    # Upper limit of the band. How many cells above the reference cell items are spawned at most. Default 32
     @editable_number(int):
         ToolTip := SpawnerMaxHeightCellsToolTip
         Categories := array{SpawnerCategory, SpawnerRangeCategory}
         MinValue := option{0}
         MaxValue := option{2000}
     MaxHeightCells<public>:int = 32
-    # 帯の下限。基準のマスよりこのマス数より下に外れたものを少しずつ消す。0 なら消さない（既定）
+    # Lower limit of the band. Items that fall more than this many cells below the reference cell are despawned a few at a time. 0 despawns nothing (default)
     @editable_number(int):
         ToolTip := SpawnerDespawnBelowCellsToolTip
         Categories := array{SpawnerCategory, SpawnerRangeCategory}
         MinValue := option{0}
         MaxValue := option{2000}
     DespawnBelowCells<public>:int = 0
-    # 帯の中にもう Count の半分以上あるとき、新しく出すのを上限から何マスのあいだにするか。既定 8
+    # When the band already holds half of Count or more, new items are spawned within this many cells of the upper limit. Default 8
     @editable_number(int):
         ToolTip := SpawnerRefillDepthCellsToolTip
         Categories := array{SpawnerCategory, SpawnerRangeCategory}
         MinValue := option{1}
         MaxValue := option{500}
     RefillDepthCells<public>:int = 8
-    # 帯どうしがこのマス数以内まで近づいたら 1 つにまとめる。既定 10
+    # Bands that come within this many cells of each other are merged into one. Default 10
     @editable_number(int):
         ToolTip := SpawnerMergeGapCellsToolTip
         Categories := array{SpawnerCategory, SpawnerRangeCategory}
         MinValue := option{0}
         MaxValue := option{500}
     MergeGapCells<public>:int = 10
-    # 出す範囲のまわりに借りておく空きのマス数（ほかのものが入れない）。既定 1
+    # Cells of gap reserved around the spawn range (nothing else can enter). Default 1
     @editable_number(int):
         ToolTip := SpawnerGapCellsToolTip
         Categories := array{SpawnerCategory, SpawnerRangeCategory}
         MinValue := option{0}
         MaxValue := option{20}
     GapCells<public>:int = 1
-    # 近くに残す点（KeepPoints（UpdateOrigins の結果））からこのマス数以内のものは、帯の外でも消さない。0 なら近くでも消す。既定 40
+    # Items within this many cells of a keep point (KeepPoints from the result of UpdateOrigins) are not despawned even outside the band. 0 despawns even nearby items. Default 40
     @editable_number(int):
         ToolTip := SpawnerKeepNearCellsToolTip
         Categories := array{SpawnerCategory, SpawnerRangeCategory}
         MinValue := option{0}
         MaxValue := option{400}
     KeepNearCells<public>:int = 40
-    # 出す高さの最低（グリッドの 0 番からのマス）。これより下には出さない。既定 -2000
+    # Lowest spawn height (cells from grid cell 0). Nothing is spawned below it. Default -2000
     @editable_number(int):
         ToolTip := SpawnerFloorCellsToolTip
         Categories := array{SpawnerCategory, SpawnerRangeCategory}
         MinValue := option{-2000}
         MaxValue := option{2000}
     FloorCells<public>:int = -2000
-    # 借りられる範囲が見つからないときに場所を選び直す回数の上限。だめならその回は出さない。既定 8
+    # Maximum number of times a place is re-picked when no reservable range is found. If still none, nothing is spawned that round. Default 8
     @editable_number(int):
         ToolTip := SpawnerMaxAttemptsToolTip
         Categories := array{SpawnerCategory, SpawnerRangeCategory}
         MinValue := option{1}
         MaxValue := option{50}
     MaxAttempts<public>:int = 8
-    # 1 つ分が使う範囲の前（X）のマス数。既定 1
+    # Cells one item uses forward (X). Default 1
     @editable_number(int):
         ToolTip := SpawnerFootprintToolTip
         Categories := array{SpawnerCategory, SpawnerPlaceCategory}
         MinValue := option{1}
         MaxValue := option{50}
     FootprintX<public>:int = 1
-    # 1 つ分が使う範囲の左（Y）のマス数。既定 1
+    # Cells one item uses to the left (Y). Default 1
     @editable_number(int):
         ToolTip := SpawnerFootprintToolTip
         Categories := array{SpawnerCategory, SpawnerPlaceCategory}
         MinValue := option{1}
         MaxValue := option{50}
     FootprintY<public>:int = 1
-    # 1 つ分が使う範囲の上（Z）のマス数。既定 1
+    # Cells one item uses upward (Z). Default 1
     @editable_number(int):
         ToolTip := SpawnerFootprintToolTip
         Categories := array{SpawnerCategory, SpawnerPlaceCategory}
         MinValue := option{1}
         MaxValue := option{50}
     FootprintZ<public>:int = 1
-    # オンなら借りた範囲いっぱいの大きさに伸ばして置く。オフなら作ったままの大きさで範囲の真ん中に置く。既定オフ
+    # When on, the item is stretched to fill the reserved range. When off, it keeps its created size and is placed at the center of the range. Default off
     @editable:
         ToolTip := SpawnerFitToAreaToolTip
         Categories := array{SpawnerCategory, SpawnerPlaceCategory}
     FitToArea<public>:logic = false
-    # メッシュの大きさ 1 のときの 1 辺（センチメートル）。FitToArea のときに使う。既定 100（エンジンの基本のキューブ）
+    # Edge length (centimeters) of the mesh at scale 1. Used with FitToArea. Default 100 (the engine's basic cube)
     @editable_number(float):
         ToolTip := SpawnerMeshSizeToolTip
         Categories := array{SpawnerCategory, SpawnerPlaceCategory}
         MinValue := option{1.0}
         MaxValue := option{10000.0}
     MeshSizeCm<public>:float = 100.0
-    # 0 より大きければ、高さをこのマス数ごとの段（マスの Z がこの倍数。0 は除く）に決め、1 つの段には 1 つだけ出す（一度出した段は、消えても ForgetUsedLevels まで出し直さない）。0 なら高さもランダム。既定 0
+    # If greater than 0, heights are fixed to levels every this many cells (the cell Z is a multiple of it; 0 excluded) and only one item is spawned per level (a level used once is not respawned, even after it disappears, until ForgetUsedLevels). 0 makes the height random too. Default 0
     @editable_number(int):
         ToolTip := SpawnerLevelIntervalToolTip
         Categories := array{SpawnerCategory, SpawnerPlaceCategory}
@@ -168,12 +168,12 @@ spawner_component<public> := class<final_super>(component):
 
     SpawnedEventInternal<private><final>:event(entity) = event(entity){}
 
-    # 1 つ出して置いたあとに、出した entity で届く（spawned_event と同じタイミング。Await / Subscribe する。外から Signal はできない）
+    # Delivered with the spawned entity after one item is spawned and placed (same timing as spawned_event. Await / Subscribe to it; it cannot be Signaled from outside)
     SpawnedEvent<public><final>:listenable(entity) = MakeProxyListenable(SpawnedEventInternal)
 
     DespawnedEventInternal<private><final>:event(entity) = event(entity){}
 
-    # 出したものが世界から外れたときに、その entity で届く（縮んで消えた・ClearAll・停止。despawned_event と同じタイミング。Await / Subscribe する。外から Signal はできない）
+    # Delivered with the entity when a spawned item leaves the world (shrank away, ClearAll, stop. Same timing as despawned_event. Await / Subscribe to it; it cannot be Signaled from outside)
     DespawnedEvent<public><final>:listenable(entity) = MakeProxyListenable(DespawnedEventInternal)
 
     var LastPoints<private>:[]vector3 = array{}
@@ -215,45 +215,45 @@ spawner_component<public> := class<final_super>(component):
         Clear()
         (super:)OnEndSimulation()
 
-    # 動き出す（起動の合図と同じ）。動いていれば何もしない
+    # Start running (same as the activation signal). Does nothing if already running
     Start<public>():void =
         if (not WantRunning?):
             set WantRunning = true
             StartEvent.Signal()
 
-    # 止まって、出したものを全部すぐ消す（停止の合図と同じ）。止まっていても、出したものは消す
+    # Stop and remove every spawned item right away (same as the deactivation signal). Spawned items are removed even if already stopped
     Stop<public>():void =
         set WantRunning = false
         set Running = false
         StopEvent.Signal()
         Clear()
 
-    # 動いていれば成功する
+    # Succeeds if running
     IsRunning<public>()<decides><reads>:void =
         Running?
 
-    # 今出ているもの（消えはじめたものは除く）。この entity の直下の子だけを数える。並び順は決まっていない
+    # Items currently spawned (excluding those that started disappearing). Counts only the direct children of this entity. Order is undefined
     GetSpawned<public>()<reads>:[]spawned_component =
         for (Marker : Entity.GetChildComponents(spawned_component), not Marker.Leaving?):
             Marker
 
-    # 今出ているものの数（GetSpawned の数）
+    # Number of items currently spawned (the count of GetSpawned)
     GetSpawnedCount<public>()<reads>:int =
         GetSpawned().Length
 
-    # 段（LevelIntervalCells を使うとき。高さのマス ÷ LevelIntervalCells）にもう出したなら成功する
+    # Succeeds if the level (when LevelIntervalCells is used; height cell / LevelIntervalCells) has already been spawned on
     IsLevelUsed<public>(Level:int)<decides><reads>:void =
         UsedLevels[Level]?
 
-    # 出した段を全部忘れる（次の補充から、同じ段にもまた出す）
+    # Forget every used level (from the next refill, the same levels are spawned on again)
     ForgetUsedLevels<public>():void =
         set UsedLevels = map{}
 
-    # 1 つ分が使う範囲のマス数（FootprintX/Y/Z。1 未満は 1）
+    # Cells one item uses (FootprintX/Y/Z; less than 1 becomes 1)
     GetFootprint<public>()<transacts>:grid_cell =
         grid_cell{X := Max(FootprintX, 1), Y := Max(FootprintY, 1), Z := Max(FootprintZ, 1)}
 
-    # Band の中で、1 つ分の範囲の始まり（小さい側の角）のマスを選ぶ。高さは Low〜High（LevelIntervalCells が 0 より大きければ、その中のまだ使っていない段）。選べなければ失敗する
+    # Picks the start cell (the corner on the small side) of one item's range inside Band. Height is Low to High (an unused level within it when LevelIntervalCells is greater than 0). Fails if none can be picked
     PickStartCell<public>(Band:spawn_band, Low:int, High:int)<decides><transacts>:grid_cell =
         Footprint := GetFootprint()
         Height := PickHeight[Footprint, Low, High]
@@ -262,22 +262,22 @@ spawner_component<public> := class<final_super>(component):
             Y := Band.CenterY + GetRandomInt(-Band.HalfY, Band.HalfY) - (Quotient[Footprint.Y, 2] or 0)
             Z := Height
 
-    # 動いているあいだなら、次の補充を待たずに今すぐ 1 回分の補充をする（帯の作り直し・外れたものを DespawnPerRefill 個消す・足りない分を足す。いつもの補充と同じ）。いつもの補充の間隔は変わらない。止まっているときは何もしない
+    # While running, does one refill right now without waiting for the next (rebuild bands, despawn DespawnPerRefill items outside, add missing items; same as a regular refill). The regular refill interval is unchanged. Does nothing while stopped
     RefillNow<public>():void =
         if (Running?):
             RefillOnce()
 
-    # 出したものを全部、今すぐ消す（縮む演出なし。借用は消えたものから返る）。止まったときと同じ消し方。動いているあいだは、次の補充でまた出る（止めたいなら Stop）
+    # Remove every spawned item right now (no shrink effect; reservations are released as items go). Same removal as on stop. While running, the next refill spawns again (use Stop to stop)
     ClearAll<public>():void =
         Clear()
 
-    # Points の点ごとに帯を作り、MergeGapCells マス以内で重なる帯を 1 つにまとめて返す（spawner が中で使う計算）
+    # Builds a band per point in Points and returns them with bands overlapping within MergeGapCells merged into one (calculation used inside the spawner)
     GetBands<internal>(Grid:grid_component, Points:[]vector3)<transacts>:[]spawn_band =
         Bands := for (Point : Points):
             MakeBand(Grid.ToCell(Point))
         MergeBands(Bands, MergeGapCells)
 
-    # spawned_component が世界から外れるときに呼ぶ
+    # Called by spawned_component when it leaves the world
     NotifyDespawned<internal>(Spawned:entity):void =
         DespawnedEventInternal.Signal(Spawned)
         Entity.SendDown(despawned_event{Spawner := Self, Spawned := Spawned})
@@ -395,7 +395,7 @@ spawner_component<public> := class<final_super>(component):
         for (Marker : Entity.GetChildComponents(spawned_component)):
             Marker.Entity.RemoveFromParent()
 
-    # 今回の基準の点。origin があればその UpdateOrigins（出す点が空なら false）、無ければこの entity の位置 1 つ
+    # This round's reference points. With an origin, its UpdateOrigins (false if the spawn points are empty); without one, this entity's position as a single point
     GetOrigins<private>()<transacts>:?spawn_origins =
         if (Source := Entity.GetComponent[spawn_origin_component]):
             Origins := Source.UpdateOrigins()
@@ -404,7 +404,7 @@ spawner_component<public> := class<final_super>(component):
             Here := Entity.GetGlobalTranslation()
             option{spawn_origins{SpawnPoints := array{Here}}}
 
-    # 高さ（マスの Z）を選ぶ。LevelIntervalCells が 0 より大きければ Low〜High の中のまだ使っていない段、そうでなければランダム
+    # Picks the height (cell Z). An unused level between Low and High when LevelIntervalCells is greater than 0, otherwise random
     PickHeight<private>(Footprint:grid_cell, Low:int, High:int)<decides><transacts>:int =
         if (LevelIntervalCells > 0):
             Interval := LevelIntervalCells
@@ -425,7 +425,7 @@ spawner_component<public> := class<final_super>(component):
             set Level += 1
         Found?
 
-    # 出したものを置く（FitToArea なら範囲いっぱい、そうでなければ範囲の真ん中に大きさ 1）
+    # Places the spawned item (stretched to fill the range when FitToArea, otherwise at the center of the range with scale 1)
     PlaceSpawned<private>(Spawned:entity, Area:spawn_area):void =
         if (FitToArea?):
             Spawned.SetGlobalTransform(Area.MakeFitTransform(MeshSizeCm))

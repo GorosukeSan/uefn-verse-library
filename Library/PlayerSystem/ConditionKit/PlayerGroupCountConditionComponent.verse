@@ -4,27 +4,27 @@ using { ConditionSystem }
 using { SceneGraphSystem }
 using { PlayerSystem.TooltipKit }
 
-# 役割：プレイヤーの組（player_group_component）の人数が MinMemberCount 以上・MaxMemberCount 以下なら満たす
-#   例：組の人が 1 人以上いれば進む（Min 1）、組の人が 2 人そろったら（Min 2）、組の人がいなくなったら戻る（Min 0・Max 0）
-# 置き方：エディターで entity に付け、Group に組の entity を入れる（空なら、この entity かその祖先の組）
-# 親：game_transition_component か condition_all / condition_any の entity の直下
-# いつ：開始時に組を探し、組の JoinedEvent / LeftEvent で人数が変わるたびに上へ知らせる
-# 前提：Group の entity（空ならこの entity か祖先）に player_group_component。見つからなければ Print し、満たさない
+# Role: satisfied when the member count of a player group (player_group_component) is between MinMemberCount and MaxMemberCount
+#   Examples: advance when the group has at least one member (Min 1), when two members have gathered (Min 2), go back when the group is empty (Min 0, Max 0)
+# Placement: attach to an entity in the editor and set the group's entity in Group (if empty, the group on this entity or its ancestors)
+# Parent: directly under the entity of a game_transition_component or condition_all / condition_any
+# When: finds the group at start and notifies upward each time the count changes via the group's JoinedEvent / LeftEvent
+# Requirements: a player_group_component on the Group entity (or on this entity or an ancestor if empty). If none is found, Prints and is never satisfied
 player_group_count_condition_component<public> := class<final_super>(condition_component):
 
-    # 人数を数える組（player_group_component を付けた entity）。空なら、この entity かその祖先の組
+    # The group whose members are counted (an entity with player_group_component). If empty, the group on this entity or its ancestors
     @editable:
         ToolTip := GroupCountGroupToolTip
         Categories := array{PlayerGroupCategory}
     Group<public>:?entity = false
-    # 組の人数がこの数以上なら満たす（0〜100、既定 1）
+    # Satisfied when the group has at least this many members (0-100, default 1)
     @editable_number(int):
         ToolTip := GroupCountMinToolTip
         Categories := array{PlayerGroupCategory}
         MinValue := option{0}
         MaxValue := option{100}
     MinMemberCount<public>:int = 1
-    # 組の人数がこの数以下なら満たす（0〜100、既定 100 = 上限なし）
+    # Satisfied when the group has at most this many members (0-100, default 100 = no upper limit)
     @editable_number(int):
         ToolTip := GroupCountMaxToolTip
         Categories := array{PlayerGroupCategory}
@@ -48,7 +48,7 @@ player_group_count_condition_component<public> := class<final_super>(condition_c
                 Found.JoinedEvent.Subscribe(OnMembersChanged)
                 Found.LeftEvent.Subscribe(OnMembersChanged)
         else:
-            Print("[player_group_count_condition_component] player_group_component が見つかりません（Group か、この entity・祖先に置いてください）")
+            Print("[player_group_count_condition_component] No player_group_component found (set Group, or place one on this entity or an ancestor)")
 
     OnEndSimulation<override>():void =
         for (Subscription : Subscriptions):
@@ -57,7 +57,7 @@ player_group_count_condition_component<public> := class<final_super>(condition_c
         set Target = false
         (super:)OnEndSimulation()
 
-    # 数えている組。開始前・見つからなかったときは失敗する
+    # The group being counted. Fails before start or when none was found
     FindTargetGroup<public>()<decides><transacts>:player_group_component =
         Target?
 

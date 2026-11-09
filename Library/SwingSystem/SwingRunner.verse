@@ -10,38 +10,38 @@ using { ItemSystem }
 using { MovementSystem }
 using { SceneGraphSystem }
 
-# 役割：1 人分のスイングを Run のあいだ動かす（設定はすべて Ability＝swing_ability_component の項目。長さは cm、速さは cm/s、加速は cm/s²）。GrabAction を押すと、レティクルの先 MaxRangeCm 以内の物にロープをかけてつかみ、ジャンプ（ReleaseAction）を押すまで振り子で振る
-# つかむ：レティクルの向きへ半径 GrabRadiusCm の球を飛ばして当たった点をつかむ（少しずれても届く）。カメラとキャラクターのあいだの物と、プレイヤーの持ち物は除く。見つけた点は覚えておき、レティクルが外れても GrabGraceSeconds のあいだ（次の点が見つかるまで）は、その点をつかめる（HUD も緑のまま）。つかむ操作を押したのがつかんでいるあいだでも、離す GrabBufferSeconds 前までの押下なら、離した直後に次をつかむ（押し直し不要）。動く物でも、覚えた点はその物の上の位置として持つ。つかんだ点は、当たった entity を SetOrigin の基準にした entity にするので、その物が動くとついてくる
-# 地面：地面でつかむとロープだけかけて待ち（待っているあいだに ReelOutAction（狙う）を押すと、振り出さずにロープを外す）、ジャンプで GrabLiftHeightCm だけ持ち上げて、空中の GroundLaunchMultiplier 倍の勢いで振り出す（地面から落ちたら 1 倍）。つかんでいるあいだ（待つ・振るとも）MaxRangeCm より離れたら外す（加速は足さない）。振り出してから LandingGraceSeconds より後に着地したら、また待つ（それまでは地面に触れても振り続ける）
-# 振り子：自分で計算して毎フレーム（Tick＝持ち主の TickEvents.PrePhysics。届いた DeltaTime で積分する）SetLinearVelocity で入れる。振り出しで動いている向きへ GrabKickSpeedCmPerSecond、SwingEaseSeconds かけて SwingStartSpeedCmPerSecond、振り出してから AutoReelSeconds かけて、ロープを振り出したときの長さの AutoReelRatio（既定 2/3）まで、だんだんゆっくり縮め、毎フレーム重力 SwingGravityCmPerSecondSquared・見ている向きへの加速 SwingSteerAccelerationCmPerSecondSquared・空気の抵抗 SwingDrag を入れる。ロープの外向きの速さだけを消し、はみ出しは MaxRopeCorrectionSpeedCmPerSecond までの速さで引き戻す（引き戻しは次のフレームに持ち越さない）。速さは MaxSwingSpeedCmPerSecond まで。壁や床にぶつかって実際の速度が大きく変わったら、実際の速度に合わせ直す（速度はエンジンの単位のメートル毎秒で持ち、設定は ToEngineSpeed で直して使う）
-# 長さ：振っているあいだ、つかむ操作を押し直すと縮め、ReelOutAction（狙う）で伸ばす（ReelSpeedCmPerSecond）
-# マルチスイング：ロープを MaxRopes 本（swing_stats.ExtraRopes を足す）までかけられる。振っているあいだにつかむ操作を押すと、本数に空きがあれば次の点にもロープをかける（押したことは縮めるのにも使う）。振り子の中心は、かけたロープの点の真ん中。点が壊れる・MaxRangeCm より離れる・つかんだ物が消えると（毎フレーム確かめる）、そのロープだけ外れ（swing_rope_detached_event）、1 本も無くなると離す
-# ついていく：ほかの agent（プレイヤーに限らない。参加者のキャラクターか、その持ち物）にもロープをかけられる。相手にかけたロープがあるときは、地面からのジャンプを待たず、相手との距離がロープの上限（MaxRangeCm）の FollowDistanceRatio 倍（既定 1/4）から 50 センチメートル以内まで離れたら、GrabLiftHeightCm だけ持ち上げて、相手（につけた点）を起点に振り子で振り出す（相手が動くと、ついていく。ジャンプで振り出してもよい）。振っている途中で着地しても、また離れたら同じように振り出す。相手にかけたロープは、上限より離れても外れない
-# ロープを引く：自分が地面にいて、自分にロープをかけている人（相手の swing_runner が HasRopeOn で答える。相手は Registry から引く）をレティクルで見ると swing_reel_hint_event{Holder := その人} を Notify に渡し（案内を出す。見なくなったら Holder := false）、つかむ操作を押すと、つかむ代わりに相手の ReelToward を呼ぶ。呼ばれた側は、地面で待っていればすぐ振り出し、振り子をいったん止めて、引いた人の方へまっすぐ ReelPullSpeedCmPerSecond で ReelPullLengthCm ぶん（近づき切ったらそこまで）引き寄せられ、ロープはその分短くなる。そのあとは短いロープで振り子に戻る。区画に swing_registry_component が要る
-# 引っ張り：相手にかけたロープがあるあいだは、自分を引き戻す強さを PullerCorrectionRatio 倍にする（引っ張る側に少し補正が入る）。相手（引っ張られている側）には、こちらから力を掛けない
-# 離す：振っているあいだにジャンプを押し続けると、動いている向きへ HoldAccelerationCmPerSecondSquared で加速し（速さは MaxHoldSpeedCmPerSecond まで）、ジャンプを離すと、それまでの勢いのまま動いている向きに ReleaseBoostCmPerSecond を足して離す。つかんだ物が壊れる（swing_anchor_component.Break）か、ForceRelease（swing_ability_component.Release）で、そこで途切れる（加速は足さない）
-# 強さ：Registry（swing_registry_component）がその人に掛かる倍率をまとめた swing_stats を、始めたときと、Registry が倍率の元の変化を知らせたとき（ModifiersChangedEvent）だけ読み直し、つかめる距離・速さの上限・加速・離す勢い・巻き取りの速さに掛ける（決まった間隔では探さない）。つかめないとされたら新しくつかまない。変わったら swing_stats_changed_event を Notify に渡す
-# 確かめる間隔：地面を離れた・着地した・相手とのロープが張った・レティクルの先（つかめるか、ロープを引けるか）は、知らせ（イベント）が無いので CheckIntervalSeconds（0.1 秒）ごとに確かめる
-# 知らせ：待機中、つかめるかが変わったら swing_target_changed_event。ロープを 1 本かけるたびに swing_grabbed_event（つかんだ点の entity）、1 本だけ外れると swing_rope_detached_event、離すと swing_released_event、状態（待機 / 地面で待つ / 振り子）が変わると swing_state_changed_event を Notify に渡す。つかんだ物（当たった entity）には、つかむと swing_attached_event、振り出すたびに swing_pulled_event、離すと swing_detached_event を下へ送る
-# 置き方：実行時に swing_ability_component が、付与された人ごとに作る。つかんだ点の entity は能力の entity の simulation entity の下に作る。Registry があれば自分を登録する（SetRunner。ロープを引く相手を探すため）。状態は Notify に渡し、能力がタグ（swinging_tag の派生）にする
+# Role: runs one agent's swing for the duration of Run (every setting is a field of Ability = swing_ability_component. Lengths in cm, speeds in cm/s, accelerations in cm/s^2). Pressing GrabAction attaches a rope to an object within MaxRangeCm beyond the reticle and grabs it; the pendulum swings until jump (ReleaseAction) is pressed
+# Grabbing: sweeps a sphere of radius GrabRadiusCm in the reticle direction and grabs the hit point (reaches even slightly off-aim). Objects between the camera and the character, and the player's own items, are excluded. The found point is remembered: after the reticle leaves it, it can still be grabbed for GrabGraceSeconds (until the next point is found; the HUD stays green too). A grab press made while grabbing still counts if it came within GrabBufferSeconds before the release: the next object is grabbed right after releasing (no second press needed). For moving objects the remembered point is held as a position on that object. The grabbed point becomes an entity whose SetOrigin is the hit entity, so it follows that object when it moves
+# Ground: grabbing on the ground only attaches the rope and waits (pressing ReelOutAction (aim) while waiting releases the rope without launching); jump lifts by GrabLiftHeightCm and launches with GroundLaunchMultiplier times the airborne momentum (1x when falling off the ground). While grabbing (waiting or swinging), going farther than MaxRangeCm releases (no boost added). Landing later than LandingGraceSeconds after launch returns to waiting (touching the ground before that keeps the swing going)
+# Pendulum: computed here and applied every frame (Tick = the owner's TickEvents.PrePhysics; integrated with the delivered DeltaTime) with SetLinearVelocity. On launch adds GrabKickSpeedCmPerSecond in the direction of motion, SwingStartSpeedCmPerSecond over SwingEaseSeconds, and over AutoReelSeconds after launch reels the rope in, slowing down gradually, to AutoReelRatio (default 2/3) of its length at launch; every frame applies gravity SwingGravityCmPerSecondSquared, steering acceleration toward the look direction SwingSteerAccelerationCmPerSecondSquared and air drag SwingDrag. Only the outward speed along the rope is removed; the excess is pulled back at up to MaxRopeCorrectionSpeedCmPerSecond (the pull-back does not carry over to the next frame). Speed is capped at MaxSwingSpeedCmPerSecond. If hitting a wall or floor changes the actual velocity a lot, resyncs to the actual velocity (velocity is held in the engine unit, meters per second; settings are converted with ToEngineSpeed)
+# Length: while swinging, pressing the grab input again reels in and ReelOutAction (aim) reels out (ReelSpeedCmPerSecond)
+# Multi swing: up to MaxRopes ropes (plus swing_stats.ExtraRopes) can be attached. Pressing the grab input while swinging attaches a rope to the next point if there is room (the press also counts for reeling in). The pendulum pivot is the center of the attached rope points. When a point breaks, gets farther than MaxRangeCm or the grabbed object disappears (checked every frame), only that rope detaches (swing_rope_detached_event); when none is left, releases
+# Following: ropes can also be attached to other agents (not only players: a participant's character or their items). With a rope on another agent, instead of waiting for a jump from the ground, once the distance to them reaches within 50 centimeters of FollowDistanceRatio (default 1/4) times the rope limit (MaxRangeCm), lifts by GrabLiftHeightCm and launches the pendulum from the point on them (follows them as they move; jumping to launch also works). Landing mid-swing and moving apart again launches the same way. A rope on another agent does not detach beyond the limit
+# Pulling the rope: while on the ground, looking through the reticle at a player whose rope is attached to you (their swing_runner answers HasRopeOn; they are found through Registry) passes swing_reel_hint_event{Holder := that player} to Notify (shows the hint; Holder := false when no longer in view), and pressing the grab input calls their ReelToward instead of grabbing. The called side launches at once if waiting on the ground, pauses its pendulum, is pulled straight toward the puller at ReelPullSpeedCmPerSecond for ReelPullLengthCm (or until as close as possible), and its rope shortens by that much. It then returns to the pendulum on the shorter rope. Needs a swing_registry_component in the scope
+# Pull: while a rope is attached to another agent, the strength pulling you back is scaled by PullerCorrectionRatio (a small correction on the pulling side). No force is applied to the other agent (the pulled side)
+# Releasing: holding jump while swinging accelerates in the direction of motion at HoldAccelerationCmPerSecondSquared (speed capped at MaxHoldSpeedCmPerSecond); letting go of jump releases, keeping the momentum and adding ReleaseBoostCmPerSecond in the direction of motion. If the grabbed object breaks (swing_anchor_component.Break) or ForceRelease (swing_ability_component.Release) is called, the swing is cut there (no boost added)
+# Strength: the swing_stats that Registry (swing_registry_component) combines for this agent is re-read only at start and when Registry reports a change in the modifier sources (ModifiersChangedEvent), and is applied to the grab range, speed limit, acceleration, release boost and reel speed (no polling). If grabbing is disallowed, no new grabs are made. On change, passes swing_stats_changed_event to Notify
+# Check interval: leaving the ground, landing, a rope on another agent going taut, and what the reticle points at (grabbable, pullable) have no notification (event), so they are checked every CheckIntervalSeconds (0.1 s)
+# Notifies: while idle, swing_target_changed_event when grabbability changes. Passes to Notify swing_grabbed_event (entity of the grabbed point) on every rope attached, swing_rope_detached_event when only one rope detaches, swing_released_event on release, and swing_state_changed_event when the state (idle / waiting on the ground / pendulum) changes. Sends down to the grabbed object (the hit entity) swing_attached_event on grab, swing_pulled_event on every launch and swing_detached_event on release
+# Placement: created at runtime by swing_ability_component for each granted agent. Entities of grabbed points are created under the ability entity's simulation entity. Registers itself with Registry if present (SetRunner; so pullers can find it). The state is passed to Notify and the ability turns it into tags (swinging_tag subclasses)
 swing_runner := class<unique><internal>:
 
-    # 設定（つかむ・ロープ・離す・加速・振り子・入力）と、知らせの送り元
+    # Settings (grab, rope, release, boost, pendulum, input) and the sender of notifications
     Ability<internal>:swing_ability_component
-    # 知らせ（swing_*_event）を受け取る関数。作った側の component が、自分の entity から送り直す
+    # Function that receives the notifications (swing_*_event). The owning component re-sends them from its own entity
     Notify<internal>:type{_(:agent, :scene_event):void}
-    # 毎フレームの合図（持ち主の component の TickEvents.PrePhysics）。Await の戻り値は前のフレームからの秒数
+    # Per-frame signal (the owning component's TickEvents.PrePhysics). Await returns the seconds since the previous frame
     Tick<internal>:listenable(float)
-    # 区画の台帳（持ち主が 1 回だけ探して渡す）。無ければ false
+    # Scope registry (the owner looks it up once and passes it). false if none
     Registry<internal>:?swing_registry_component
     Agent<internal>:agent
     PlayerInput<internal>:player_input
 
-    # 地面・着地・相手との距離・レティクルを確かめる間隔（秒）。キャラクターの着地やカメラの向きには知らせ（イベント）が無いので、この間隔で確かめる
+    # Interval (seconds) for checking the ground, landing, distance to the other agent and the reticle. Character landing and camera direction have no notification (event), so they are checked at this interval
     CheckIntervalSeconds<private>:float = 0.1
-    # 相手にかけたロープを「張った」とみなす余裕（センチメートル）
+    # Slack (centimeters) within which a rope on another agent counts as taut
     TautSlackCm<private>:float = 50.0
-    # 実際の速度が、最後に入れた速度からこれ（メートル毎秒。エンジンの速度の単位）より変わったら、ぶつかったとみなして合わせ直す
+    # If the actual velocity differs from the last applied one by more than this (meters per second, the engine velocity unit), treat it as a collision and resync
     VelocitySyncThreshold<private>:float = 3.0
 
     var RopeLength<private>:float = 0.0
@@ -89,7 +89,7 @@ swing_runner := class<unique><internal>:
             WatchAim()
             WatchModifiers()
 
-    # つかんでいれば（地面で待つ・振っている）離させる。加速は足さない
+    # If grabbing (waiting on the ground or swinging), forces a release. No boost added
     ForceRelease<internal>():void =
         ForceReleaseEvent.Signal()
 
@@ -589,11 +589,11 @@ swing_runner := class<unique><internal>:
     GetMaxRangeCm<private>()<reads>:float =
         Ability.MaxRangeCm * Stats.RangeScale
 
-    # 設定の速さ・加速（cm/s・cm/s²）を、エンジンの速度（SetLinearVelocity のメートル毎秒）に直す
+    # Converts a speed / acceleration setting (cm/s, cm/s^2) to the engine velocity unit (SetLinearVelocity's meters per second)
     ToEngineSpeed<private>(CmPerSecond:float)<computes>:float =
         CmPerSecond / 100.0
 
-    # 倍率の元が変わったと台帳が知らせたときだけ作り直す（台帳が無ければ倍率は掛からない）
+    # Rebuilds only when the registry reports a change in the modifier sources (without a registry no modifier applies)
     WatchModifiers<private>()<suspends>:void =
         if (Current := Registry?):
             loop:
@@ -613,17 +613,17 @@ swing_runner := class<unique><internal>:
         if (Current := Registry?) then Current.GetStats(Agent) else swing_stats{}
 
 swing_grab<internal> := struct:
-    # つかむ物の entity
+    # Entity of the object to grab
     Target<public>:entity
-    # Target から見た、つかむ点の位置（センチメートル）
+    # Position of the grab point relative to Target (centimeters)
     LocalPosition<public>:vector3
-    # Target がほかの人（のキャラクターか持ち物）ならその人。違えば false
+    # If Target belongs to another agent (their character or item), that agent. Otherwise false
     TargetAgent<public>:?agent = false
 
 swing_rope<internal> := class<unique>:
-    # ロープの点の entity（swing_anchor_component 付き）
+    # Entity of the rope point (with swing_anchor_component)
     Anchor<public>:entity
-    # ロープをかけた物の entity
+    # Entity of the object the rope is attached to
     Target<public>:entity
-    # ほかの人にかけたロープならその人。違えば false
+    # If the rope is attached to another agent, that agent. Otherwise false
     TargetAgent<public>:?agent

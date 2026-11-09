@@ -15,15 +15,15 @@ using { SceneGraphSystem }
 using { SpawnSystem }
 using { _Test }
 
-# 役割：CheckpointSystem の動作確認。最初に参加したプレイヤーの足元にチェックポイント（見た目の無いもの）を作り、乗った知らせ・IsStanding、離した（足場を横へ動かした）ときの降りた知らせ、足場が消えたときの降りた知らせ、checkpoint_presence_component のまとめ（乗っているか・最後に乗ったもの）を確かめる。
-#   重なった 2 つのチェックポイントに乗り、後に乗った方から降りても、まだ先の方に乗っている扱いになること（checkpoint_presence_component）も確かめる。
-#   2 つのチェックポイントをまとめて見ているとき、先に始まった方（毎フレームの確認を回している方）を消しても、残りが確かめ続けることも確かめる。
-#   checkpoint_factory_component の段の選び方と大きさ、EnergyKit の checkpoint_energy_refill_component（乗った知らせでエネルギーを満たす）も確かめる
-# テストのレベル：
-#   - player_manager_component を付けた entity を 1 つ（区画を使うなら、このテストの entity と同じ区画に）
-#   - このテストの component を、平らな床の近くの entity に付ける（プレイヤーは床の上に立ったまま動かない）
-#   - 下から通り抜ける動きは自動では確かめない。ログの [HUMAN] の手順で、人が確かめる
-# 結果：出力ログの [TEST] CheckpointSystem
+# Role: verification of CheckpointSystem. Creates an invisible checkpoint under the feet of the first player that joined and checks the reached notification / IsStanding, the left notification when the platform is moved sideways, the left notification when the platform is disposed, and the summary of checkpoint_presence_component (standing or not / last reached).
+#   Also checks that when standing on 2 overlapping checkpoints and leaving the one reached later, the player still counts as standing on the earlier one (checkpoint_presence_component).
+#   Also checks that when 2 checkpoints are watched together and the one that started first (the one running the per-frame check) is disposed, the rest keeps checking.
+#   Also checks the tier selection and size of checkpoint_factory_component, and EnergyKit's checkpoint_energy_refill_component (fills energy on the reached notification)
+# Test level:
+#   - one entity with player_manager_component (if you use scopes, in the same scope as this test's entity)
+#   - attach this test component to an entity near a flat floor (the player stands still on the floor)
+#   - passing through from below is not checked automatically; a human follows the [HUMAN] steps in the log
+# Result: [TEST] CheckpointSystem in the output log
 checkpoint_system_test_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =
@@ -105,7 +105,7 @@ checkpoint_system_test_component<public> := class<final_super>(component):
         else:
             Results.Fail("setup", "character position not available")
 
-    # 重なった 2 つ（First と Second を同じ足元に）。First → Second の順に乗ってから Second を離すと、まだ First に乗っている扱い（FindStandingCheckpoint は First）。First も離すとどれにも乗っていない
+    # Two overlapping checkpoints (First and Second at the same spot under the feet). After reaching First then Second, leaving Second still counts as standing on First (FindStandingCheckpoint is First). Leaving First too means standing on none
     TestOverlap<private>(Results:test_log, Presence:checkpoint_presence_component, Agent:agent, FortCharacter:fort_character)<suspends>:void =
         if (Feet := FortCharacter.FindGlobalTranslation[]):
             Under := Feet + vector3{Up := -100.0}
@@ -142,7 +142,7 @@ checkpoint_system_test_component<public> := class<final_super>(component):
         else:
             Results.Fail("overlap setup", "character position not available")
 
-    # 2 つのチェックポイント（A は足元、B は離れた所）。A が先に始まるので毎フレームの確認を回す。A を消したあと B を足元へ動かしても乗った知らせが来れば、確認が B に引き継がれている
+    # Two checkpoints (A under the feet, B far away). A starts first, so it runs the per-frame check. If a reached notification still arrives when B is moved under the feet after A is disposed, the check was handed over to B
     TestSharedTracking<private>(Results:test_log, Agent:agent, FortCharacter:fort_character)<suspends>:void =
         if (Feet := FortCharacter.FindGlobalTranslation[]):
             Under := Feet + vector3{Up := -100.0}
@@ -170,11 +170,11 @@ checkpoint_system_test_component<public> := class<final_super>(component):
         else:
             Results.Fail("shared tracking setup", "character position not available")
 
-    # checkpoint_energy_refill_component：乗った知らせ（checkpoint_reached_event）を区画へ送って確かめる（本物は checkpoint_component が送る）
+    # checkpoint_energy_refill_component: checked by sending the reached notification (checkpoint_reached_event) to the scope (the real one is sent by checkpoint_component)
     TestEnergyRefill<private>(Results:test_log, Agent:agent)<suspends>:void =
         Dummy := checkpoint_component{Entity := entity{}}
 
-        # 1. 同じ entity の energy_component を満たす。同じ entity の能力を付与されていない人では満たさない
+        # 1. Fills the energy_component on the same entity. Does not fill for an agent not granted the ability on the same entity
         SharedEntity := entity{}
         SharedEnergy := energy_component{Entity := SharedEntity, MaxEnergy := 100.0}
         SharedRefill := checkpoint_energy_refill_component{Entity := SharedEntity}
@@ -194,7 +194,7 @@ checkpoint_system_test_component<public> := class<final_super>(component):
         Ability.RevokeAll()
         SharedEntity.RemoveFromParent()
 
-        # 2. この entity に energy_component が無ければ、乗った人（agent）のエネルギーを満たす
+        # 2. When this entity has no energy_component, fills the energy of the agent that reached it
         AgentEnergy := energy_component{Entity := Agent, MaxEnergy := 100.0}
         Agent.AddComponents(array{AgentEnergy})
         RefillEntity := entity{}
@@ -220,7 +220,7 @@ checkpoint_system_test_component<public> := class<final_super>(component):
         else:
             false
 
-    # Agent のキャラクターが床に立つまで待つ（10 秒まで）
+    # Wait until Agent's character stands on the floor (up to 10 seconds)
     AwaitOnGround<private>(Agent:agent)<suspends>:?fort_character =
         var Waited:float = 0.0
         var Result:?fort_character = false

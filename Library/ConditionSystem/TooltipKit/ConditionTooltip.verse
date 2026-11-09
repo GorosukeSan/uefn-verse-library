@@ -1,2 +1,2 @@
-EventConditionCategory<public><localizes>:message = "受けた知らせ"
-EventTypeToolTip<public><localizes>:message = "この型の scene_event（その派生も）がこの entity に届いたら、条件を満たします。起動の合図で満たさない状態に戻ります。既定の no_scene_event はどこからも送られないので、選ぶまで満たしません。"
+EventConditionCategory<public><localizes>:message = "Received event"
+EventTypeToolTip<public><localizes>:message = "The condition is satisfied when a scene_event of this type (or a subclass) reaches this entity. It returns to unsatisfied on the activation signal. The default no_scene_event is never sent by anyone, so the condition is not satisfied until you pick a type."

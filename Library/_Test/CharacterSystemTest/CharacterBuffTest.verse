@@ -7,11 +7,11 @@ using { CharacterSystem.BuffKit }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：CharacterSystem の変更（character_motor_component.AddModifier）と BuffKit（character_buff_component・character_move_grant_component）の動作確認
-#   持ち主のいない体を作り、AddModifier の倍率が掛け合わせになること・Cancel で元に戻ること（2 回目の Cancel は何もしない）、
-#   体の子に置いた character_buff_component / character_move_grant_component が起動の合図で重ね、停止の合図と entity を消したときに外すことを見る
-# テストのレベル：この component を付けた entity を 1 つ（プレイヤーは要らない。体は宙に作って重力を 0 にする）
-# 結果：出力ログの [TEST] CharacterBuff。約 1 秒
+# Role: verification of CharacterSystem modifiers (character_motor_component.AddModifier) and BuffKit (character_buff_component / character_move_grant_component)
+#   Creates an ownerless body and checks that AddModifier multipliers multiply together and that Cancel restores them (a second Cancel does nothing),
+#   and that character_buff_component / character_move_grant_component placed under the body stack on the activate signal and are removed on the deactivate signal and when the entity is disposed
+# Test level: one entity with this component (no player needed; the body is created in the air with gravity 0)
+# Result: [TEST] CharacterBuff in the output log. About 1 second
 character_buff_test_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =
@@ -25,7 +25,7 @@ character_buff_test_component<public> := class<final_super>(component):
         Sleep(0.0)
         Motor.SetGravityScale(0.0)
 
-        # AddModifier：掛け合わせと Cancel
+        # AddModifier: multiplication and Cancel
         First := Motor.AddModifier(character_modifier{SpeedMultiplier := 1.5, ExtraAirJumps := 1})
         Second := Motor.AddModifier(character_modifier{SpeedMultiplier := 2.0, GravityMultiplier := 0.5, GrantsDash := true})
         Results.CheckFloat("speed multiplies", Motor.GetSpeedMultiplier(), 3.0, 0.001)
@@ -40,7 +40,7 @@ character_buff_test_component<public> := class<final_super>(component):
         Results.CheckInt("all canceled", Motor.GetModifierCount(), 0)
         Results.CheckFloat("back to 1", Motor.GetSpeedMultiplier(), 1.0, 0.001)
 
-        # BuffKit：体の子に置いて、起動・停止の合図で重ねる・外す
+        # BuffKit: placed under the body; stacked / removed by the activate / deactivate signals
         Holder := entity{}
         Buff := character_buff_component{Entity := Holder, SpeedMultiplier := 1.5, JumpMultiplier := 1.4}
         Grant := character_move_grant_component{Entity := Holder, ExtraAirJumps := 2, GrantDash := true}

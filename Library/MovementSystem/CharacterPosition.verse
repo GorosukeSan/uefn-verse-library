@@ -3,16 +3,16 @@ using { /Verse.org/SpatialMath }
 using { /Fortnite.com/Characters }
 using { SceneGraphSystem }
 
-# キャラクターの位置と速度を、Verse の座標（Forward・Left・Up）とセンチメートルで扱う。
+# Handle the character's position and velocity in Verse coordinates (Forward / Left / Up) and centimeters.
 
-# キャラクターの entity の世界での位置（センチメートル。entity の原点で、足元ではない）。entity が取れなければ失敗する
+# World position of the character's entity (centimeters; the entity origin, not the feet). Fails if the entity cannot be obtained
 (FortCharacter:fort_character).FindGlobalTranslation<public>()<decides><transacts>:vector3 =
     FortCharacter.GetEntity[].GetGlobalTranslation()
 
-# キャラクターの速度（センチメートル毎秒）。fort_character.GetLinearVelocity はメートル毎秒なので 100 倍する
+# Character velocity (centimeters per second). fort_character.GetLinearVelocity is in meters per second, so multiply by 100
 (FortCharacter:fort_character).GetVelocityCmPerSecond<public>()<reads>:vector3 =
     FortCharacter.GetLinearVelocity() * 100.0
 
-# キャラクターの速度を決める（センチメートル毎秒）。fort_character.SetLinearVelocity はメートル毎秒なので 100 で割って渡す
+# Set the character velocity (centimeters per second). fort_character.SetLinearVelocity takes meters per second, so divide by 100
 (FortCharacter:fort_character).SetVelocityCmPerSecond<public>(VelocityCmPerSecond:vector3):void =
     FortCharacter.SetLinearVelocity(VelocityCmPerSecond / 100.0)

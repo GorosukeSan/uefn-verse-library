@@ -3,31 +3,31 @@ using { /Verse.org/Simulation }
 using { ActivationSystem }
 using { SceneGraphSystem }
 
-# 同じ人の view どうしで知らせを渡す包み
-# 方向：slot の entity から下へ（SendDown）。player_view_set.SendToPlayer で送る
-# 受け手：同じ人の slot の下にある view。消費しない
+# Wrapper that passes a notification between the views of the same player
+# Direction: downward from the slot's entity (SendDown). Sent with player_view_set.SendToPlayer
+# Receivers: the views under the same player's slot. Not consumed
 player_event<public> := class(scene_event):
-    # 送った view（component）
+    # The view (component) that sent it
     Sender<public>:component
-    # 渡す知らせ（受けた view はこの中身を見る）
+    # The notification being passed (the receiving view looks at this content)
     Event<public>:scene_event
 
-# view を作った component から、その view へ知らせを渡す包み
-# 方向：player_view_set が作った view の entity へ（SendDown）。player_view_set.SendToViews で送る
-# 受け手：その view。消費しない
+# Wrapper that passes a notification from the component that created the view to that view
+# Direction: to the entity of a view created by player_view_set (SendDown). Sent with player_view_set.SendToViews
+# Receivers: that view. Not consumed
 player_view_source_event<public> := class(scene_event):
-    # view を作った側（player_view_set を持つ component）から渡された知らせ
+    # The notification passed from the creator side (the component that holds the player_view_set)
     Event<public>:scene_event
 
-# player_view_set がだれに view を作ってよいかを決める窓口（Activate の ViewFilter に渡す）
-# 実装する側：player_widget_component など、だれに見せてよいかの条件を持つもの
+# Interface that decides whom a player_view_set may create a view for (passed to Activate's ViewFilter)
+# Implemented by: player_widget_component and other things that have a condition on whom they may be shown to
 player_view_filter<public> := interface:
-    # Agent に view を作ってよいなら成功する
+    # Succeeds if a view may be created for Agent
     AllowsView<public>(Agent:agent)<decides><transacts>:void
 
-# 役割：起動しているあいだ、区画の全プレイヤーの slot の下に 1 人分の view（entity）を作り、停止で消す部品。途中参加の人にも作り、退出した人の分は slot ごと世界から外れる（view の component は OnEndSimulation を通る。GetViews などからも除く）
-# 使い方：component のフィールドに player_view_set{} を持ち、OnReceive で HandleActivation、OnEndSimulation で Deactivate を呼ぶ（継承はしない）。view は CreateView 関数が作る普通の component
-# 前提：区画（または世界）に player_manager_component が 1 つ
+# Role: while active, creates one view (entity) per player under every player slot of the scope and removes them on deactivation. Also creates for players who join later; the views of players who leave are removed from the world together with the slot (the view's component goes through OnEndSimulation; also dropped from GetViews etc.)
+# Usage: hold a player_view_set{} in a component field, call HandleActivation from OnReceive and Deactivate from OnEndSimulation (no inheritance). A view is an ordinary component created by the CreateView function
+# Requirements: one player_manager_component in the scope (or world)
 player_view_set<public> := class<unique>:
 
     var<private> Views:[]entity = array{}
@@ -38,20 +38,20 @@ player_view_set<public> := class<unique>:
     var<private> Manager:?player_manager_component = false
     var<private> Filter:?player_view_filter = false
 
-    # 起動しているあいだ（Activate から Deactivate まで）成功する
+    # Succeeds while active (from Activate to Deactivate)
     IsActive<public>()<decides><transacts>:void =
         Active?
 
-    # 今ある view の entity（世界に入っているものだけ。退出した人・HideFor で消した人の分は含まない。並び順は決まっていない）
+    # Entities of the current views (only those in the world; excludes players who left and players hidden with HideFor. Order is undefined)
     GetViews<public>()<transacts>:[]entity =
         for (View : Views, View.GetSimulationEntity[]):
             View
 
-    # Owner の区画の player_manager_component を探し、今いる全員の slot の下に CreateView で view を作り、以後の参加も待つ。もう起動していれば何もしない
-    # Everyone が false なら、だれにも作らずに起動だけする（ShowFor で決めた人にだけ作る。途中参加の人にも作らない）
-    # ViewFilter を渡すと、ViewFilter が許す人にだけ作る（全員にも、ShowFor でも。許されない人は何もしない）
-    # player_manager_component が見つからないと、起動した扱いにはなるが view は作らない（参加も待たない。1 回 Print する）
-    # 退出した人の view は、manager の退出の知らせ（PlayerRemovedEvent）で覚えている一覧から除く
+    # Finds the player_manager_component of Owner's scope, creates a view with CreateView under every current slot and waits for later joins. Does nothing if already active
+    # If Everyone is false, activates without creating for anyone (creates only for players chosen with ShowFor; not for later joins either)
+    # If ViewFilter is given, creates only for players the ViewFilter allows (both for everyone and for ShowFor. Nothing is done for disallowed players)
+    # If no player_manager_component is found, counts as activated but creates no views (and does not wait for joins. Prints once)
+    # The view of a player who left is dropped from the remembered list on the manager's leave notification (PlayerRemovedEvent)
     Activate<public>(Owner:entity, MakeView:type{_(:entity, :player_slot_component):component}, ?Everyone:logic = true, ?ViewFilter:?player_view_filter = false):void =
         if (Active?):
             return
@@ -66,9 +66,9 @@ player_view_set<public> := class<unique>:
                 for (Slot : Found.GetSlots()):
                     Attach(Slot)
         else:
-            Print("[player_view_set] player_manager_component が区画（または世界）に見つかりません。view を作りません")
+            Print("[player_view_set] No player_manager_component found in the scope (or the world). No views are created")
 
-    # 作った view をすべて消し、参加を待つのをやめる。起動していなければ何もしない
+    # Removes every created view and stops waiting for joins. Does nothing if not active
     Deactivate<public>():void =
         if (not Active?):
             return
@@ -83,14 +83,14 @@ player_view_set<public> := class<unique>:
             View.RemoveFromParent()
         set Views = array{}
 
-    # SceneEvent が activated_event なら Activate、deactivated_event なら Deactivate する。それ以外は何もしない。component の OnReceive から呼ぶ
+    # Activate if SceneEvent is an activated_event, Deactivate if it is a deactivated_event. Otherwise does nothing. Call from the component's OnReceive
     HandleActivation<public>(SceneEvent:scene_event, Owner:entity, MakeView:type{_(:entity, :player_slot_component):component}):void =
         if (activated_event[SceneEvent]):
             Activate(Owner, MakeView)
         else if (deactivated_event[SceneEvent]):
             Deactivate()
 
-    # Agent の view があれば返す。起動していない・参加していない・HideFor で消しているときは失敗する
+    # Returns Agent's view if there is one. Fails when not active, when Agent has not joined, or when hidden with HideFor
     FindViewFor<public>(Agent:agent)<decides><transacts>:entity =
         first:
             View : GetViews()
@@ -99,13 +99,13 @@ player_view_set<public> := class<unique>:
         do:
             View
 
-    # Agent の view を消す（その人だけ止める）。起動中なら、ShowFor で作り直せる。view が無ければ何もしない
+    # Removes Agent's view (stops it for that player only). While active, ShowFor can recreate it. Does nothing if there is no view
     HideFor<public>(Agent:agent):void =
         if (View := FindViewFor[Agent]):
             View.RemoveFromParent()
             set Views = GetViews()
 
-    # 起動中で、Agent が参加していて view が無ければ作る（HideFor で消した人を戻す）。それ以外は何もしない
+    # If active, Agent has joined and has no view, creates one (brings back a player hidden with HideFor). Otherwise does nothing
     ShowFor<public>(Agent:agent):void =
         if:
             Active?
@@ -116,7 +116,7 @@ player_view_set<public> := class<unique>:
         then:
             Attach(Slot)
 
-    # 今ある view の entity すべてへ、player_view_source_event{Event := SceneEvent} を送る（view は OnReceive で受ける）
+    # Sends player_view_source_event{Event := SceneEvent} to every current view entity (views receive it in OnReceive)
     SendToViews<public>(SceneEvent:scene_event):void =
         for (View : GetViews()):
             View.SendDown(player_view_source_event{Event := SceneEvent})
@@ -125,7 +125,7 @@ player_view_set<public> := class<unique>:
         if (Active?, Found := Manager?, Slot := Found.FindSlot[Player]):
             Attach(Slot)
 
-    # 退出した人の view を一覧から除く（view の entity は slot ごと世界から外れている）
+    # Drop the view of a player who left from the list (the view entity has already left the world together with the slot)
     OnPlayerRemoved<private>(Player:player):void =
         set Views = for (View : Views, Slot := View.GetParent[].GetComponent[player_slot_component], Slot.Player <> Player):
             View
@@ -141,12 +141,12 @@ player_view_set<public> := class<unique>:
         if (Check := Filter?, not Check.AllowsView[Agent]):
             false?
 
-# View（slot の下の view の component）と同じ人の slot の下へ、player_event{Sender := View, Event := SceneEvent} を送る。同じ人のほかの view が OnReceive で受ける
-# View が slot の下に無い（親が無い）ときは何もしない
+# Sends player_event{Sender := View, Event := SceneEvent} down from the slot of the same player as View (a view component under a slot). The player's other views receive it in OnReceive
+# Does nothing when View is not under a slot (has no parent)
 (View:component).SendToPlayer<public>(SceneEvent:scene_event):void =
     if (Slot := View.Entity.GetParent[]):
         Slot.SendDown(player_event{Sender := View, Event := SceneEvent})
 
-# View の entity の親（slot）の player_slot_component を返す。view 以外では失敗する
+# Returns the player_slot_component of the parent (slot) of View's entity. Fails for anything other than a view
 (View:component).FindViewSlot<public>()<decides><transacts>:player_slot_component =
     View.Entity.GetParent[].GetComponent[player_slot_component]

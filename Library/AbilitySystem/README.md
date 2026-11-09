@@ -1,82 +1,82 @@
 # AbilitySystem
 
-1 人ずつに「能力」を付与・剥奪する仕組みの基底です。能力そのものは `ability_component` の派生として各 System にあり、だれにいつ付与するかは同じ entity に置く付与の component（GrantKit）かコードで決めます。能力の側は付与の仕方を知りません。
+The base of the mechanism that grants and revokes "abilities" per player. The abilities themselves live in each System as `ability_component` subclasses; who gets them and when is decided by a grant component (GrantKit) on the same entity or by code. The ability side knows nothing about how it is granted.
 
-## 置き方
+## Placement
 
-| component | 置く場所 | すること |
+| component | Where to place | What it does |
 |---|---|---|
-| `ability_component` の派生 | 能力の entity。直接は置かない（派生を置く）。1 entity に何個置いてもよい | 付与されているあいだ、その人について派生の `RunFor` を動かし、剥奪されると止める |
-| `ability_grant_players_component`（GrantKit） | 能力と同じ entity | 区画の全プレイヤー（途中参加も）に、同じ entity の能力すべてを付与する。退出した人からは剥奪する。持ち主のいる entity なら持ち主にだけ |
-| `ability_grant_item_component`（GrantKit） | アイテムの entity（`item_component`・`item_holder_component`・能力と同じ entity） | アイテムの持ち手（`item_holder_component` が決める）に付与し、外れたら剥奪する |
-| `ability_grant_condition_component`（GrantKit） | 能力と同じ entity。直下の子に条件を 1 つ | 条件を満たしているあいだ、区画の全プレイヤー（持ち主のいる entity なら持ち主）に付与する。満たさなくなったら剥奪する |
+| an `ability_component` subclass | the ability's entity. Never placed directly (place a subclass). Any number per entity | while granted, runs the subclass's `RunFor` for that player and stops it when revoked |
+| `ability_grant_players_component` (GrantKit) | the same entity as the ability | grants every ability on the same entity to every player in the scope (including late joiners). Revokes from players who leave. On an entity with an owner, grants only to the owner |
+| `ability_grant_item_component` (GrantKit) | the item's entity (the same entity as `item_component`, `item_holder_component` and the ability) | grants to the item's holder (decided by `item_holder_component`) and revokes when it is dropped |
+| `ability_grant_condition_component` (GrantKit) | the same entity as the ability, with one condition as a direct child | grants to every player in the scope (or the owner on an entity with an owner) while the condition holds. Revokes when it no longer holds |
 
-能力の派生：`swing_ability_component`（SwingSystem）、`jetpack_ability_component`（JetpackSystem）、`hover_ability_component`（HoverSystem）、`gravity_point_ability_component`（GravitySystem）、`energy_restore_ability_component`（EnergySystem / RestoreKit）。
+Ability subclasses: `swing_ability_component` (SwingSystem), `jetpack_ability_component` (JetpackSystem), `hover_ability_component` (HoverSystem), `gravity_point_ability_component` (GravitySystem), `energy_restore_ability_component` (EnergySystem / RestoreKit).
 
-例：「このノードにいるあいだ全員がスイングできる。ロードアウトを付けた人は、しゃがんでいるあいだだけホバーできる」
+Example: "everyone can swing while in this node. Players with the loadout can hover only while crouching"
 ```
-ノード（game_node_component）
-└ スイング（swing_ability_component + ability_grant_players_component（GrantOnBegin = false））
+Node (game_node_component)
+└ Swing (swing_ability_component + ability_grant_players_component (GrantOnBegin = false))
 
-ロードアウトのプレハブ（LoadoutSystem の loadout_component.Prefab）
-└ ホバー（hover_ability_component + ability_grant_condition_component）
-  └ しゃがみ（player_state_condition_component（PlayerSystem / MotionKit）、State = Crouching）
+Loadout prefab (LoadoutSystem's loadout_component.Prefab)
+└ Hover (hover_ability_component + ability_grant_condition_component)
+  └ Crouching (player_state_condition_component (PlayerSystem / MotionKit), State = Crouching)
 ```
-ロードアウトの中なので、ホバーは持ち主にだけ付与されます。
-アイテムにするなら、能力の entity に `item_component`・`item_holder_component`・`ability_grant_item_component` を一緒に付けます。
+Because it is inside the loadout, hover is granted only to the owner.
+To make it an item, attach `item_component`, `item_holder_component` and `ability_grant_item_component` to the ability's entity as well.
 
-## 設定（@editable）
-- `ability_grant_players_component.GrantOnBegin : logic = true` — オンなら、シミュレーション開始から（参加したらすぐ）付与する。オフなら起動の合図（ゲームの流れなら、このノードに入ったとき）から停止の合図まで付与する。
+## Settings (@editable)
+- `ability_grant_players_component.GrantOnBegin : logic = true` — when on, grants from the start of the simulation (as soon as a player joins). When off, grants from the activation signal (in a game sequence, when this node is entered) until the deactivation signal.
 
-`ability_grant_item_component` と `ability_grant_condition_component` に設定はありません（持ち手は `item_holder_component`、条件は直下の子の `condition_component` が決めます）。
+`ability_grant_item_component` and `ability_grant_condition_component` have no settings (the holder is decided by `item_holder_component`, the condition by the `condition_component` directly under it).
 
-## イベント
-- scene_event は送りません。
-- `ability_component.GrantedEvent : listenable(agent)` — 付与されて `RunFor` を始めたとき（付与の回数が 0 → 1）。
-- `ability_component.RevokedEvent : listenable(agent)` — すべての付与元から剥奪されて止めたとき（回数が 0 になったとき、`RevokeAll`）。
-- 受けるもの：`ability_grant_players_component` は `activated_event`（付与を始める）と `deactivated_event`（自分が付与した人から剥奪する）。消費しない。`GrantOnBegin` がオンでも、この合図には反応します。
-- 見るもの：`ability_grant_item_component` は `item_holder_component.HolderAddedEvent` / `HolderRemovedEvent`、`ability_grant_condition_component` は子の条件の `ChangedEvent`。
+## Events
+- No scene_event is sent.
+- `ability_component.GrantedEvent : listenable(agent)` — when granted and `RunFor` started (grant count 0 → 1).
+- `ability_component.RevokedEvent : listenable(agent)` — when revoked by every granter and stopped (count reached 0, `RevokeAll`).
+- Received: `ability_grant_players_component` takes `activated_event` (start granting) and `deactivated_event` (revoke from the players it granted). Not consumed. It reacts to these signals even when `GrantOnBegin` is on.
+- Watched: `ability_grant_item_component` watches `item_holder_component.HolderAddedEvent` / `HolderRemovedEvent`, `ability_grant_condition_component` watches the child condition's `ChangedEvent`.
 
-## 持ち主
-- `ability_grant_players_component` と `ability_grant_condition_component` は、自分の entity が持ち主のいる場所（プレイヤーの slot の下。ロードアウトの中など）にあれば（`FindOwningPlayer[]` が成功すれば）、持ち主にだけ付与します。区画の全員には付与せず、参加・退出も見ません。
-- 持ち主がいなければ、区画（または世界）の `player_manager_component` の全員（途中参加も）に付与し、退出した人から剥奪します。
-- `ability_grant_item_component` は持ち主を見ません。付与する相手はアイテムの持ち手です。
-- 持ち主は付与を始めるとき（`Start`）に探します。
+## Owner
+- When the entity of `ability_grant_players_component` or `ability_grant_condition_component` is somewhere with an owner (under a player's slot, inside a loadout, etc.; `FindOwningPlayer[]` succeeds), they grant only to the owner. They do not grant to everyone in the scope and do not watch joins and leaves.
+- Without an owner, they grant to everyone (including late joiners) in the `player_manager_component` of the scope (or the world) and revoke from players who leave.
+- `ability_grant_item_component` does not look at the owner. It grants to the item's holder.
+- The owner is looked up when granting starts (`Start`).
 
-## 公開 API
+## Public API
 ```verse
 ability_component<public> := class<abstract><final_super>(component):
     GrantedEvent<public><final>:listenable(agent)
     RevokedEvent<public><final>:listenable(agent)
-    RunFor<protected>(Agent:agent)<suspends>:void         # 派生が実装する。剥奪されると race で止められる
-    Grant<public>(Agent:agent):void                        # 付与の回数を 1 増やす。0 → 1 で RunFor を始める
-    Revoke<public>(Agent:agent):void                       # 付与の回数を 1 減らす。0 になったら止める。付与されていなければ何もしない
-    RevokeAll<public>():void                               # 回数にかかわらず全員から剥奪する
+    RunFor<protected>(Agent:agent)<suspends>:void         # implemented by the subclass. Canceled by a race when revoked
+    Grant<public>(Agent:agent):void                        # increments the grant count. Starts RunFor on 0 → 1
+    Revoke<public>(Agent:agent):void                       # decrements the grant count. Stops at 0. Does nothing if not granted
+    RevokeAll<public>():void                               # revokes from everyone regardless of the count
     IsGranted<public>(Agent:agent)<decides><transacts>:void
-    GetGrantedAgents<public>()<transacts>:[]agent          # 並び順は決まっていない
+    GetGrantedAgents<public>()<transacts>:[]agent          # order is unspecified
 
-(InEntity:entity).GetAbilities<public>()<reads>:[]ability_component   # InEntity に付いている能力すべて
+(InEntity:entity).GetAbilities<public>()<reads>:[]ability_component   # every ability attached to InEntity
 
 # GrantKit
 ability_grant_players_component<public> := class<final_super>(component):
     GrantOnBegin<public>:logic
-    IsGranting<public>()<decides><transacts>:void          # 付与しているあいだ成功
+    IsGranting<public>()<decides><transacts>:void          # succeeds while granting
 
 ability_grant_item_component<public> := class<final_super>(component):
 
 ability_grant_condition_component<public> := class<final_super>(component):
-    IsGranting<public>()<decides><transacts>:void          # 条件を満たして付与しているあいだ成功
+    IsGranting<public>()<decides><transacts>:void          # succeeds while the condition holds and it is granting
 ```
 
-## 前提・注意
-- 同じ人に複数の付与元から付与されても `RunFor` は 1 つだけ動きます。付与の回数を数え、すべて剥奪されたときに止めます。`Revoke` を 1 回呼んでも、ほかの付与元の分が残っていれば止まりません。
-- 付与の component は、自分が付与した人だけを覚えて剥奪します（ほかの付与元の分には触りません）。同じ entity の付与の component は、その entity の能力すべてを付与します。
-- `RunFor` の後片付けは `RunFor` の中の `defer` で行います（剥奪で race により止められるため）。`RunFor` が戻ると、付与が続いていても能力はそこで終わります。
-- 剥奪してすぐ付与し直しても、前の `RunFor` は止まり、新しい `RunFor` が始まります（人ごとの番号で見分ける）。
-- `ability_grant_players_component` と `ability_grant_condition_component` は、持ち主がいないとき区画（または世界）に `player_manager_component` が 1 つ要ります。`ability_grant_item_component` は同じ entity に `item_holder_component` が要ります。`ability_grant_condition_component` は直下の子に条件が要ります（複数の条件は `condition_all` / `condition_any` でまとめる）。これらが無いときは何もしません（出力ログにも出ません）。
-- シミュレーションの終わり（`OnEndSimulation`）に、能力は全員から剥奪し、付与の component は自分の分を剥奪します。
-- この System のコードに `⚠ 未検証` の項目と `@experimental` の API はありません。
+## Requirements, caveats and limits
+- Even when several granters grant to the same player, only one `RunFor` runs. The grant count is tracked and it stops when every grant is revoked. A single `Revoke` does not stop it while other granters' grants remain.
+- A grant component remembers and revokes only the players it granted itself (it never touches other granters' grants). A grant component grants every ability on its entity.
+- Clean-up for `RunFor` is done with `defer` inside `RunFor` (because a revoke cancels it through a race). When `RunFor` returns, the ability ends there even if the grant continues.
+- Revoking and re-granting right away stops the previous `RunFor` and starts a new one (told apart by a per-player generation number).
+- `ability_grant_players_component` and `ability_grant_condition_component` need one `player_manager_component` in the scope (or the world) when there is no owner. `ability_grant_item_component` needs `item_holder_component` on the same entity. `ability_grant_condition_component` needs a condition as a direct child (combine several with `condition_all` / `condition_any`). Without these they do nothing (and nothing appears in the output log).
+- At the end of the simulation (`OnEndSimulation`), abilities revoke from everyone and grant components revoke their own grants.
+- The code of this System has no `⚠ Unverified` items and no `@experimental` API.
 
-## 確かめ方
-- テスト：`_Test/AbilitySystemTest/` の `ability_system_test_component`。`player_manager_component` を付けた entity を 1 つ置き、テスト用の entity に `ability_system_test_component` と `ability_test_probe_component` を付けます（付与の component は付けない）。別の entity に `ability_test_probe_component` と `ability_grant_players_component`（`GrantOnBegin = true`）を付け、その entity を `GrantedByPlayers` に入れます。最初に参加したプレイヤーで、コードからの `Grant` / `Revoke` と回数の数え方、`GrantedEvent` / `RevokedEvent`、`RevokeAll`、`ability_grant_players_component` が参加者に 1 回ずつ付与することを確かめます。持ち主のいる形と、item / condition の付与はテストしていません。結果は出力ログの `[TEST] AbilitySystem`。
-- 見本：`_Samples/AbilitySample/` の `ability_sample_component`。能力の component（swing / jetpack / hover / gravity_point など）を 1 つ以上付けた entity に付けます（付与の component は任意。区画に `player_manager_component` が 1 つ）。開始時に同じ entity の能力と付与の component を出力ログに一覧し、`GrantedEvent` / `RevokedEvent` を Print します。`ToggleAction`（既定 `NextTab`、E / RB。`MenuNavigationMapping`）を押すと、自分への `Grant` / `Revoke` を切り替えます。`StartOnBegin` オフなら起動の合図から動きます。
+## Verifying
+- Test: `ability_system_test_component` in `_Test/AbilitySystemTest/`. Place one entity with `player_manager_component`, and attach `ability_system_test_component` and `ability_test_probe_component` to a test entity (no grant component). Attach `ability_test_probe_component` and `ability_grant_players_component` (`GrantOnBegin = true`) to another entity and put that entity into `GrantedByPlayers`. With the first player who joins, it checks `Grant` / `Revoke` from code and the counting, `GrantedEvent` / `RevokedEvent`, `RevokeAll`, and that `ability_grant_players_component` grants once to each participant. The owner form and the item / condition grants are not tested. Results go to the output log as `[TEST] AbilitySystem`.
+- Sample: `ability_sample_component` in `_Samples/AbilitySample/`. Attach it to an entity with one or more ability components (swing / jetpack / hover / gravity_point, etc.) (a grant component is optional; one `player_manager_component` in the scope). At start it lists the abilities and grant components on the same entity in the output log and Prints `GrantedEvent` / `RevokedEvent`. Pressing `ToggleAction` (default `NextTab`, E / RB, `MenuNavigationMapping`) toggles `Grant` / `Revoke` on yourself. With `StartOnBegin` off, it starts on the activation signal.

@@ -3,44 +3,44 @@ using { /Verse.org/Simulation }
 using { SceneGraphSystem }
 using { EnergySystem.TooltipKit }
 
-# エネルギーの量が変わった知らせ
-# 方向：energy_component の entity から上へ（SendUp）。前に知らせた量から変わったときだけ送る（Spend[] で減らしたときは、同じフレームの物理のあと（TickEvents.PostPhysics）に送る）
-# 受け手：祖先（アイテムなら持ち主のプレイヤーまで）。消費しない
+# Notification that the energy amount changed
+# Direction: from the energy_component's entity upward (SendUp). Sent only when the amount differs from the last notified one (after a Spend[], sent after physics in the same frame (TickEvents.PostPhysics))
+# Receivers: ancestors (for an item, up to the owning player). Not consumed
 energy_changed_event<public> := class(scene_event):
-    # 送った energy_component（割合は Energy.GetRatio()、最大は Energy.GetMax()）
+    # The energy_component that sent it (ratio via Energy.GetRatio(), max via Energy.GetMax())
     Energy<public>:energy_component
-    # 変わったあとの量（0〜最大）
+    # The amount after the change (0 to max)
     Amount<public>:float
-    # 前に知らせた量からの差。増えたらプラス、減ったらマイナス
+    # Difference from the last notified amount. Positive when increased, negative when decreased
     Delta<public>:float
 
-# 役割：エネルギーの量を持つ。StartFull なら満タンで、そうでなければ 0 で始まる。量が変わると energy_changed_event を上へ知らせる
-# 置き方：エディターで entity に付ける（エネルギーを使う能力・アイテムの entity か、その子）。プレイヤーごとに持たせるなら、実行時にプレイヤー（agent の entity）に付ける（能力は FindEnergyFor で探す）
-# 外から：Consume / Restore / SetAmount / Fill / SetMax で量を変える（変わったらすぐ energy_changed_event と ChangedEvent）。足りるときだけ減らすなら if (Energy.Spend[10.0]) と書く（足りなければ失敗して何も変えない。知らせは同じフレームの物理のあと）
-#   量は 0〜最大（GetMax）に丸める。MaxEnergy はエディターで決める最初の最大で、SetMax で変えた後の最大は GetMax で読む
-# いつ：TickEvents.PostPhysics を購読し、Spend[] で減らした分の知らせを送る（Spend[] を呼ばなかったフレームは何もしない）
-# ⚠ 未検証：PrePhysics や OnSimulate の中で Spend[] したとき、その同じフレームの PostPhysics で知らせが届くか（UEFN 実機。遅れても次のフレーム）
+# Role: holds an amount of energy. Starts full with StartFull, otherwise at 0. Sends energy_changed_event upward when the amount changes
+# Placement: attach to an entity in the editor (the entity of the ability or item that uses energy, or a child of it). For per-player energy, attach it at run time to the player (the agent's entity) (abilities find it with FindEnergyFor)
+# From outside: change the amount with Consume / Restore / SetAmount / Fill / SetMax (energy_changed_event and ChangedEvent at once on a change). To subtract only when there is enough, write if (Energy.Spend[10.0]) (fails and changes nothing when not enough; notifies after physics in the same frame)
+#   The amount is clamped to 0..max (GetMax). MaxEnergy is the initial max set in the editor; after SetMax, read the max with GetMax
+# When: subscribes to TickEvents.PostPhysics and sends the notification for what Spend[] subtracted (nothing on frames without a Spend[])
+# ⚠ Unverified: whether a Spend[] inside PrePhysics or OnSimulate is notified in the PostPhysics of that same frame (in UEFN; at worst the next frame)
 energy_component<public> := class<final_super>(component):
 
-    # エディターで決める最初の最大量（既定 100.0）。SetMax で変えたあとの最大は GetMax で読む
+    # Initial maximum set in the editor (default 100.0). After SetMax, read the max with GetMax
     @editable_number(float):
         ToolTip := MaxEnergyToolTip
         Categories := array{EnergyCategory, EnergyAmountCategory}
         MinValue := option{1.0}
         MaxValue := option{10000.0}
     MaxEnergy<public>:float = 100.0
-    # true（既定）なら満タンで始める。false なら 0 で始める（チェックポイントや回復で満たしてから使う）
+    # true (default) starts full. false starts at 0 (fill it with a checkpoint or a restore before use)
     @editable:
         ToolTip := EnergyStartFullToolTip
         Categories := array{EnergyCategory, EnergyAmountCategory}
     StartFull<public>:logic = true
 
-    # 今の量（0〜最大）。シミュレーション開始前に量を変える関数を呼んでいなければ 0.0
+    # Current amount (0 to max). 0.0 if no amount-changing function was called before the simulation started
     var<private> CurrentAmount<public>:float = 0.0
 
     ChangedEventInternal<private><final>:event(float) = event(float){}
 
-    # 量が変わるたびに、変わったあとの量で届く（energy_changed_event と同じタイミング）（Await / Subscribe する。外から Signal はできない）
+    # Fires with the new amount each time it changes (same timing as energy_changed_event) (Await / Subscribe; cannot be signaled from outside)
     ChangedEvent<public><final>:listenable(float) = MakeProxyListenable(ChangedEventInternal)
 
     var Initialized<private>:logic = false
@@ -59,24 +59,24 @@ energy_component<public> := class<final_super>(component):
         set FlushSubscription = false
         (super:)OnEndSimulation()
 
-    # 今の最大。SetMax を呼ぶまでは MaxEnergy と同じ
+    # Current maximum. Same as MaxEnergy until SetMax is called
     GetMax<public>()<reads>:float =
         if (Override := MaxOverride?) then Override else MaxEnergy
 
-    # 量が 0 以下なら成功する
+    # Succeeds if the amount is 0 or less
     IsEmpty<public>()<decides><reads>:void =
         CurrentAmount <= 0.0
 
-    # 量が最大（GetMax）以上なら成功する
+    # Succeeds if the amount is at or above the maximum (GetMax)
     IsFull<public>()<decides><reads>:void =
         CurrentAmount >= GetMax()
 
-    # 量が Amount 以上あれば成功する（Spend[] が成功するかを、量を変えずに確かめる）。Amount がマイナスなら失敗する
+    # Succeeds if the amount is at least Amount (checks whether Spend[] would succeed, without changing the amount). Fails if Amount is negative
     HasEnough<public>(Amount:float)<decides><reads>:void =
         Amount >= 0.0
         CurrentAmount >= Amount
 
-    # 量 ÷ 最大（0.0〜1.0）。最大が 0 なら 0.0
+    # Amount / max (0.0 to 1.0). 0.0 when the max is 0
     GetRatio<public>()<reads>:float =
         CurrentMax := GetMax()
         if (CurrentMax > 0.0):
@@ -84,42 +84,42 @@ energy_component<public> := class<final_super>(component):
         else:
             0.0
 
-    # 量が Amount 以上あれば Amount 減らす。足りない（または Amount がマイナス）なら失敗し、何も変えない。if の条件に書ける（例 if (Energy.Spend[10.0]):）
-    # 量（CurrentAmount）はすぐ変わる。知らせる処理（SendUp・Signal）は巻き戻せないので、energy_changed_event と ChangedEvent は同じフレームの物理のあと（TickEvents.PostPhysics）に送る（それより前に Consume などで量を変えたときは、そのときにまとめて送る）
+    # Subtracts Amount if the amount is at least Amount. Fails and changes nothing if not enough (or Amount is negative). Usable in an if condition (e.g. if (Energy.Spend[10.0]):)
+    # The amount (CurrentAmount) changes at once. The notification (SendUp, Signal) cannot be rolled back, so energy_changed_event and ChangedEvent are sent after physics in the same frame (TickEvents.PostPhysics) (if the amount is changed earlier with Consume etc., everything is sent together then)
     Spend<public>(Amount:float)<decides><transacts>:void =
         EnsureInitialized()
         HasEnough[Amount]
         set CurrentAmount = CurrentAmount - Amount
         set NotifyPending = true
 
-    # Amount 減らす。足りなくても失敗せず、0 で止まる（ホバー中に毎フレーム減らすときなど）。量が変わったらすぐ energy_changed_event を上へ知らせる
+    # Subtracts Amount. Never fails; stops at 0 when not enough (e.g. subtracting every frame while hovering). Sends energy_changed_event upward at once on a change
     Consume<public>(Amount:float):void =
         EnsureInitialized()
         SetEnergy(CurrentAmount - Amount)
 
-    # Amount 戻す。最大を超える分は捨てる。量が変わったらすぐ energy_changed_event を上へ知らせる
+    # Adds Amount. The part above the max is discarded. Sends energy_changed_event upward at once on a change
     Restore<public>(Amount:float):void =
         EnsureInitialized()
         SetEnergy(CurrentAmount + Amount)
 
-    # 量を Value にする（0〜最大に丸める）。量が変わったらすぐ energy_changed_event を上へ知らせる。シミュレーション開始前に呼んだときは、開始時に StartFull で上書きしない
+    # Sets the amount to Value (clamped to 0..max). Sends energy_changed_event upward at once on a change. When called before the simulation starts, StartFull does not overwrite it at the start
     SetAmount<public>(Value:float):void =
         EnsureInitialized()
         SetEnergy(Value)
 
-    # 満タン（最大）にする。量が変わったらすぐ energy_changed_event を上へ知らせる
+    # Fills to the maximum. Sends energy_changed_event upward at once on a change
     Fill<public>():void =
         EnsureInitialized()
         SetEnergy(GetMax())
 
-    # 最大を NewMax に変える（マイナスは 0 にする）。今の量が新しい最大を超えていれば最大に丸め、energy_changed_event を上へ知らせる
-    # 量を変える前（シミュレーション開始前）に呼んだときは知らせず、開始時に新しい最大で始める（StartFull なら満タン）
+    # Changes the maximum to NewMax (negative becomes 0). If the current amount exceeds the new max, clamps it and sends energy_changed_event upward
+    # When called before the amount is set (before the simulation starts), does not notify; the simulation starts with the new max (full with StartFull)
     SetMax<public>(NewMax:float):void =
         set MaxOverride = option{Max(NewMax, 0.0)}
         if (Initialized?):
             SetEnergy(CurrentAmount)
 
-    # 最初の量を決める（StartFull なら最大、そうでなければ 0）。一度だけ
+    # Fixes the initial amount (the max with StartFull, otherwise 0). Only once
     EnsureInitialized<private>()<transacts>:void =
         if (not Initialized?):
             set Initialized = true
@@ -134,7 +134,7 @@ energy_component<public> := class<final_super>(component):
         if (NotifyPending?):
             Notify()
 
-    # 前に知らせた量から変わっていれば、energy_changed_event を上へ送り、ChangedEvent に届ける
+    # If the amount differs from the last notified one, sends energy_changed_event upward and fires ChangedEvent
     Notify<private>():void =
         set NotifyPending = false
         if (CurrentAmount <> NotifiedAmount):
@@ -143,7 +143,7 @@ energy_component<public> := class<final_super>(component):
             Entity.SendUp(energy_changed_event{Energy := Self, Amount := CurrentAmount, Delta := Delta})
             ChangedEventInternal.Signal(CurrentAmount)
 
-# InEntity 自身に付いた energy_component、無ければ子孫で最初に見つかったもの。子孫に複数あると、どれが返るかは決まらない（1 つだけ置く前提）。無ければ失敗する
+# The energy_component on InEntity itself, or else the first found among its descendants. With several descendants it is unspecified which one is returned (assumes only one is placed). Fails if none
 (InEntity:entity).FindEnergy<public>()<decides><transacts>:energy_component =
     if (Energy := InEntity.GetComponent[energy_component]):
         Energy
@@ -151,18 +151,18 @@ energy_component<public> := class<final_super>(component):
         first (Energy : InEntity.FindDescendantComponents(energy_component)):
             Energy
 
-# 能力（InEntity に付いた ability_component の派生など）が Agent について使うエネルギーを探す。順に：
-#   1. InEntity 自身か子孫の energy_component（FindEnergy）。アイテムの entity に置けば、そのアイテムのエネルギー。付与された全員が同じ量を分け合う
-#   2. Agent（プレイヤーの entity）自身に付いた energy_component。プレイヤーごとのエネルギー（持ち物の中は探さない）
-# どちらも無ければ失敗する（能力はエネルギーを使わずに動く）
+# Finds the energy an ability (e.g. an ability_component subclass on InEntity) uses for Agent. In order:
+#   1. the energy_component on InEntity itself or its descendants (FindEnergy). Placed on an item's entity, it is that item's energy. Everyone granted shares the same amount
+#   2. the energy_component on Agent (the player's entity) itself. Per-player energy (does not search the inventory)
+# Fails if neither exists (the ability runs without using energy)
 (InEntity:entity).FindEnergyFor<public>(Agent:agent)<decides><transacts>:energy_component =
     if (Energy := InEntity.FindEnergy[]):
         Energy
     else:
         Agent.GetComponent[energy_component]
 
-# InEntity 自身か子孫の energy_component（FindEnergy）、無ければ祖先に付いた energy_component（近い順）。どれも無ければ失敗する
-# ロードアウト・独自キャラクターの根に energy_component を 1 つ置くと、その中の部品がみな同じエネルギーを使う
+# The energy_component on InEntity itself or its descendants (FindEnergy), or else one on an ancestor (nearest first). Fails if none
+# Place one energy_component at the root of a loadout or custom character and every part inside uses the same energy
 (InEntity:entity).FindEnergyAbove<public>()<decides><transacts>:energy_component =
     if (Energy := InEntity.FindEnergy[]):
         Energy

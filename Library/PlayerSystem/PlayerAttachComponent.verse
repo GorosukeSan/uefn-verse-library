@@ -6,53 +6,53 @@ using { ActivationSystem }
 using { SceneGraphSystem }
 using { PlayerSystem.TooltipKit }
 
-# プレイヤーに付けた entity をだれに見せるか
+# Whom an entity attached to a player is shown to
 player_attach_visibility<public> := enum:
-    # 全員に見せる
+    # Shown to everyone
     Everyone
-    # 付けた本人にだけ見せる（自分にだけ出る目印など）
+    # Shown only to the player it is attached to (a marker only you can see, etc.)
     OwnerOnly
-    # 本人以外に見せる（頭の上の名札・アイコンなど）
+    # Shown to everyone except that player (a name tag or icon above the head, etc.)
     OthersOnly
 
-# 役割：プレイヤーの体に entity（Prefab）を付けて、体と一緒に動かす。親子にはせず、この entity の子にした上で SetOrigin（entity_origin）で体を基準にする（体の entity の中身には触らない）
-#   同じ人には 1 つだけ付ける（AttachTo を何度呼んでも 1 つ）。リスポーンなどで体の entity が変わったら、RefreshSeconds ごとの見回りで付け直す（体がいないあいだは隠す）
-#   だれに付けるか：AttachToEveryone なら起動で全員（途中参加も）。オフなら AttachTo / DetachFrom で決める。持ち主のいる entity（キャラクターの中など）なら、全員の代わりに持ち主だけ
-# 置き方：エディターで entity に付ける
-# 親：起動の合図が届く場所（ActiveOnBegin なら どこでもよい）
-# いつ：ActiveOnBegin なら開始から。起動の合図（activated_event）か Activate で付け始め、停止の合図（deactivated_event）か Deactivate で全員から外す
-# 知らせ：付けたとき AttachedEvent（その人, 付けた entity）、外したとき DetachedEvent
-# 外から：Activate / Deactivate / AttachTo / DetachFrom / DetachAll / FindAttached / IsAttachedTo
-# 前提：区画（または世界）に player_manager_component が 1 つ（AttachToEveryone のとき）
-# ⚠ 未検証：entity_origin で体に付けた entity が、体の向き・しゃがみに合わせて動くか
+# Role: attaches an entity (Prefab) to a player's body and moves it with the body. Not parented to the body: it is made a child of this entity and based on the body with SetOrigin (entity_origin) (the body entity's contents are not touched)
+#   Only one per player (calling AttachTo repeatedly still gives one). When the body entity changes (respawn etc.), the patrol every RefreshSeconds reattaches it (hidden while there is no body)
+#   Whom to attach to: with AttachToEveryone, everyone on activation (including later joins). When off, decided by AttachTo / DetachFrom. On an owned entity (inside a character etc.), only the owner instead of everyone
+# Placement: attach to an entity in the editor
+# Parent: wherever the activation signal reaches (anywhere if ActiveOnBegin)
+# When: from the start if ActiveOnBegin. Starts attaching on the activation signal (activated_event) or Activate, detaches from everyone on the deactivation signal (deactivated_event) or Deactivate
+# Notifies: AttachedEvent (the player, the attached entity) on attach, DetachedEvent on detach
+# From outside: Activate / Deactivate / AttachTo / DetachFrom / DetachAll / FindAttached / IsAttachedTo
+# Requirements: one player_manager_component in the scope (or world) (when AttachToEveryone)
+# ⚠ Unverified: whether an entity attached to the body with entity_origin follows the body's facing and crouching
 player_attach_component<public> := class<final_super>(component):
 
-    # 付ける entity（prefab）。既定の entity のままなら何も無い entity
+    # The entity (prefab) to attach. Left at the default entity, it is an empty entity
     @editable:
         ToolTip := AttachPrefabToolTip
         Categories := array{AttachCategory}
     Prefab<public>:concrete_subtype(entity) = entity
-    # 体の原点からのずらし（センチメートル。Forward・Left・Up）。既定は真上に 200
+    # Offset from the body's origin (centimeters; Forward, Left, Up). Default is 200 straight up
     @editable:
         ToolTip := AttachOffsetToolTip
         Categories := array{AttachCategory}
     OffsetCm<public>:vector3 = vector3{Up := 200.0}
-    # だれに見せるか。既定 Everyone
+    # Whom it is shown to. Default Everyone
     @editable:
         ToolTip := AttachVisibilityToolTip
         Categories := array{AttachCategory}
     Visibility<public>:player_attach_visibility = player_attach_visibility.Everyone
-    # オンなら、起動したら全員に付ける（途中参加の人にも）。オフなら AttachTo で決めた人だけ。既定オン
+    # When on, attaches to everyone on activation (including later joins). When off, only to players chosen with AttachTo. Default on
     @editable:
         ToolTip := AttachEveryoneToolTip
         Categories := array{AttachCategory}
     AttachToEveryone<public>:logic = true
-    # オンならゲームの開始から付ける。既定オフ
+    # When on, attaches from the start of the game. Default off
     @editable:
         ToolTip := AttachActiveOnBeginToolTip
         Categories := array{AttachCategory}
     ActiveOnBegin<public>:logic = false
-    # 体が変わっていないか（リスポーンなど）を見回る間隔（秒）。既定 1
+    # Interval (seconds) of the patrol that checks whether the body changed (respawn etc.). Default 1
     @editable_number(float):
         ToolTip := AttachRefreshSecondsToolTip
         Categories := array{AttachCategory}
@@ -63,15 +63,15 @@ player_attach_component<public> := class<final_super>(component):
     AttachedEventInternal<private><final>:event(tuple(agent, entity)) = event(tuple(agent, entity)){}
     DetachedEventInternal<private><final>:event(agent) = event(agent){}
 
-    # 付けたときに、（その人, 付けた entity）で届く（Await / Subscribe する。外から Signal はできない）
+    # Delivered with (the player, the attached entity) on attach (Await / Subscribe to it; it cannot be Signaled from outside)
     AttachedEvent<public><final>:listenable(tuple(agent, entity)) = MakeProxyListenable(AttachedEventInternal)
 
-    # 外したときに、その人で届く
+    # Delivered with the player on detach
     DetachedEvent<public><final>:listenable(agent) = MakeProxyListenable(DetachedEventInternal)
 
     var<private> Active:logic = false
     var<private> Attached:[agent]entity = map{}
-    # 付けたときの体（変わったら付け直す）
+    # The body at attach time (reattach when it changes)
     var<private> Bodies:[agent]entity = map{}
     var<private> AddedSubscription:?cancelable = false
     var<private> RemovedSubscription:?cancelable = false
@@ -103,14 +103,14 @@ player_attach_component<public> := class<final_super>(component):
         set Manager = false
         (super:)OnEndSimulation()
 
-    # 付け始める（AttachToEveryone なら今いる全員と、これから参加する人）。もう起動していれば何もしない
+    # Start attaching (with AttachToEveryone: everyone present now and everyone who joins later). Does nothing if already active
     Activate<public>():void =
         if (Active?):
             return
         set Active = true
         StartEvent.Signal()
         if (OwningPlayer := Entity.FindOwningPlayer[]):
-            # 持ち主のいる entity（キャラクターの中など）なら、持ち主にだけ付ける
+            # On an owned entity (inside a character etc.), attach only to the owner
             if (AttachToEveryone?):
                 AttachTo(OwningPlayer)
         else if (Found := Entity.ResolveScopedComponent(Manager, player_manager_component)?):
@@ -121,7 +121,7 @@ player_attach_component<public> := class<final_super>(component):
                 for (Slot : Found.GetSlots()):
                     AttachTo(Slot.Player)
 
-    # 全員から外し、付けるのをやめる。起動していなければ何もしない
+    # Detach from everyone and stop attaching. Does nothing if not active
     Deactivate<public>():void =
         if (not Active?):
             return
@@ -132,7 +132,7 @@ player_attach_component<public> := class<final_super>(component):
         set RemovedSubscription = false
         DetachAll()
 
-    # Agent に付ける（もう付いていれば、その entity を返して何もしない）。起動していなければ起動する（AttachToEveryone なら全員にも付く）
+    # Attach to Agent (if already attached, returns that entity and does nothing). Activates if not active (with AttachToEveryone, everyone gets attached too)
     AttachTo<public>(Agent:agent):entity =
         if (not Active?):
             Activate()
@@ -145,7 +145,7 @@ player_attach_component<public> := class<final_super>(component):
         AttachedEventInternal.Signal((Agent, Attachment))
         Attachment
 
-    # Agent から外す（付いていなければ何もしない）
+    # Detach from Agent (does nothing if not attached)
     DetachFrom<public>(Agent:agent):void =
         if (Attachment := Attached[Agent]):
             set Attached = Attached.RemoveKey(Agent)
@@ -153,16 +153,16 @@ player_attach_component<public> := class<final_super>(component):
             Attachment.RemoveFromParent()
             DetachedEventInternal.Signal(Agent)
 
-    # 全員から外す
+    # Detach from everyone
     DetachAll<public>():void =
         for (Agent -> Attachment : Attached):
             DetachFrom(Agent)
 
-    # Agent に付けている entity。付いていなければ失敗する
+    # The entity attached to Agent. Fails if not attached
     FindAttached<public>(Agent:agent)<decides><transacts>:entity =
         Attached[Agent]
 
-    # Agent に付いていれば成功する
+    # Succeeds if attached to Agent
     IsAttachedTo<public>(Agent:agent)<decides><transacts>:void =
         Attached[Agent]
 
@@ -173,7 +173,7 @@ player_attach_component<public> := class<final_super>(component):
     OnPlayerRemoved<private>(Player:player):void =
         DetachFrom(Player)
 
-    # 体を基準にし、見せる相手を決める。体がいなければ隠す
+    # Base on the body and decide whom to show to. Hide if there is no body
     Follow<private>(Agent:agent, Attachment:entity):void =
         if (Body := Agent.FindPlayerEntity[]):
             if (set Bodies[Agent] = Body) {}
@@ -184,7 +184,7 @@ player_attach_component<public> := class<final_super>(component):
             set Bodies = Bodies.RemoveKey(Agent)
             Attachment.SetPresentableToPlayers(option{array{}})
 
-    # 体が変わった（リスポーン）・いなくなった・戻った人を付け直す。見せる相手も今の参加者で決め直す
+    # Reattach for players whose body changed (respawn), disappeared or came back. Also redecide whom to show to from the current participants
     Refresh<private>():void =
         for (Agent -> Attachment : Attached):
             if (Body := Agent.FindPlayerEntity[], Previous := Bodies[Agent], Body = Previous):

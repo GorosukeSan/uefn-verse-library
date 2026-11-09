@@ -6,8 +6,8 @@ using { /Verse.org/Assets }
 using { PlayerSystem }
 using { SceneGraphSystem }
 
-# Agent が今動かしている独自キャラクターの体（InEntity の区画の player_manager_component から、その人の slot の下を探す）。無ければ失敗する
-# 能力の RunFor など、体の外から探すときに使う（Entity.FindCharacterMotorFor[Agent]）
+# The body of the custom character that Agent is currently driving (looks under that player's slot via the player_manager_component in InEntity's scope). Fails if there is none
+# Used when searching from outside the body, e.g. an ability's RunFor (Entity.FindCharacterMotorFor[Agent])
 (InEntity:entity).FindCharacterMotorFor<public>(Agent:agent)<decides><transacts>:character_motor_component =
     Manager := InEntity.FindScopedComponent[player_manager_component]
     Slot := Manager.FindSlot[player[Agent]]
@@ -15,7 +15,7 @@ using { SceneGraphSystem }
         Motor
     Found[0]
 
-# InEntity か、その祖先の character_motor_component。独自キャラクターの中でなければ失敗する
+# The character_motor_component on InEntity or one of its ancestors. Fails unless we are inside a custom character
 (InEntity:entity).FindCharacterMotorAbove<public>()<decides><transacts>:character_motor_component =
     var Current:entity = InEntity
     var Found:?character_motor_component = false
@@ -29,28 +29,28 @@ using { SceneGraphSystem }
             break
     Found?
 
-# 役割：ボタンの入力（input_action(logic)）の今の状態を覚える。押した瞬間を秒で覚えるので、先行入力（少し早く押した入力を受け付ける）に使える
+# Role: remembers the current state of a button input (input_action(logic)). Remembers the press moment in seconds, so it can be used for input buffering (accepting an input pressed slightly early)
 character_button_tracker<internal> := class<internal>:
     var<private> Down:logic = false
     var<private> PressedAt:float = -1000.0
     var<private> LastPressedAt:float = -1000.0
     var<private> ReleasedAt:float = -1000.0
 
-    # 押しているあいだ成功する
+    # Succeeds while held down
     IsDown<internal>()<decides><transacts>:void =
         Down?
 
-    # Seconds 秒以内に押されていて、まだ使っていなければ成功し、使ったことにする
+    # Succeeds if pressed within WithinSeconds seconds and not consumed yet; marks it consumed
     ConsumePress<internal>(WithinSeconds:float)<decides><transacts>:void =
         GetSimulationElapsedTime() - PressedAt <= WithinSeconds
         set LastPressedAt = PressedAt
         set PressedAt = -1000.0
 
-    # ConsumePress で使った押しを、押した時刻のまま戻す（跳べなかった入力を先行入力として残す）
+    # Puts back a press consumed by ConsumePress, keeping its press time (keeps an input that could not jump as a buffered input)
     Rebuffer<internal>():void =
         set PressedAt = LastPressedAt
 
-    # 最後に離してからの秒数
+    # Seconds since the last release
     GetSecondsSinceRelease<internal>()<transacts>:float =
         GetSimulationElapsedTime() - ReleasedAt
 
@@ -68,25 +68,31 @@ character_button_tracker<internal> := class<internal>:
         set Down = false
         set ReleasedAt = GetSimulationElapsedTime()
 
-# 役割：方向の入力（input_action(vector3)）の今の値を覚える（離したら 0）
+# Role: remembers the current value of a direction input (input_action(vector3)) (0 once released)
 character_axis_tracker<internal> := class<internal>:
     var<private> Value:vector3 = vector3{}
 
-    # 今の値
+    # Current value
     GetValue<internal>()<transacts>:vector3 =
         Value
 
     Listen<internal>(PlayerInput:player_input, Action:input_action(vector3)):[]cancelable =
         Events := PlayerInput.GetInputEvents(Action)
+        # When another key is added or the direction changes while still held, the value only arrives on TriggerActivationEvent (every frame while the action holds).
+        #   With Begin / Ongoing alone, the first direction stuck until every key was released (UEFN v43.00)
         array:
             Events.BeginDetectEvent.Subscribe(OnBegin)
             Events.DetectionOngoingEvent.Subscribe(OnOngoing)
+            Events.TriggerActivationEvent.Subscribe(OnTriggered)
             Events.EndDetectEvent.Subscribe(OnEnd)
 
     OnBegin<private>(Payload:tuple(player, vector3)):void =
         set Value = Payload(1)
 
     OnOngoing<private>(Payload:tuple(player, vector3, float)):void =
+        set Value = Payload(1)
+
+    OnTriggered<private>(Payload:tuple(player, vector3)):void =
         set Value = Payload(1)
 
     OnEnd<private>(Payload:tuple(player, float)):void =

@@ -5,44 +5,44 @@ using { SceneGraphSystem }
 using { MoverSystem }
 using { MoverSystem.TooltipKit }
 
-# 決まった地点の回り方
+# How fixed points are traversed
 mover_path_mode<public> := enum:
-    # 最後の地点のあと最初の地点へ戻り、ずっと回る
+    # After the last point, return to the first and keep going
     Loop
-    # 最後まで行ったら逆の順に戻り、ずっと行き来する
+    # After the last point, go back in reverse order and keep going back and forth
     PingPong
-    # 最後の地点に着いたら止まる（mover は FinishedEvent を出す）
+    # Stop at the last point (the mover raises FinishedEvent)
     Once
 
-# 方向：道のりの entity（mover の entity）から SendDown（自分と子孫）
-# 送り手：mover_path_route_component（Route）。回る地点が決まったとき（動き出して最初の行き先を決めるとき・SetPoints のあと）
-# 受け手：道のりを見せる見た目（地点の目印・線）。消費しない
+# Direction: SendDown from the route entity (the mover entity) (itself and descendants)
+# Sender: mover_path_route_component (Route). When the points to traverse are decided (when the first target is chosen after moving starts / after SetPoints)
+# Receivers: looks that show the route (point markers, lines). Not consumed
 mover_path_changed_event<public> := class(scene_event):
-    # 送った mover_path_route_component
+    # The mover_path_route_component that sent it
     Route<public>:mover_path_route_component
-    # 回る地点（世界の位置、センチメートル）。Index の順
+    # The points to traverse (world positions, centimeters), in Index order
     Points<public>:[]vector3
 
-# 役割：決まった地点を Mode の回り方で回る道のり。地点は、Points（コードで入れた世界の位置）があればそれ、無ければ直下の子の mover_waypoint_component の位置（Order の小さい順。子の並び順は使わない）。IncludeStart なら、動き出したときの位置を最初の地点（番号 0）にする。地点の位置は動き出して最初の行き先を決めるときに 1 回だけ読み（子の目印が mover と一緒に動いても変わらない）、mover_path_changed_event で自分の entity へ送る（見た目用）
-# 置き方：エディターで、動かしたい entity（mover_component と同じ entity）に付ける。実行時に作るなら Points を入れて付ける
-# 同じ entity：mover_component
-# 子：Points が空なら、mover_waypoint_component を付けた entity（見た目の無いもの）を直下に。順番は各目印の Order で決める
-# 外から：SetPoints で地点を入れ替える（次の行き先から使う。終わったあとなら mover_component の Restart で動き直す）
+# Role: a route that traverses fixed points in the Mode order. The points are Points (world positions set from code) when present, otherwise the positions of the mover_waypoint_component direct children (ascending Order; the child order is not used). With IncludeStart, the position where moving started becomes the first point (number 0). Point positions are read once, when the first target is chosen after moving starts (they do not change even when the child markers move with the mover), and sent to its own entity as mover_path_changed_event (for looks)
+# Placement: attach in the editor to the entity to move (the same entity as mover_component). When created at runtime, fill Points and attach
+# Same entity: mover_component
+# Children: when Points is empty, entities (without a look) carrying mover_waypoint_component, as direct children. The order is decided by each marker's Order
+# From outside: SetPoints replaces the points (used from the next target on. After the route finished, Restart mover_component to move again)
 mover_path_route_component<public> := class<final_super>(mover_route_component):
 
-    # 地点の回り方（Loop / PingPong / Once）。既定 Loop
+    # How the points are traversed (Loop / PingPong / Once). Default Loop
     @editable:
         ToolTip := MoverPathModeToolTip
         Categories := array{MoverCategory, MoverPathCategory}
     Mode<public>:mover_path_mode = mover_path_mode.Loop
 
-    # オンなら動き出した位置を最初の地点（番号 0）にする。オフなら目印の地点だけを回る。既定オン
+    # When on, the start position becomes the first point (number 0). When off, only the marker points are visited. Default on
     @editable:
         ToolTip := MoverPathIncludeStartToolTip
         Categories := array{MoverCategory, MoverPathCategory}
     IncludeStart<public>:logic = true
 
-    # コードで入れる地点（世界の位置、センチメートル）。空なら子の mover_waypoint_component を使う
+    # Points set from code (world positions, centimeters). When empty, the mover_waypoint_component children are used
     Points<public>:[]vector3 = array{}
 
     var Override<private>:?[]vector3 = false
@@ -51,20 +51,20 @@ mover_path_route_component<public> := class<final_super>(mover_route_component):
     var Current<private>:int = -1
     var Forward<private>:logic = true
 
-    # 地点を入れ替える（世界の位置、センチメートル）。今向かっている行き先はそのままで、次の行き先から、新しい地点の最初（IncludeStart なら動き出した位置）から回り直す
+    # Replace the points (world positions, centimeters). The current target is kept; from the next target on, traversal restarts from the first of the new points (the start position with IncludeStart)
     SetPoints<public>(NewPoints:[]vector3):void =
         set Override = option{NewPoints}
         set IsResolved = false
 
-    # 最初の地点から回り直す（mover_component の Restart が呼ぶ）。地点は次の行き先を決めるときに読み直す（SetPoints で入れた地点はそのまま使う）
+    # Start over from the first point (called by mover_component's Restart). The points are re-read when the next target is chosen (points set with SetPoints stay in use)
     Reset<override>():void =
         set IsResolved = false
 
-    # 回る地点（世界の位置、センチメートル。番号の順）。まだ動き出していなければ空
+    # The points to traverse (world positions, centimeters, in number order). Empty before moving starts
     GetResolvedPoints<public>()<reads>:[]vector3 =
         Resolved
 
-    # 直下の子の mover_waypoint_component を Order の小さい順に返す（Order が同じものどうしの順は決まらない）
+    # The mover_waypoint_component direct children in ascending Order (the order among equal Orders is unspecified)
     GetWaypoints<public>()<transacts>:[]mover_waypoint_component =
         var Sorted:[]mover_waypoint_component = array{}
         for (Waypoint : Entity.GetChildComponents(mover_waypoint_component)):
@@ -116,12 +116,12 @@ mover_path_route_component<public> := class<final_super>(mover_route_component):
                 set Forward = true
                 option{Current + 1}
 
-# 役割：mover_path_route_component が回る地点の目印。Order の小さい順に回る
-# 置き方：エディターで、見た目の無い entity に付ける
-# 親：mover_path_route_component を付けた entity（直下に置く。子の並び順は関係ない）
+# Role: marker for a point traversed by mover_path_route_component. Visited in ascending Order
+# Placement: attach in the editor to an entity without a look
+# Parent: the entity carrying mover_path_route_component (place as a direct child; the child order does not matter)
 mover_waypoint_component<public> := class<final_super>(component):
 
-    # 回る順番。小さい順に回る（子の並び順は使わない。同じ数どうしの順は決まらない）。既定 0
+    # Traversal order. Visited in ascending order (the child order is not used; the order among equal numbers is unspecified). Default 0
     @editable_number(int):
         ToolTip := MoverWaypointOrderToolTip
         Categories := array{MoverCategory, MoverPathCategory}

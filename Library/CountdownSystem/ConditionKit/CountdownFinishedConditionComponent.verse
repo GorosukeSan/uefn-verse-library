@@ -3,9 +3,9 @@ using { /Verse.org/Simulation }
 using { ActivationSystem }
 using { ConditionSystem }
 
-# 役割：カウントダウンが 0 になったら満たす（起動し直す・数え直すと満たさなくなる）
-# 置き方：エディターで entity に付ける
-# 親：game_transition_component か condition_all / condition_any の entity の直下。そのうえで countdown_component の entity の子孫
+# Role: satisfied when the countdown reaches 0 (re-activating or restarting makes it unsatisfied again)
+# Placement: attach to an entity in the editor
+# Parent: directly under the entity of a game_transition_component or condition_all / condition_any, and also a descendant of the countdown_component entity
 countdown_finished_condition_component<public> := class<final_super>(condition_component):
 
     var Finished<private>:logic = false

@@ -3,13 +3,13 @@ using { /Verse.org/Simulation }
 using { MCPSystem }
 using { MCPSystem.TooltipKit }
 
-# 役割：Debug ツールセット（宛先 "debug"）。ログの詳しさ、ログに書く、状態のダンプ（"state" ツールを持つ受け口をまとめて呼ぶ）、フレームの速さ、長くかかるツールと大きい返事の見本
-# 置き方：受け箱と同じ entity に付けるとよい
-# 知らせ：frames / wait は "accepted" を返し、終わったら [MCPC] {"event":"frames" / "waited",...}
-# タグ：自分の entity に mcp_controllable_tag
+# Role: Debug toolset (destination "debug"). Log verbosity, writing to the log, state dump (calls every receiver that has a "state" tool), frame rate, samples of a long-running tool and a large reply
+# Placement: best attached to the same entity as the inbox
+# Notifications: frames / wait return "accepted" and emit [MCPC] {"event":"frames" / "waited",...} when done
+# Tags: mcp_controllable_tag on its own entity
 mcp_debug_toolset_component<public> := class<final_super>(component, mcp_controllable):
 
-    # 同じツールセットを複数置くときの名前（空なら "debug" だけで届く）
+    # Name used when the same toolset is placed more than once (when empty, "debug" alone reaches it)
     @editable:
         ToolTip := McpToolsetIdToolTip
         Categories := array{McpCategory}
@@ -31,14 +31,14 @@ mcp_debug_toolset_component<public> := class<final_super>(component, mcp_control
 
     McpTools<override>()<transacts>:[]mcp_tool =
         array:
-            McpTool("log", "ログに「[MCP] text」を書く（ゲームのログと同じ時系列で見る目印に）", array{McpArg("text", "string", "書く文")})
-            McpTool("get_level", "受け箱のログの詳しさ（0〜3）", array{})
-            McpTool("set_level", "受け箱のログの詳しさを変える（0 = 返事だけ、1 = 起動・壊れた命令、2 = 命令ごと、3 = 詳しく）", array{McpArg("level", "int", "0〜3")})
-            McpTool("dump", "引数の要らない \"state\" ツールを持つ受け口をまとめて呼ぶ。data に [\{to,ok,reply,data\}]", array{McpOptArg("toolset", "string", "このツールセットだけ")})
-            McpTool("counts", "世界の entity の数・受け口の数・名前を付けた entity の数", array{})
-            McpTool("frames", "seconds 秒のフレームの数と 1 フレームの秒（平均・最大）を測る（終わりに frames）", array{McpOptArg("seconds", "float", "秒（既定 1.0）")})
-            McpTool("wait", "seconds 秒待ってから知らせる（長くかかるツールの見本。終わりに waited）", array{McpArg("seconds", "float", "秒")})
-            McpTool("payload", "chars 文字の文字列を data で返す（大きい返事を分けて出す仕組みの確かめ）", array{McpArg("chars", "int", "文字数（1〜300000）")})
+            McpTool("log", "Writes \"[MCP] text\" to the log (a marker in the same timeline as the game log)", array{McpArg("text", "string", "text to write")})
+            McpTool("get_level", "Inbox log verbosity (0-3)", array{})
+            McpTool("set_level", "Changes the inbox log verbosity (0 = replies only, 1 = start-up and broken commands, 2 = every command, 3 = verbose)", array{McpArg("level", "int", "0-3")})
+            McpTool("dump", "Calls every receiver that has an argument-less \"state\" tool. data: [\{to,ok,reply,data\}]", array{McpOptArg("toolset", "string", "only this toolset")})
+            McpTool("counts", "Number of entities in the world, receivers, and named entities", array{})
+            McpTool("frames", "Measures the frame count and the seconds per frame (average, max) over seconds (frames at the end)", array{McpOptArg("seconds", "float", "seconds (default 1.0)")})
+            McpTool("wait", "Waits seconds, then notifies (a sample long-running tool; waited at the end)", array{McpArg("seconds", "float", "seconds")})
+            McpTool("payload", "Returns a string of chars characters in data (to exercise the split-reply mechanism)", array{McpArg("chars", "int", "number of characters (1-300000)")})
 
     McpHandle<override>(Call:mcp_call):mcp_reply =
         Tool := Call.Tool
@@ -57,7 +57,7 @@ mcp_debug_toolset_component<public> := class<final_super>(component, mcp_control
                 McpBadArg("level")
         else if (Tool = "dump"):
             Filter := Call.GetStringOr("toolset", "")
-            # 引数の要らない "state" を持つ受け口だけ（state に対象を渡すツールセットは呼ばない）
+            # Only receivers with an argument-less "state" (toolsets whose state takes a target are not called)
             Targets := for (Controllable : Inbox.GetControllables(), Controllable.McpToolset() <> "debug", Filter = "" or Controllable.McpToolset() = Filter, StateTool := FindMcpTool[Controllable.McpTools(), "state"], not HasRequiredArg[StateTool]):
                 Controllable
             var Items:[]string = array{}
@@ -124,7 +124,7 @@ mcp_debug_toolset_component<public> := class<final_super>(component, mcp_control
         Sleep(Seconds)
         Call.Notify("waited", McpObject(array{McpField("seconds", McpNumber(Seconds))}))
 
-# 省略できない引数があれば成功する
+# Succeeds when the tool has a required argument
 HasRequiredArg<internal>(Tool:mcp_tool)<transacts><decides>:void =
     Required := for (Arg : Tool.Args, Arg.Required?) { Arg }
     Required.Length > 0

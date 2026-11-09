@@ -6,18 +6,18 @@ using { SceneGraphSystem }
 using { _Test }
 using { _Test.ConditionSystemTest }
 
-# 役割：テスト用の view。player_view_set が slot の下に作る（中身は持たない）
-# 置き方：テストのコードが実行時に作る
+# Role: test view. Created under the slot by player_view_set (holds nothing)
+# Placement: created by the test code at runtime
 test_player_view_component<public> := class<final_super>(component):
 
     Slot<public>:player_slot_component
 
-# テスト用の状態タグ（派生で付けて基底で探せるかを見る）
+# Test state tag (checks that a subclass tag can be found through its base)
 test_moving_tag<public> := class(controlled_movement_tag):
 
-# 役割：PlayerSystem の動作確認。player_manager_component の slot（GetPlayerCount / GetSlots / FindSlot）、player_count_condition、player_view_set（Activate / Deactivate / GetViews / FindViewSlot）、SubscribePlayers、プレイヤーのタグ（player_tag_holder / HasPlayerTag）、組（player_group_component の Join / Leave / GetMemberCount / FindAncestorGroup）と組の人数の条件（player_group_count_condition_component）を確かめる。テスト中に参加・退出があれば、その知らせ（player_added_event / PlayerAddedEvent など）もログに出す
-# テストのレベル：player_manager_component を付けた entity を 1 つと、この component を付けた entity を 1 つ。プレイヤー 1 人以上で始める（参加を最大 10 秒待つ）
-# 結果：出力ログの [TEST] PlayerSystem
+# Role: verification of PlayerSystem. Checks player_manager_component slots (GetPlayerCount / GetSlots / FindSlot), player_count_condition, player_view_set (Activate / Deactivate / GetViews / FindViewSlot), SubscribePlayers, player tags (player_tag_holder / HasPlayerTag), groups (player_group_component's Join / Leave / GetMemberCount / FindAncestorGroup) and the group member count condition (player_group_count_condition_component). If players join or leave during the test, their notifications (player_added_event / PlayerAddedEvent etc.) are logged too
+# Test level: one entity with player_manager_component and one entity with this component. Start with at least one player (waits up to 10 seconds for them to join)
+# Result: [TEST] PlayerSystem in the output log
 player_system_test_component<public> := class<final_super>(component):
 
     var<private> AddedEventCount:int = 0
@@ -114,7 +114,7 @@ player_system_test_component<public> := class<final_super>(component):
             First.Set(Agent, false, test_moving_tag{})
             Results.Check("Set(false) clears", if (Agent.HasPlayerTag[test_moving_tag]) then false else true)
 
-    # 組（Group）と、その子の条件 2 つ（1 人以上・だれもいない）を実行時に作る
+    # Creates a group (Group) and two conditions as its children (at least one member / nobody) at runtime
     TestGroup<private>(Results:test_log, Manager:player_manager_component):void =
         if (Slot := Manager.GetSlots()[0]):
             Agent := Slot.Player
@@ -122,7 +122,7 @@ player_system_test_component<public> := class<final_super>(component):
             Group := player_group_component{Entity := GroupEntity}
             GroupEntity.AddComponents(array{Group})
             Entity.AddEntities(array{GroupEntity})
-            # 子に置いた条件は Group を空のままにして、祖先の組（FindAncestorGroup）を数える
+            # Conditions placed as children leave Group empty and count the ancestor group (FindAncestorGroup)
             ConditionEntity := entity{}
             Someone := player_group_count_condition_component{Entity := ConditionEntity, MinMemberCount := 1}
             Nobody := player_group_count_condition_component{Entity := ConditionEntity, MinMemberCount := 0, MaxMemberCount := 0}

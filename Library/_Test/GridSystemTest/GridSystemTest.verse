@@ -5,9 +5,9 @@ using { GridSystem }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：GridSystem の動作確認。grid_box の計算（重なり・広げる・大きさの丸め・距離）、grid_component の位置とマスの変換、借りる・返す・全部返す・返した知らせ、GridPath の道が範囲の中で軸に沿っていることを確かめる
-# テストのレベル：このテストの component を、どこかの entity に付けるだけ（グリッドはテストが自分の子に 1 マス 100 センチメートルで作る。レベルのグリッドは使わない）
-# 結果：出力ログの [TEST] GridSystem
+# Role: verification of GridSystem. Checks grid_box math (overlap, expand, size rounding, distance), grid_component position / cell conversion, borrow / return / return all / returned notification, and that GridPath paths stay inside the bounds and follow the axes
+# Test level: just attach this test component to any entity (the test creates its own grid under its children with 100 cm cells; the level's grid is not used)
+# Result: [TEST] GridSystem in the output log
 grid_system_test_component<public> := class<final_super>(component):
 
     OnSimulate<override>()<suspends>:void =

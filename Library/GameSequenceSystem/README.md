@@ -1,68 +1,68 @@
 # GameSequenceSystem
 
-ゲームの流れ（待機 → 本番 → 結果 のような段階）を、ノードと遷移の entity の木で組む System です。ノードに入ると配下へ起動の合図（ActivationSystem）を送り、出ると停止の合図を送ります。遷移の条件（ConditionSystem）を満たすと次のノードへ進みます。
+A System that builds the game flow (stages such as waiting -> playing -> results) as a tree of node and transition entities. Entering a node sends the activation signal (ActivationSystem) to its descendants; exiting sends the deactivation signal. When a transition's conditions (ConditionSystem) are satisfied, the flow advances to the next node.
 
-## 置き方
+## Placement
 
-| component | 置く場所 | すること |
+| component | Where to place | What it does |
 |---|---|---|
-| `game_sequence_component` | 流れの根の entity。1 つの流れに 1 つ。レベルにいくつ置いてもよい（それぞれ自分の直下のノードだけを進める。区画は要らない） | 最初のノードから流れを進める。`Target` の無い遷移で終わる |
-| `game_node_component` | `game_sequence_component` の entity の直下 | 流れの 1 段階。入ると配下へ起動、出ると停止を知らせ、子の遷移が進めるようになるまで待つ |
-| `game_transition_component` | `game_node_component` の entity の直下 | 直下の条件をすべて満たしたら `Target` のノードへ進む（`Target` が空なら流れを終える）。条件が無ければすぐ進む |
+| `game_sequence_component` | the root entity of the sequence. One per sequence. Any number may be placed in a level (each advances only the nodes directly under it. No zone needed) | advances the sequence from the first node. Ends at a transition without `Target` |
+| `game_node_component` | directly under the entity of `game_sequence_component` | one stage of the sequence. On entering, notifies activation to its descendants; on exiting, deactivation. Waits until a child transition can advance |
+| `game_transition_component` | directly under the entity of `game_node_component` | advances to the `Target` node when every direct child condition is satisfied (ends the sequence when `Target` is empty). Advances immediately without conditions |
 
-例：「10 秒待ってから本番、ボタンを押したら終わり」
+Example: "wait 10 seconds, then play; when the button is pressed, end"
 ```
-流れ（game_sequence_component）
-├ 待機（game_node_component、Order 0 + countdown_component）
-│ └ 本番へ（game_transition_component、Target = 本番）
-│   └ 時間切れ（countdown_finished_condition_component）
-└ 本番（game_node_component、Order 1）
-  ├ 足場（spawn_prefab_component。SpawnSystem の PrefabKit）
-  └ 終わり（game_transition_component、Target 空）
-    └ 押された（interacted_condition_component）
-      └ ボタン（basic_interactable_component + interact_trigger_component）
-```
-
-## 設定（@editable）
-- `game_sequence_component.FirstNode : ?entity = false` — 最初に入るノード（`game_node_component` を付けた entity）。空なら直下の子のノードで `Order` が一番小さいもの。
-- `game_sequence_component.StartOnRoundStart : logic = true` — オンならラウンドの開始で始め、ラウンドの終わりで止める。オンの流れはどれも同時に始まる。
-- `game_sequence_component.StartOnActivate : logic = false` — オンなら起動の合図（`activated_event`）で始め、停止の合図（`deactivated_event`）で止める。受けた合図は消費し、配下のノードの部品へは届けない。ほかの流れのノードの下に置くと、そのノードのあいだだけ進む流れ（入れ子）になる。
-- `game_sequence_component.StartOnBegin : logic = false` — オンならシミュレーション開始で始める（1 フレーム待ってから）。
-- `game_node_component.Order : int = 0` — `FirstNode` が空のとき、最初のノードを選ぶ順番（0〜1000。小さいほど先）。
-- `game_transition_component.Target : ?entity = false` — 条件を満たしたときに進むノード。空ならここで流れを終える。
-- `game_transition_component.Priority : int = 0` — 同じノードの遷移が同時に進めるとき、大きいほうを優先する（0〜100）。
-
-`StartOnRoundStart`・`StartOnActivate`・`StartOnBegin` をどれもオフにして、コードから `Start` を呼んでもかまいません。同じレベルに複数のゲーム（流れ）を置くときは `StartOnRoundStart` をオフにし、そのゲームの始まりの合図（`StartOnActivate`）か `Start` で始めます。
-
-例：「ロビーのノードのあいだだけ、ミニゲームの流れを回す」
-```
-流れ（game_sequence_component、StartOnRoundStart）
-├ ロビー（game_node_component、Order 0）
-│ ├ ミニゲームの流れ（game_sequence_component、StartOnRoundStart オフ、StartOnActivate オン）
-│ │ ├ 準備（game_node_component、Order 0）…
-│ │ └ 遊ぶ（game_node_component、Order 1）…
-│ └ 本番へ（game_transition_component、Target = 本番）…
-└ 本番（game_node_component、Order 1）…
+Sequence (game_sequence_component)
+├ Waiting (game_node_component, Order 0 + countdown_component)
+│ └ To Playing (game_transition_component, Target = Playing)
+│   └ Time up (countdown_finished_condition_component)
+└ Playing (game_node_component, Order 1)
+  ├ Platform (spawn_prefab_component; SpawnSystem's PrefabKit)
+  └ End (game_transition_component, Target empty)
+    └ Pressed (interacted_condition_component)
+      └ Button (basic_interactable_component + interact_trigger_component)
 ```
 
-## イベント
-- `game_node_entered_event`（`activated_event` の派生、SendDown）: `Node : game_node_component`。`game_node_component` がノードに入ったとき、ノードの entity から下へ送る。起動を待つ部品はこれで動き出す。消費しない。
-- `game_node_exited_event`（`deactivated_event` の派生、SendDown）: `Node : game_node_component`、`Reason : game_node_exit_reason`。`game_node_component` がノードから出たとき、ノードの entity から下へ送る。起動を待つ部品はこれで止まる。消費しない。
-- `game_sequence_state_changed_event`（scene_event、SendUp）: `Sequence : game_sequence_component`、`State : game_sequence_state`。`game_sequence_component` が状態の変わったときに根へ送る。受け手は祖先の component（流れの外の進行役など）。消費しない。
-- `game_sequence_component.StateChangedEvent : listenable(game_sequence_state)` — 状態が変わるたびに、新しい状態で届く。
-- `game_node_component.EnteredEvent : listenable(tuple())` — ノードに入ったときに届く。
-- `game_node_component.ExitedEvent : listenable(game_node_exit_reason)` — ノードから出たときに、出た理由で届く。
-- 出た理由（`game_node_exit_reason` の enum）: `Transitioned`（遷移の条件を満たして進んだ、または流れを終えた）、`Stopped`（`Stop`・ラウンドの終わり・シミュレーションの終わり）、`Jumped`（`JumpTo` / `Restart` で別のノードへ移った）。
-- 受けるもの: `game_node_component` は `condition_changed_event`（遷移を調べ直す）。`game_sequence_component` は `StartOnActivate` のとき `activated_event`（`Start`）/ `deactivated_event`（`Stop`）を受けて消費する。
+## Settings (@editable)
+- `game_sequence_component.FirstNode : ?entity = false` — the node entered first (an entity with `game_node_component`). Empty picks the direct child node with the smallest `Order`.
+- `game_sequence_component.StartOnRoundStart : logic = true` — when on, starts at round start and stops at round end. Every sequence with this on starts at the same time.
+- `game_sequence_component.StartOnActivate : logic = false` — when on, starts on the activation signal (`activated_event`) and stops on the deactivation signal (`deactivated_event`). The received signal is consumed and not delivered to the parts under the nodes. Placed under a node of another sequence, it becomes a (nested) sequence that runs only during that node.
+- `game_sequence_component.StartOnBegin : logic = false` — when on, starts at simulation start (after waiting one frame).
+- `game_node_component.Order : int = 0` — the order used to pick the first node when `FirstNode` is empty (0-1000; smaller first).
+- `game_transition_component.Target : ?entity = false` — the node to advance to when the conditions are satisfied. Empty ends the sequence here.
+- `game_transition_component.Priority : int = 0` — when several transitions of the same node can advance at once, the larger value wins (0-100).
 
-## 公開 API
+You may turn off all of `StartOnRoundStart`, `StartOnActivate` and `StartOnBegin` and call `Start` from code. With several games (sequences) in the same level, turn off `StartOnRoundStart` and start with that game's start signal (`StartOnActivate`) or `Start`.
+
+Example: "run a minigame sequence only during the lobby node"
+```
+Sequence (game_sequence_component, StartOnRoundStart)
+├ Lobby (game_node_component, Order 0)
+│ ├ Minigame sequence (game_sequence_component, StartOnRoundStart off, StartOnActivate on)
+│ │ ├ Ready (game_node_component, Order 0) ...
+│ │ └ Play (game_node_component, Order 1) ...
+│ └ To Playing (game_transition_component, Target = Playing) ...
+└ Playing (game_node_component, Order 1) ...
+```
+
+## Events
+- `game_node_entered_event` (derived from `activated_event`, SendDown): `Node : game_node_component`. Sent downward from the node's entity by `game_node_component` when the node is entered. Parts waiting for activation start on it. Not consumed.
+- `game_node_exited_event` (derived from `deactivated_event`, SendDown): `Node : game_node_component`, `Reason : game_node_exit_reason`. Sent downward from the node's entity by `game_node_component` when the node is exited. Parts waiting for activation stop on it. Not consumed.
+- `game_sequence_state_changed_event` (scene_event, SendUp): `Sequence : game_sequence_component`, `State : game_sequence_state`. Sent to the root by `game_sequence_component` when its state changes. Receivers: ancestor components (a director outside the sequence, etc.). Not consumed.
+- `game_sequence_component.StateChangedEvent : listenable(game_sequence_state)` — fires with the new state every time the state changes.
+- `game_node_component.EnteredEvent : listenable(tuple())` — fires when the node is entered.
+- `game_node_component.ExitedEvent : listenable(game_node_exit_reason)` — fires with the reason when the node is exited.
+- Exit reasons (the `game_node_exit_reason` enum): `Transitioned` (a transition's conditions were satisfied and the flow advanced or ended), `Stopped` (`Stop`, end of round, end of simulation), `Jumped` (moved to another node by `JumpTo` / `Restart`).
+- Received: `game_node_component` receives `condition_changed_event` (re-checks the transitions). With `StartOnActivate`, `game_sequence_component` receives and consumes `activated_event` (`Start`) / `deactivated_event` (`Stop`).
+
+## Public API
 ```verse
 game_sequence_state<public> := enum:
-    Idle        # まだ始めていない
-    Running     # ノードを進めている
-    Stopped     # Stop・ラウンドの終わりで止まった
-    Finished    # 最後の遷移（Target が空）まで進んだ
-    Failed      # 最初のノードが無い・Target にノードが無いなどで止まった
+    Idle        # not started yet
+    Running     # advancing through nodes
+    Stopped     # stopped by Stop or the end of the round
+    Finished    # advanced to the last transition (empty Target)
+    Failed      # stopped because there is no first node, the Target has no node, etc.
 (State:game_sequence_state).ToString<public>()<computes>:string
 
 game_sequence_state_changed_event<public> := class(scene_event):
@@ -76,13 +76,13 @@ game_sequence_component<public> := class<final_super>(component):
     StartOnBegin<public>:logic
     var<private> State<public>:game_sequence_state
     var<private> CurrentNode<public>:?game_node_component
-    var<private> LastError<public>:?game_node_error             # 最後に Failed になった理由。次に失敗するまで残る
+    var<private> LastError<public>:?game_node_error             # the reason of the last Failed. Stays until the next failure
     StateChangedEvent<public><final>:listenable(game_sequence_state)
-    Start<public>():void                                        # 最初のノードから始める。進めていれば何もしない（Stop のすぐあとなら、止まってから始める）
-    Stop<public>():void                                         # 止める（ノードからは Stopped で出る）
-    Restart<public>():void                                      # 最初のノードからやり直す
-    JumpTo<public>(Node:game_node_component):void               # Node へ移る（ノードからは Jumped で出る）
-    IsRunning<public>()<decides><transacts>:void                # State が Running のあいだ成功
+    Start<public>():void                                        # starts from the first node. Does nothing when running (right after Stop, starts once stopped)
+    Stop<public>():void                                         # stops (the node is exited with Stopped)
+    Restart<public>():void                                      # starts over from the first node
+    JumpTo<public>(Node:game_node_component):void               # moves to Node (the node is exited with Jumped)
+    IsRunning<public>()<decides><transacts>:void                # succeeds while State is Running
     FindFirstNode<public>()<decides><transacts>:game_node_component
 
 game_node_exit_reason<public> := enum:
@@ -101,42 +101,42 @@ game_node_component<public> := class<final_super>(component):
     Order<public>:int
     EnteredEvent<public><final>:listenable(tuple())
     ExitedEvent<public><final>:listenable(game_node_exit_reason)
-    IsActive<public>()<decides><reads>:void                    # 入ってから出るまで成功
-    FindReadyTransition<public>()<decides><transacts>:game_transition_component   # 今進める遷移のうち Priority が一番大きいもの
+    IsActive<public>()<decides><reads>:void                    # succeeds from entering until exiting
+    FindReadyTransition<public>()<decides><transacts>:game_transition_component   # among the transitions that can advance now, the one with the largest Priority
 
 game_transition_component<public> := class<final_super>(component):
     Target<public>:?entity
     Priority<public>:int
-    IsReady<public>()<decides><transacts>:void                  # 直下の条件をすべて満たしていれば成功（条件が無ければいつも）
-    IsFinish<public>()<decides><transacts>:void                 # Target が空（この遷移で流れを終える）なら成功
+    IsReady<public>()<decides><transacts>:void                  # succeeds when every direct child condition is satisfied (always, without conditions)
+    IsFinish<public>()<decides><transacts>:void                 # succeeds when Target is empty (this transition ends the sequence)
 
 game_node_error<public> := class<computes>:
 game_node_not_found_error<public> := class<computes>(game_node_error):
-    Target<public>:entity                                       # game_node_component が付いていなかった遷移先
+    Target<public>:entity                                       # the target that did not carry game_node_component
 game_node_empty_error<public> := class<computes>(game_node_error):
 ```
 
-## 前提・注意
-- ノードを移るときは 1 フレーム空けます（同じフレームで遷移が回り続けないように）。
-- `Stop` のあと、まだ止まりきらないうちに（同じフレームに）`Start` / `Restart` / `JumpTo` が来たら、来た順に処理します。今のノードから `Stopped` で出て状態が `Stopped` になってから、改めて始めます（`Start` は最初のノードから、`JumpTo` はその Node から）。`Start` → `Stop` の順なら始まりません。`StartOnActivate` の流れを置いたノードへ親の流れが入り直したとき（同じノードへの `JumpTo` / `Restart`）に、子の流れは停止と起動の合図を続けて受けますが、止まったままにはならず最初のノードから進み直します。
-- `FirstNode` を決めたときは、その entity の `game_node_component` だけを見ます（付いていなければ失敗し、子へは探しにいきません）。空のときは直下の子だけを見ます（孫は見ません）。
-- `Order`・`Priority` が同じ値どうしだと、どれが選ばれるかは決まりません。
-- `JumpTo` の `Node` は、この流れの直下でなくてもかまいません。
-- 遷移先の entity に `game_node_component` が無いときは `game_node_not_found_error`、最初のノードが見つからないときは `game_node_empty_error` で `Failed` になり、理由が `LastError` に残ります。遷移の結果を返す関数（以前の `GetResult`）はありません。流れを終える遷移かどうかは `IsFinish` で調べます。
-- `StartOnRoundStart` はラウンドの管理（`GetFortRoundManager`）が見つかるときだけ効きます。
-- `game_sequence_component` はほかの部品から探されません（`FindScopedComponent` の対象ではない）。区画（`game_scope_component`）が無くても、いくつ置いても取り合いません。ただし `StartOnRoundStart` がオンの流れはラウンドの開始でどれも同時に始まります。
-- `StartOnActivate` の合図の消費で、配下のノードの部品に外の合図が届かなくなるのは、`SendDown` で消費すると下へ配られないことによります（⚠ 未検証：UEFN 実機で、消費した `SendDown` が子孫へ届かないこと）。
-- ノードに入ったら prefab を出す部品 `spawn_prefab_component` は SpawnSystem の PrefabKit にあります（`using { SpawnSystem.PrefabKit }`。ノードの entity かその子孫に置くと、起動の合図で `SpawnOnActivate` 個を出し、停止の合図で消す（`DespawnOnDeactivate` が既定オン））。
-- この System のコードには `⚠ 未検証` の印はなく、`@experimental` の API も使っていません。
+## Requirements, caveats and limits
+- One frame is left between nodes (so transitions do not keep cycling within the same frame).
+- When `Start` / `Restart` / `JumpTo` arrives after `Stop` before it has fully stopped (in the same frame), they are processed in arrival order. The current node is exited with `Stopped`, the state becomes `Stopped`, and then it starts again (`Start` from the first node, `JumpTo` from that Node). In the order `Start` -> `Stop`, it does not start. When the parent sequence re-enters the node holding a `StartOnActivate` sequence (`JumpTo` / `Restart` to the same node), the child sequence receives the deactivation and activation signals back to back, but it does not stay stopped; it starts again from the first node.
+- With `FirstNode` set, only the `game_node_component` of that entity is used (fails when it is not attached; the children are not searched). When empty, only the direct children are searched (not the grandchildren).
+- With equal `Order` / `Priority` values, which one is picked is unspecified.
+- The `Node` of `JumpTo` need not be directly under this sequence.
+- When the target entity has no `game_node_component`, the state becomes `Failed` with `game_node_not_found_error`; when the first node is not found, with `game_node_empty_error`; the reason stays in `LastError`. There is no function returning a transition result (the former `GetResult`). Use `IsFinish` to tell whether a transition ends the sequence.
+- `StartOnRoundStart` works only when the round manager (`GetFortRoundManager`) is found.
+- `game_sequence_component` is never looked up by other parts (not a target of `FindScopedComponent`). It works without a zone (`game_scope_component`), and any number can coexist without conflict. However, every sequence with `StartOnRoundStart` on starts at the same time at round start.
+- That consuming the signal with `StartOnActivate` keeps outside signals from reaching the parts under the nodes relies on a consumed `SendDown` not being distributed further down (⚠ Unverified: in UEFN, that a consumed `SendDown` does not reach the descendants).
+- The part that spawns a prefab when a node is entered, `spawn_prefab_component`, lives in SpawnSystem's PrefabKit (`using { SpawnSystem.PrefabKit }`. Placed on the node's entity or a descendant, it spawns `SpawnOnActivate` instances on the activation signal and despawns them on the deactivation signal (`DespawnOnDeactivate` is on by default)).
+- The code of this System has no `⚠ Unverified` marks and uses no `@experimental` API.
 
-## 確かめ方
-- テスト：`_Test/GameSequenceSystemTest/` の `game_sequence_system_test_component`。この component を付けた entity を 1 つ置くだけ（流れ・ノード・遷移・条件はテストが実行時に作る。プレイヤーは要らない）。`Order` で決まる最初のノード、遷移（条件が 2 つなら両方満たすまで進まない）、`Finished`、`Restart`、`JumpTo`、`Stop`、出た理由、`StartOnActivate` の入れ子の流れ、同じフレームの `Stop` → `Start`（止まってから最初のノードで始め直す。親が同じノードに入り直したときの子の流れ）を確かめます。約 2 秒。結果は出力ログの `[TEST] GameSequenceSystem`。
-- 入れ子の流れは、ノード C の下の流れが C に入ると始まり、C から出ると止まることを見ます。`_Samples/` に GameSequenceSystem の見本はありません。
+## Verifying
+- Test: `game_sequence_system_test_component` in `_Test/GameSequenceSystemTest/`. Just place one entity with this component (the sequence, nodes, transitions and conditions are created by the test at runtime. No player needed). Checks the first node chosen by `Order`, transitions (with two conditions, no advance until both are satisfied), `Finished`, `Restart`, `JumpTo`, `Stop`, exit reasons, a nested `StartOnActivate` sequence, and `Stop` -> `Start` in the same frame (starts again at the first node once stopped; the child sequence when the parent re-enters the same node). About 2 s. The result is `[TEST] GameSequenceSystem` in the output log.
+- For the nested sequence, it checks that the sequence under node C starts when C is entered and stops when C is exited. There is no GameSequenceSystem sample in `_Samples/`.
 
-## ラウンド
-- `StartOnRoundStart` は `round_watcher`（ActivationSystem）で、ラウンドの始まりに `Start`、終わりに `Stop` する。流れの中の部品をラウンドに合わせるには、ノードの起動・停止の合図がそのまま使える。ゲームの流れを使わずにラウンドへ合わせるなら `activate_on_round_component`。
+## Rounds
+- `StartOnRoundStart` uses `round_watcher` (ActivationSystem) to `Start` at round start and `Stop` at round end. To align parts inside the sequence with rounds, the nodes' activation / deactivation signals can be used as they are. To align with rounds without the game flow, use `activate_on_round_component`.
 
-## 移行が要るもの（2026-11-08）
-- FeatureKit は無くなりました。`spawn_prefab_component` は `SpawnSystem.PrefabKit` へ移り、出す場所・数・消す機能が増えました（`Spawn(Count)` / `TrySpawnAt` / `Despawn(Spawned)` / `DespawnAll` など。SpawnSystem の README）。`using { GameSequenceSystem.FeatureKit }` → `using { SpawnSystem.PrefabKit }`。
-- ToolTip の `SpawnCategory` / `SpawnPrefabToolTip` は GameSequenceSystem.TooltipKit から消えました。
-- `game_sequence_component.StartOnActivate` を足しました（既定オフなので、今の置き方はそのまま動く）。
+## Migration notes (2026-11-08)
+- FeatureKit is gone. `spawn_prefab_component` moved to `SpawnSystem.PrefabKit` and gained placement, count and despawn features (`Spawn(Count)` / `TrySpawnAt` / `Despawn(Spawned)` / `DespawnAll`, etc. See the SpawnSystem README). `using { GameSequenceSystem.FeatureKit }` → `using { SpawnSystem.PrefabKit }`.
+- The ToolTips `SpawnCategory` / `SpawnPrefabToolTip` were removed from GameSequenceSystem.TooltipKit.
+- `game_sequence_component.StartOnActivate` was added (off by default, so existing placements keep working).

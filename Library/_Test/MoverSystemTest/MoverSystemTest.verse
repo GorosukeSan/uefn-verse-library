@@ -7,7 +7,7 @@ using { MoverSystem.RouteKit }
 using { SceneGraphSystem }
 using { _Test }
 
-# 役割：祖先で受けた mover の scene_event を数える（AlsoSendUp の確認用。テストが実行時に親の entity に付ける）
+# Role: counts mover scene_events received at an ancestor (for checking AlsoSendUp; the test attaches it to the parent entity at runtime)
 test_mover_event_counter<public> := class<final_super>(component):
 
     var<private> ReachedCount:int = 0
@@ -24,9 +24,9 @@ test_mover_event_counter<public> := class<final_super>(component):
 
     GetFinishedCount<public>()<transacts>:int = FinishedCount
 
-# 役割：MoverSystem の動作確認。道のりの回り方（Loop / PingPong / Once の番号の順）、目印の Order での並び、Keyframe の mover が地点に予定の時間で着くこと（速さと距離から。時間は GetSimulationElapsedTime の差）、Pause で止まり Play で続きから動くこと、SetSpeed が途中から効くこと、終わりの知らせ、Physics の mover が行き先に着くこと、道のりの Reset、Restart（最初の位置へ戻ってやり直す・今の位置から別の行き先へ）、AlsoSendUp で祖先に知らせが届くことを確かめる
-# テストのレベル：このテストの component を、まわり 10 メートルに何も無い空中の entity に付けるだけ（動かす entity はテストが自分の子に作る。見た目は無い）
-# 結果：出力ログの [TEST] MoverSystem
+# Role: verification of MoverSystem. Checks route traversal (index order of Loop / PingPong / Once), ordering of waypoints by Order, that a Keyframe mover reaches points at the expected time (from speed and distance; time is the difference of GetSimulationElapsedTime), that Pause stops and Play resumes from where it was, that SetSpeed takes effect midway, the finished notification, that a Physics mover reaches its destination, route Reset, Restart (return to the initial position and go again / from the current position to a different destination), and that AlsoSendUp delivers notifications to ancestors
+# Test level: just attach this test component to an entity in the air with nothing within 10 meters (the moved entity is created by the test under its children; no visuals)
+# Result: [TEST] MoverSystem in the output log
 mover_system_test_component<public> := class<final_super>(component):
 
     SpeedCmPerSecond<private>:float = 300.0
@@ -168,7 +168,7 @@ mover_system_test_component<public> := class<final_super>(component):
         Results.CheckInt("send up: parent got mover_target_reached_event", Counter.GetReachedCount(), 1)
         Results.CheckInt("send up: parent got mover_finished_event", Counter.GetFinishedCount(), 1)
         Results.Check("restart: FindStartPosition is the start", if (Found := Mover.FindStartPosition[], Distance(Found, Start) < PositionToleranceCm) then true else false)
-        # 終わったあとの Restart は、最初の位置へ戻ってもう一度動く
+        # Restart after finishing returns to the initial position and moves once more
         RestartTime := GetSimulationElapsedTime()
         Mover.Restart()
         TickEvents.PrePhysics.Await()
@@ -180,7 +180,7 @@ mover_system_test_component<public> := class<final_super>(component):
             Results.CheckFloat("restart: position at point 1 again", Distance(MoverEntity.GetGlobalTranslation(), P1), 0.0, PositionToleranceCm)
         else:
             Results.Fail("restart: FinishedEvent after Restart", "did not come within 3 s")
-        # 今の位置から、入れ替えた地点へ 1 回だけ動く
+        # Moves once from the current position to the swapped point
         Route.SetPoints(array{P2})
         MoveTime := GetSimulationElapsedTime()
         Mover.Restart(?ReturnToStart := false)
@@ -192,7 +192,7 @@ mover_system_test_component<public> := class<final_super>(component):
             Results.Fail("restart from here: FinishedEvent", "did not come within 3 s")
         Parent.RemoveFromParent()
 
-    # Seconds 秒待つ（DeltaTime の足し合わせ）
+    # Waits Seconds (sum of DeltaTime)
     WaitSeconds<private>(Seconds:float)<suspends>:void =
         var Left:float = Seconds
         loop:

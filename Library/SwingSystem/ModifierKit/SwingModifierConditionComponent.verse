@@ -4,15 +4,15 @@ using { ConditionSystem }
 using { SceneGraphSystem }
 using { SwingSystem }
 
-# 役割：条件（直下の子の condition_component の派生）を満たしているあいだ、同じ entity の swing_modifier_component の倍率を全プレイヤー（途中参加も）に掛ける。満たさなくなったら外す
-# 置き方：エディターで、swing_modifier_component と同じ entity に付ける
-# 子：condition_component の派生を付けた entity を直下に 1 つ（複数の条件は condition_all / condition_any でまとめる）
+# Role: while the condition (a condition_component subclass on a direct child) is satisfied, applies the modifier of the swing_modifier_component on the same entity to every player (late joiners too). Removes it when the condition stops being satisfied
+# Placement: attach in the editor to the same entity as swing_modifier_component
+# Children: one direct child entity carrying a condition_component subclass (combine several conditions with condition_all / condition_any)
 swing_modifier_condition_component<public> := class<final_super>(component):
 
     var<private> Active:logic = false
     var<private> Subscription:?cancelable = false
 
-    # 掛けているあいだ（条件を満たしているあいだ）成功する
+    # Succeeds while applying (while the condition is satisfied)
     IsApplying<public>()<decides><transacts>:void =
         Active?
 

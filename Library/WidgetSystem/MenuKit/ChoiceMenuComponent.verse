@@ -6,67 +6,67 @@ using { ActivationSystem }
 using { WidgetSystem }
 using { WidgetSystem.TooltipKit }
 
-# 選択メニューで選ばれた知らせ
-# 方向：choice_menu_component の entity から根へ（SendUp）
-# 送り手：choice_menu_component（Menu）。受け手：祖先の component（条件・ゲームの流れ・利用者の component）。消費しない
+# Notification that an option was chosen in the choice menu
+# Direction: from the choice_menu_component's entity to the root (SendUp)
+# Sender: choice_menu_component (Menu). Receivers: ancestor components (conditions, game sequence, your components). Not consumed
 widget_choice_event<public> := class(scene_event):
-    # 送ったメニュー
+    # The menu that sent it
     Menu<public>:choice_menu_component
-    # 選んだ人
+    # The person who chose
     Agent<public>:agent
-    # 選んだ項目の番号（Options の並び。0 から）
+    # Index of the chosen option (the order of Options, from 0)
     Index<public>:int
 
-# 役割：コードを書かずに置ける選択メニュー。Title の下に Options のボタンを縦に並べ、押された項目を知らせる。
-#   押されたら widget_choice_event を上へ送り、ChoiceEvent に届け、Targets[番号] の entity へ起動の合図（activated_event）を送る。CloseOnChoice なら、そのあとその人のメニューを閉じる
-#   ShowCloseButton なら最後に「閉じる」ボタン（CloseText）を足す（押すと何も選ばずに閉じる）
-# 置き方：エディターで entity に付ける。だれに・いつ出すかは player_widget_component の設定（Audience・ActiveOnBegin・起動の合図）と、同じ entity の widget_show_*_component で決める
-# 親：起動の合図が届く場所（インタラクトで開くなら interact_trigger_component の Targets にこの entity を入れる）
-# 外から：OpenFor(Agent)（ShowFor と同じ）、HideFor(Agent) で閉じる。ChoiceEvent を購読する
-# 前提・注意：Mode は既定で Menu（操作を受け取り、表示中は移動できない）。パッドではいちばん上のボタンにフォーカスが移る
+# Role: a choice menu that can be placed without writing code. Lines up the Options as buttons under Title and notifies which option was pressed.
+#   When pressed, sends widget_choice_event upward, delivers ChoiceEvent, and sends an activation signal (activated_event) to the entity Targets[index]. With CloseOnChoice, then closes that person's menu
+#   With ShowCloseButton, adds a "close" button (CloseText) at the end (pressing it closes without choosing)
+# Placement: in the editor, attach to an entity. Who sees it and when is decided by the player_widget_component settings (Audience, ActiveOnBegin, activation signals) and a widget_show_*_component on the same entity
+# Parent: where the activation signal arrives (to open with an interact, put this entity in the Targets of interact_trigger_component)
+# From outside: OpenFor(Agent) (same as ShowFor), HideFor(Agent) closes. Subscribe to ChoiceEvent
+# Requirements: Mode defaults to Menu (takes input; no movement while shown). On a gamepad, focus moves to the top button
 choice_menu_component<public> := class<final_super>(player_widget_component):
 
     Mode<override>:player_widget_mode = player_widget_mode.Menu
     ZOrder<override>:int = 1000
 
-    # メニューの上に出す見出し。空なら出さない
+    # Heading shown above the menu. Not shown if empty
     @editable:
         ToolTip := ChoiceMenuTitleToolTip
         Categories := array{ChoiceMenuCategory}
     Title<public>:string = ""
-    # 並べる項目（上から順に、番号 0, 1, 2 ...）
+    # Options to line up (top to bottom, index 0, 1, 2 ...)
     @editable:
         ToolTip := ChoiceMenuOptionsToolTip
         Categories := array{ChoiceMenuCategory}
     Options<public>:[]string = array{"OK"}
-    # 項目ごとに起動の合図を送る entity（Options と同じ並び。足りない・空の項目は送らない）
+    # Entity that receives an activation signal per option (same order as Options. Missing or empty entries send nothing)
     @editable:
         ToolTip := ChoiceMenuTargetsToolTip
         Categories := array{ChoiceMenuCategory}
     Targets<public>:[]entity = array{}
-    # オンなら、選んだらその人のメニューを閉じる。既定オン
+    # When on, closes that person's menu after choosing. Default on
     @editable:
         ToolTip := ChoiceMenuCloseOnChoiceToolTip
         Categories := array{ChoiceMenuCategory}
     CloseOnChoice<public>:logic = true
-    # オンなら、最後に何も選ばずに閉じるボタンを足す。既定オン
+    # When on, adds a button at the end that closes without choosing. Default on
     @editable:
         ToolTip := ChoiceMenuShowCloseToolTip
         Categories := array{ChoiceMenuCategory}
     ShowCloseButton<public>:logic = true
-    # 閉じるボタンの文字
+    # Text of the close button
     @editable:
         ToolTip := ChoiceMenuCloseTextToolTip
         Categories := array{ChoiceMenuCategory}
     CloseText<public>:string = "Close"
-    # メニューを置く位置（画面の横の割合 0.0〜1.0）。既定 0.5（真ん中）
+    # Menu position (horizontal screen ratio 0.0-1.0). Default 0.5 (center)
     @editable_number(float):
         ToolTip := WidgetPositionXToolTip
         Categories := array{ChoiceMenuCategory}
         MinValue := option{0.0}
         MaxValue := option{1.0}
     PositionXRatio<public>:float = 0.5
-    # メニューを置く位置（画面の縦の割合 0.0〜1.0）。既定 0.5（真ん中）
+    # Menu position (vertical screen ratio 0.0-1.0). Default 0.5 (center)
     @editable_number(float):
         ToolTip := WidgetPositionYToolTip
         Categories := array{ChoiceMenuCategory}
@@ -76,10 +76,10 @@ choice_menu_component<public> := class<final_super>(player_widget_component):
 
     ChoiceEventInternal<private><final>:event(tuple(agent, int)) = event(tuple(agent, int)){}
 
-    # だれかが項目を選ぶたびに、（その人, 項目の番号）で届く（Await / Subscribe する。外から Signal はできない）
+    # Delivered as (the person, the option index) each time someone chooses an option (Await / Subscribe; cannot be Signaled from outside)
     ChoiceEvent<public><final>:listenable(tuple(agent, int)) = MakeProxyListenable(ChoiceEventInternal)
 
-    # Agent にメニューを開く（ShowFor と同じ）
+    # Open the menu for Agent (same as ShowFor)
     OpenFor<public>(Agent:agent):void =
         ShowFor(Agent)
 
@@ -102,7 +102,7 @@ choice_menu_component<public> := class<final_super>(player_widget_component):
         spawn{RunChoices(View, Choices, Buttons.Length)}
         MakeScreenCanvas(MakeStack(Items, orientation.Vertical, 8.0), PositionXRatio, PositionYRatio)
 
-    # 押されるたびに知らせる。CloseCount 番（閉じるボタン）なら閉じる。閉じたら終わる
+    # Notify each time a button is pressed. Index CloseCount (the close button) closes. Ends when closed
     RunChoices<private>(View:widget_view, Buttons:[]text_button_base, OptionCount:int)<suspends>:void =
         loop:
             MaybeIndex := View.AwaitChoice(Buttons)

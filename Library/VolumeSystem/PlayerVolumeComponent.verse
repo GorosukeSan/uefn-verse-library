@@ -8,81 +8,81 @@ using { PlayerSystem }
 using { SceneGraphSystem }
 using { VolumeSystem.TooltipKit }
 
-# ボリュームの形
+# Shape of the volume
 player_volume_shape<public> := enum:
-    # 箱（幅 × 奥行き × 高さ）
+    # Box (width x depth x height)
     Box
-    # 縦の円柱（直径 = 幅。奥行きは使わない）
+    # Upright cylinder (diameter = width; depth is unused)
     Cylinder
 
-# プレイヤーがボリュームに入った知らせ
-# 方向：player_volume_component の entity から根へ（SendUp）
-# 送り手：player_volume_component（Volume）。受け手：同じ entity と祖先の component（VolumeSystem の Kit、利用者の component）。消費しない
-# 受け手は Volume で「どのボリュームの知らせか」を見分ける（自分の entity のボリュームだけなら Entered.Volume.Entity = Entity）
+# Notification that a player entered the volume
+# Direction: from the player_volume_component's entity to the root (SendUp)
+# Sender: player_volume_component (Volume). Receivers: components on the same entity and ancestors (VolumeSystem Kits, your components). Not consumed
+# Receivers tell "which volume" apart with Volume (for only the volume on your own entity, Entered.Volume.Entity = Entity)
 player_volume_entered_event<public> := class(scene_event):
-    # 送ったボリューム
+    # The volume that sent it
     Volume<public>:player_volume_component
-    # 入った人
+    # The player who entered
     Agent<public>:agent
 
-# プレイヤーがボリュームから出た知らせ（出た・キャラクターがいなくなった・退出した・ボリュームが止まった）
-# 方向・送り手・受け手は player_volume_entered_event と同じ
+# Notification that a player left the volume (left, character gone, left the game, or the volume stopped)
+# Direction, sender and receivers are the same as player_volume_entered_event
 player_volume_exited_event<public> := class(scene_event):
-    # 送ったボリューム
+    # The volume that sent it
     Volume<public>:player_volume_component
-    # 出た人
+    # The player who left
     Agent<public>:agent
 
-# 役割：この entity の位置を基準にした箱か円柱の範囲に、プレイヤーが入った・出たを調べて知らせる。中で何をするか（条件・起動・効果）は持たず、同じ entity か祖先に置く別の component が知らせを受けて決める（継承しない）
-#   調べ方：起動しているあいだ PollIntervalSeconds 秒ごとに、(1) この entity のメッシュに重なっている entity を FindOverlapHits で調べ、possessable_component の Agent で人を出す（⚠ 未検証）、(2) 見つからなかった人はキャラクターの位置を範囲と比べる（実機で確認済み）。どちらかで見つかれば中にいる
-#   範囲：底面の真ん中がこの entity の位置。幅 WidthCm（前後）× 奥行き DepthCm（左右）× 高さ HeightCm に、この entity の大きさ（Scale）を掛ける。回転は見ない。上下に HeightMarginCm の余裕（キャラクターの位置は体の真ん中なので、薄い床のような範囲では大きくする）
-# 置き方：エディターで entity に付ける（見た目が要らなければメッシュは無くてよい）
-# 同じ entity・親：知らせを受ける component（ConditionKit の player_in_volume_condition_component、ActivationKit の volume_activation_component、利用者の component）
-# いつ：ActiveOnBegin なら開始から。起動の合図（activated_event）で始め、停止の合図（deactivated_event）で止める。コードから Activate / Deactivate も呼べる
-# 知らせ：変わったときだけ player_volume_entered_event / player_volume_exited_event を上へ送り、PlayerEnteredEvent / PlayerExitedEvent に届ける。止まるときは中にいた人ぶんの「出た」を送ってから空にする
-# タグ：中にいるあいだ、その人（agent）に in_volume_tag を付ける（どのボリュームかは区別しない）
-# 外から：GetAgentsInside / GetInsideCount / IsInside / AwaitLeft / IsActive
-# 前提：区画（または世界）に player_manager_component が 1 つ（見つけたら覚えておく）
+# Role: detects players entering and leaving a box or cylinder volume anchored at this entity's position and notifies about it. It holds no behavior (conditions, activation, effects); other components on the same entity or an ancestor receive the notification and decide (no inheritance)
+#   Detection: while active, every PollIntervalSeconds seconds, (1) entities overlapping this entity's mesh are queried with FindOverlapHits and the player is taken from the possessable_component's Agent (⚠ unverified), (2) players not found that way have their character position compared with the volume (confirmed in UEFN). Either hit means inside
+#   Volume: the center of the bottom face is this entity's position. Width WidthCm (forward/back) x depth DepthCm (left/right) x height HeightCm, multiplied by this entity's Scale. Rotation is ignored. HeightMarginCm of margin above and below (a character's position is the middle of its body, so make it larger for a thin floor-like volume)
+# Placement: attach to an entity in the editor (no mesh is needed if you do not want a visual)
+# Same entity / parent: components that receive the notification (ConditionKit's player_in_volume_condition_component, ActivationKit's volume_activation_component, your components)
+# When: from the start if ActiveOnBegin. Starts on the activation signal (activated_event) and stops on the deactivation signal (deactivated_event). Activate / Deactivate can also be called from code
+# Notifies: sends player_volume_entered_event / player_volume_exited_event upward only when something changed, and fires PlayerEnteredEvent / PlayerExitedEvent. When stopping, sends "exited" for everyone inside and then empties
+# Tags: attaches in_volume_tag to the player (agent) while inside (does not say which volume)
+# From outside: GetAgentsInside / GetInsideCount / IsInside / AwaitLeft / IsActive
+# Requirements: one player_manager_component in the scope (or the world); remembered once found
 player_volume_component<public> := class<final_super>(component):
 
-    # 範囲の形。Box は箱、Cylinder は直径が WidthCm の縦の円柱（既定 Box）
+    # Shape of the volume. Box is a box, Cylinder is an upright cylinder with diameter WidthCm (default Box)
     @editable:
         ToolTip := VolumeShapeToolTip
         Categories := array{VolumeCategory}
     Shape<public>:player_volume_shape = player_volume_shape.Box
-    # 範囲の幅（前後、cm）。entity の Scale を掛ける。円柱では直径（既定 100.0）
+    # Width of the volume (forward/back, cm). Multiplied by the entity's Scale. The diameter for a cylinder (default 100.0)
     @editable_number(float):
         ToolTip := VolumeWidthToolTip
         Categories := array{VolumeCategory}
         MinValue := option{1.0}
     WidthCm<public>:float = 100.0
-    # 範囲の奥行き（左右、cm）。entity の Scale を掛ける。円柱では使わない（既定 100.0）
+    # Depth of the volume (left/right, cm). Multiplied by the entity's Scale. Unused for a cylinder (default 100.0)
     @editable_number(float):
         ToolTip := VolumeDepthToolTip
         Categories := array{VolumeCategory}
         MinValue := option{1.0}
     DepthCm<public>:float = 100.0
-    # 範囲の高さ（cm）。底面が entity の位置。entity の Scale を掛ける（既定 100.0）
+    # Height of the volume (cm). The bottom face is at the entity's position. Multiplied by the entity's Scale (default 100.0)
     @editable_number(float):
         ToolTip := VolumeHeightToolTip
         Categories := array{VolumeCategory}
         MinValue := option{1.0}
     HeightCm<public>:float = 100.0
-    # 範囲の上下に足す余裕（cm）。薄い床のような範囲では 300 くらいにする（既定 100.0）
+    # Extra margin added above and below the volume (cm). Use about 300 for a thin floor-like volume (default 100.0)
     @editable_number(float):
         ToolTip := VolumeHeightMarginToolTip
         Categories := array{VolumeCategory}
         MinValue := option{0.0}
         MaxValue := option{2000.0}
     HeightMarginCm<public>:float = 100.0
-    # 出入りを調べる間隔（秒）。短いほど早く気付くが重くなる（既定 0.25）
+    # Interval between checks (seconds). Shorter notices sooner but costs more (default 0.25)
     @editable_number(float):
         ToolTip := VolumePollIntervalToolTip
         Categories := array{VolumeCategory}
         MinValue := option{0.05}
         MaxValue := option{10.0}
     PollIntervalSeconds<public>:float = 0.25
-    # true ならシミュレーション開始から調べる。false なら起動の合図から（既定 true）
+    # true checks from the start of the simulation. false waits for the activation signal (default true)
     @editable:
         ToolTip := VolumeActiveOnBeginToolTip
         Categories := array{VolumeCategory}
@@ -91,10 +91,10 @@ player_volume_component<public> := class<final_super>(component):
     PlayerEnteredEventInternal<private><final>:event(agent) = event(agent){}
     PlayerExitedEventInternal<private><final>:event(agent) = event(agent){}
 
-    # だれかが入るたびに、その人で届く（Await / Subscribe する。外から Signal はできない）
+    # Fires with the player each time someone enters (Await / Subscribe; cannot be signaled from outside)
     PlayerEnteredEvent<public><final>:listenable(agent) = MakeProxyListenable(PlayerEnteredEventInternal)
 
-    # だれかが出るたびに、その人で届く（止まるときは中にいた人ぶんも届く）
+    # Fires with the player each time someone leaves (also for everyone inside when the volume stops)
     PlayerExitedEvent<public><final>:listenable(agent) = MakeProxyListenable(PlayerExitedEventInternal)
 
     var<private> Inside:[agent]logic = map{}
@@ -130,37 +130,37 @@ player_volume_component<public> := class<final_super>(component):
         LeaveAll()
         (super:)OnEndSimulation()
 
-    # 調べ始める。もう調べていれば何もしない
+    # Starts checking. Does nothing if already checking
     Activate<public>():void =
         if (not Active?):
             set Active = true
             StartEvent.Signal()
 
-    # 調べるのをやめ、中にいた人ぶんの「出た」を送って空にする。止まっていれば何もしない
+    # Stops checking, sends "exited" for everyone inside and empties. Does nothing if already stopped
     Deactivate<public>():void =
         if (Active?):
             set Active = false
             StopEvent.Signal()
             LeaveAll()
 
-    # 調べているあいだ成功する
+    # Succeeds while checking
     IsActive<public>()<decides><transacts>:void =
         Active?
 
-    # 今中にいる人（並び順は決まっていない）
+    # Players inside now (order is unspecified)
     GetAgentsInside<public>()<transacts>:[]agent =
         for (Agent -> Value : Inside, Value?):
             Agent
 
-    # 今中にいる人数
+    # Number of players inside now
     GetInsideCount<public>()<transacts>:int =
         GetAgentsInside().Length
 
-    # Agent が今中にいれば成功する
+    # Succeeds if Agent is inside now
     IsInside<public>(Agent:agent)<decides><transacts>:void =
         Inside[Agent]?
 
-    # Agent が出るまで待つ（今いなければすぐ戻る）
+    # Waits until Agent leaves (returns at once if not inside now)
     AwaitLeft<public>(Agent:agent)<suspends>:void =
         if (IsInside[Agent]):
             loop:
@@ -168,7 +168,7 @@ player_volume_component<public> := class<final_super>(component):
                 if (Left = Agent):
                     break
 
-    # Position（ワールドの位置、cm）が範囲の中なら成功する。範囲は今のこの entity の位置と大きさで決まる
+    # Succeeds if Position (world position, cm) is inside the volume. The volume follows this entity's current position and scale
     Contains<public>(Position:vector3)<decides><transacts>:void =
         Transform := Entity.GetGlobalTransform()
         Base := Transform.Translation
@@ -191,7 +191,7 @@ player_volume_component<public> := class<final_super>(component):
             Sleep(PollIntervalSeconds)
 
     Poll<private>():void =
-        # 区画の player_manager_component を探して覚える（覚えていれば探さない）
+        # Find and remember the scope's player_manager_component (no lookup once remembered)
         set Manager = Entity.ResolveScopedComponent(Manager, player_manager_component)
         if (Found := Manager?):
             Overlapping := FindOverlappingAgents()
@@ -203,12 +203,12 @@ player_volume_component<public> := class<final_super>(component):
                     Enter(Agent)
                 else:
                     Leave(Agent)
-            # 退出した人（slot が無くなった人）を出す
+            # Remove players who left the game (no slot any more)
             for (Agent -> Value : Inside, Value?, Player := player[Agent], not Found.FindSlot[Player]):
                 Leave(Agent)
 
-    # この entity のメッシュ（当たり判定で重なりを取れるもの）に今重なっている entity を操っている agent（possessable_component の Agent）。メッシュが無ければ空
-    # ⚠ 未検証：プレイヤーのキャラクターの entity が重なりの結果に入り、possessable_component から agent が取れるか。取れなくても位置での判定で見つかる
+    # Agents (possessable_component's Agent) controlling the entities currently overlapping this entity's mesh (one that reports overlaps). Empty without a mesh
+    # ⚠ Unverified: whether a player's character entity appears in the overlap results and an agent can be read from possessable_component. Even if not, the position check finds them
     FindOverlappingAgents<private>()<transacts>:[]agent =
         for (Hit : Entity.FindOverlapHits(), Agent := Hit.TargetComponent.Entity.FindPossessingAgent[]):
             Agent
@@ -233,5 +233,5 @@ player_volume_component<public> := class<final_super>(component):
         set Inside = map{}
         InsideTags.RemoveAll()
 
-# どれかの player_volume_component の中にいる人（agent）に付くタグ（ほかの System は Agent.HasPlayerTag[in_volume_tag] で確かめる）
+# Tag attached to a player (agent) who is inside any player_volume_component (other Systems check with Agent.HasPlayerTag[in_volume_tag])
 in_volume_tag<public> := class(player_state_tag):

@@ -7,22 +7,22 @@ using { ActivationSystem }
 using { MCPSystem }
 using { MCPSystem.TooltipKit }
 
-# 役割：Entity ツールセット（宛先 "entity"）。entity を探す（タグ・名前・子孫）、位置・回転・大きさを読む / 書く、有効 / 無効、タグの付け外し、起動・停止の合図、component の一覧
-#   entity は番号（このツールセットや entity.find が返す "id"。セッションの中で変わらない）か、mcp_name_component の名前で指す
-#   タグは名前で指す（core.tags の一覧。ゲームのタグは mcp_tag_provider で名前を知らせる。付け外しは <concrete> のタグだけ）
-# 置き方：受け箱（mcp_inbox_component）と同じ entity に付けるとよい（どこでもよい）
-# タグ：自分の entity に mcp_controllable_tag。MCP から付けたタグは覚えておき、止まるときに外す
-# 前提・注意：Verse から entity の名前（エディターの表示名）・component の型の名前は読めない（v43.00 時点）。名前は mcp_name_component で付ける
+# Role: Entity toolset (destination "entity"). Finds entities (tag, name, descendants), reads / writes position, rotation and scale, enable / disable, adds / removes tags, activation / deactivation signals, component list
+#   An entity is addressed by id (the "id" returned by this toolset / entity.find; stable within the session) or by its mcp_name_component name
+#   Tags are addressed by name (the core.tags list; game tags report their names through mcp_tag_provider; only <concrete> tags can be added / removed)
+# Placement: best attached to the same entity as the inbox (mcp_inbox_component) (any entity works)
+# Tags: mcp_controllable_tag on its own entity. Tags added from MCP are remembered and removed when it stops
+# Requirements, caveats: Verse cannot read entity names (the editor display name) or component type names (as of v43.00). Give names with mcp_name_component
 mcp_entity_toolset_component<public> := class<final_super>(component, mcp_controllable):
 
-    # 同じツールセットを複数置くときの名前（空なら "entity" だけで届く）
+    # Name used when the same toolset is placed more than once (when empty, "entity" alone reaches it)
     @editable:
         ToolTip := McpToolsetIdToolTip
         Categories := array{McpCategory}
     InstanceId<public>:string = ""
 
     RoleTags<private>:mcp_role_tags = mcp_role_tags{}
-    # MCP から付けたタグ（止まるときに外す）
+    # Tags added from MCP (removed when it stops)
     AddedTags<private>:mcp_role_tags = mcp_role_tags{}
 
     OnBeginSimulation<override>():void =
@@ -40,22 +40,22 @@ mcp_entity_toolset_component<public> := class<final_super>(component, mcp_contro
 
     McpTools<override>()<transacts>:[]mcp_tool =
         array:
-            McpTool("find", "entity を探す（tag・name・root のどれか。root だけなら子孫すべて）。data に [\{id,name,pos\}]", array{McpOptArg("tag", "string", "タグの名前（core.tags）"), McpOptArg("name", "string", "mcp_name_component の名前"), McpOptArg("root", "entity", "この entity の子孫から探す（既定は世界）"), McpOptArg("limit", "int", "返す数の上限（既定 200）")})
-            McpTool("info", "entity の情報（親・子の数・component の数・付いている名前つきタグ・位置）", array{McpArg("entity", "entity", "対象")})
-            McpTool("children", "直下の子。data に [\{id,name\}]", array{McpArg("entity", "entity", "対象")})
-            McpTool("parent", "親（最上位なら simulation entity の番号）", array{McpArg("entity", "entity", "対象")})
-            McpTool("get_transform", "位置（cm）・回転（度）・大きさ", array{McpArg("entity", "entity", "対象"), McpOptArg("space", "string", "global（既定）か local")})
-            McpTool("set_transform", "位置・回転・大きさを変える（渡したものだけ）", array{McpArg("entity", "entity", "対象"), McpOptArg("pos", "vector3", "位置（cm）"), McpOptArg("rot", "json", "\{yaw,pitch,roll\}（度）か [yaw,pitch,roll]"), McpOptArg("scale", "vector3", "大きさ"), McpOptArg("space", "string", "global（既定）か local")})
-            McpTool("move_by", "位置をずらす（世界の向き、cm）", array{McpArg("entity", "entity", "対象"), McpArg("delta", "vector3", "ずらす量（cm）")})
-            McpTool("enable", "entity の component（enableable なもの。mesh など）を有効にする", array{McpArg("entity", "entity", "対象"), McpOptArg("recursive", "bool", "子孫も（既定 false）")})
-            McpTool("disable", "entity の component（enableable なもの）を無効にする", array{McpArg("entity", "entity", "対象"), McpOptArg("recursive", "bool", "子孫も（既定 false）")})
-            McpTool("has_tag", "タグが付いているか（reply が true / false）", array{McpArg("entity", "entity", "対象"), McpArg("tag", "string", "タグの名前")})
-            McpTool("add_tag", "タグを付ける（<concrete> のタグだけ。このツールセットが止まると外れる）", array{McpArg("entity", "entity", "対象"), McpArg("tag", "string", "タグの名前")})
-            McpTool("remove_tag", "MCP から付けたタグを外す（all = true なら、その型のタグを全部外す）", array{McpArg("entity", "entity", "対象"), McpArg("tag", "string", "タグの名前"), McpOptArg("all", "bool", "ほかの部品が付けたものも外す（既定 false）")})
-            McpTool("activate", "起動の合図（activated_event。player を渡すと activated_by_agent_event）を entity とその子孫へ送る", array{McpArg("entity", "entity", "対象"), McpOptArg("player", "player", "起こした人")})
-            McpTool("deactivate", "停止の合図（deactivated_event）を entity とその子孫へ送る", array{McpArg("entity", "entity", "対象")})
-            McpTool("components", "component の一覧（型の名前は読めないので、番号・有効か・MCP の受け口なら名前）", array{McpArg("entity", "entity", "対象")})
-            McpTool("state", "このツールセットの状態（MCP から付けたタグの数・番号の数）", array{})
+            McpTool("find", "Finds entities (by tag, name or root; root alone means all descendants). data: [\{id,name,pos\}]", array{McpOptArg("tag", "string", "tag name (core.tags)"), McpOptArg("name", "string", "mcp_name_component name"), McpOptArg("root", "entity", "search the descendants of this entity (default: the whole world)"), McpOptArg("limit", "int", "maximum number returned (default 200)")})
+            McpTool("info", "Entity info (parent, child count, component count, named tags present, position)", array{McpArg("entity", "entity", "target")})
+            McpTool("children", "Direct children. data: [\{id,name\}]", array{McpArg("entity", "entity", "target")})
+            McpTool("parent", "Parent (the simulation entity's id for a top-level entity)", array{McpArg("entity", "entity", "target")})
+            McpTool("get_transform", "Position (cm), rotation (degrees), scale", array{McpArg("entity", "entity", "target"), McpOptArg("space", "string", "global (default) or local")})
+            McpTool("set_transform", "Changes position, rotation and scale (only the ones given)", array{McpArg("entity", "entity", "target"), McpOptArg("pos", "vector3", "position (cm)"), McpOptArg("rot", "json", "\{yaw,pitch,roll\} (degrees) or [yaw,pitch,roll]"), McpOptArg("scale", "vector3", "scale"), McpOptArg("space", "string", "global (default) or local")})
+            McpTool("move_by", "Offsets the position (world axes, cm)", array{McpArg("entity", "entity", "target"), McpArg("delta", "vector3", "offset (cm)")})
+            McpTool("enable", "Enables the entity's enableable components (mesh etc.)", array{McpArg("entity", "entity", "target"), McpOptArg("recursive", "bool", "descendants too (default false)")})
+            McpTool("disable", "Disables the entity's enableable components", array{McpArg("entity", "entity", "target"), McpOptArg("recursive", "bool", "descendants too (default false)")})
+            McpTool("has_tag", "Whether the tag is present (reply is true / false)", array{McpArg("entity", "entity", "target"), McpArg("tag", "string", "tag name")})
+            McpTool("add_tag", "Adds a tag (<concrete> tags only; removed when this toolset stops)", array{McpArg("entity", "entity", "target"), McpArg("tag", "string", "tag name")})
+            McpTool("remove_tag", "Removes a tag added from MCP (all = true removes every tag of that type)", array{McpArg("entity", "entity", "target"), McpArg("tag", "string", "tag name"), McpOptArg("all", "bool", "also remove tags added by other parts (default false)")})
+            McpTool("activate", "Sends the activation signal (activated_event; with player, activated_by_agent_event) to the entity and its descendants", array{McpArg("entity", "entity", "target"), McpOptArg("player", "player", "the agent who activated it")})
+            McpTool("deactivate", "Sends the deactivation signal (deactivated_event) to the entity and its descendants", array{McpArg("entity", "entity", "target")})
+            McpTool("components", "List of components (type names cannot be read, so: index, enabled, and the name if it is an MCP receiver)", array{McpArg("entity", "entity", "target")})
+            McpTool("state", "State of this toolset (number of tags added from MCP, number of ids)", array{})
 
     McpHandle<override>(Call:mcp_call):mcp_reply =
         Tool := Call.Tool
@@ -107,7 +107,7 @@ mcp_entity_toolset_component<public> := class<final_super>(component, mcp_contro
             if (TagName := Call.FindString["tag"], Entry := Inbox.FindTagEntry[TagName]):
                 HandleTag(Call, Target, Entry)
             else:
-                McpFail("bad_args", "unknown tag {Call.GetStringOr("tag", "")}（core.tags）")
+                McpFail("bad_args", "unknown tag {Call.GetStringOr("tag", "")} (core.tags)")
         else if (Tool = "activate"):
             if (Agent := Call.FindAgent["player"]):
                 Target.SendActivatedBy(Agent)
@@ -154,7 +154,7 @@ mcp_entity_toolset_component<public> := class<final_super>(component, mcp_contro
             if (Entry := Inbox.FindTagEntry[TagName]):
                 set Found = for (E : From.FindDescendantEntitiesWithTag(Entry.TagType)) { E }
             else:
-                return McpFail("bad_args", "unknown tag {TagName}（core.tags）")
+                return McpFail("bad_args", "unknown tag {TagName} (core.tags)")
             if (Name := Call.FindString["name"]):
                 set Found = for (E : Found, E.GetMcpName() = Name) { E }
         else if (Name := Call.FindString["name"]):
@@ -200,7 +200,7 @@ mcp_entity_toolset_component<public> := class<final_super>(component, mcp_contro
                 AddedTags.Add(Target, NewTag)
                 McpOk("added {Entry.Name}")
             else:
-                McpFail("failed", "{Entry.Name} is not <concrete>（find only）")
+                McpFail("failed", "{Entry.Name} is not <concrete> (find only)")
         else:
             if (Call.GetLogicOr("all", false) = true):
                 if (AddedTags.Remove[Target, Entry.TagType]) {}
@@ -211,9 +211,9 @@ mcp_entity_toolset_component<public> := class<final_super>(component, mcp_contro
             else if (AddedTags.Remove[Target, Entry.TagType]):
                 McpOk("removed {Entry.Name}")
             else:
-                McpFail("failed", "{Entry.Name} was not added by MCP（all = true で全部外す）")
+                McpFail("failed", "{Entry.Name} was not added by MCP (all = true removes them all)")
 
-    # Target の enableable な component を切り替える。数を返す
+    # Toggles Target's enableable components. Returns the count
     SetEnabled<private>(Target:entity, On:logic, Recursive:logic):int =
         var Count:int = 0
         Entities := if (Recursive?) then array{Target} + (for (E : Target.FindDescendantEntities(entity), E <> Target) { E }) else array{Target}
@@ -225,7 +225,7 @@ mcp_entity_toolset_component<public> := class<final_super>(component, mcp_contro
             set Count += 1
         Count
 
-# entity 1 つ（{"id","name","pos"}。WithPos が false なら位置を付けない）
+# One entity ({"id","name","pos"}; no position when WithPos is false)
 McpEntityJson<public>(Inbox:mcp_inbox_component, Target:entity, WithPos:logic)<transacts>:string =
     var Fields:[]string = array{McpField("id", "{Inbox.GetHandle(Target)}"), McpField("name", McpQuote(Target.GetMcpName()))}
     if (WithPos?):
@@ -235,14 +235,14 @@ McpEntityJson<public>(Inbox:mcp_inbox_component, Target:entity, WithPos:logic)<t
 EntityJson<internal>(Inbox:mcp_inbox_component, Target:entity, WithPos:logic)<transacts>:string =
     McpEntityJson(Inbox, Target, WithPos)
 
-# transform（{"pos","rot","scale"}）
+# transform ({"pos","rot","scale"})
 McpTransformJson<public>(T:transform)<transacts>:string =
     McpObject(array{McpField("pos", McpVector(T.Translation)), McpField("rot", McpRotation(T.Rotation)), McpField("scale", McpVector(T.Scale))})
 
 TransformJson<internal>(T:transform)<transacts>:string =
     McpTransformJson(T)
 
-# 回転の引数（{"yaw","pitch","roll"}（度。無い軸は 0）か [yaw, pitch, roll]）。読めなければ失敗する
+# Rotation argument ({"yaw","pitch","roll"} (degrees; missing axes are 0) or [yaw, pitch, roll]). Fails when unreadable
 McpReadRotation<public>(V:value)<transacts><decides>:rotation =
     if (Items := V.AsArray[]):
         Items.Length = 3
@@ -254,12 +254,12 @@ McpReadRotation<public>(V:value)<transacts><decides>:rotation =
         Roll := if (X := O["roll"]) then McpValueToFloat[X] else 0.0
         MakeRotationFromYawPitchRollDegrees(Yaw, Pitch, Roll)
 
-# 役割：この entity の世界の transform を、状態の書き出し・復元（SessionKit の session.snapshot / restore）に入れる
-# 置き方：状態に入れたい entity に付ける（動く足場・動かした物など）
-# キー：Key（空なら mcp_name_component の名前、それも無ければ置いた位置）に "transform:" を付けたもの
+# Role: includes this entity's world transform in state snapshot / restore (SessionKit's session.snapshot / restore)
+# Placement: attach to any entity whose state you want included (moving platforms, moved objects etc.)
+# Key: "transform:" followed by Key (when empty, the mcp_name_component name, or failing that the placed position)
 mcp_restore_transform_component<public> := class<final_super>(component, mcp_session_restorable):
 
-    # 状態のキー（空なら名前か置いた位置）
+    # State key (when empty, the name or the placed position)
     @editable:
         ToolTip := McpRestoreKeyToolTip
         Categories := array{McpCategory}
@@ -270,7 +270,7 @@ mcp_restore_transform_component<public> := class<final_super>(component, mcp_ses
 
     OnBeginSimulation<override>():void =
         (super:)OnBeginSimulation()
-        # 置いた位置のキーは、動く前（開始のとき）の位置で決める
+        # The placed-position key is decided from the position before it moves (at start)
         set StartKey = if (Key <> "") then Key else Entity.GetMcpKey()
         RoleTags.Add(Entity, mcp_session_restorable_tag{})
 

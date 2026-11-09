@@ -1,7 +1,7 @@
-# PlayerSystem の Kit をライブラリの外（利用者のコード）から使えるように public にする。
-# フォルダから作られるモジュールは既定で internal なので、宣言しないと外から using できない。
+# Make the Kits of PlayerSystem public so they can be used from outside the library (your code).
+# Modules created from folders are internal by default, so they cannot be used with `using` from outside unless declared.
 ConditionKit<public> := module {}
-# エディターに出す説明（message）
+# Descriptions shown in the editor (message)
 TooltipKit<public> := module {}
-# Fortnite のキャラクターの動き（ジャンプ・着地・しゃがみなど）に反応する部品
+# Parts that react to Fortnite character motion (jump, landing, crouch, etc.)
 MotionKit<public> := module {}
