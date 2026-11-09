@@ -1,0 +1,5 @@
+CountdownCategory<public><localizes>:message = "カウントダウン"
+CountdownDurationToolTip<public><localizes>:message = "数える秒数です（小数も使えます。0.5 なら半秒）。0 になると「カウントダウンが終わった」条件を満たします。今回だけ違う長さにするときは、コードの Restart で秒数を渡します。"
+CountdownStartOnActivatedToolTip<public><localizes>:message = "オンなら、起動の合図（ゲームの流れなら、このノードに入ったとき）で最初から数え直し（数えている途中でもやり直します）、停止の合図で止めます。オフなら起動の合図を無視します（コードの Start / Restart / Stop か、下の「開始時に数える」で動かします）。"
+CountdownStartOnBeginToolTip<public><localizes>:message = "オンなら、ゲームの開始（シミュレーションの開始）と同時に数え始めます。ゲームの流れを使わないときに使います。"
+CountdownAlsoSendUpToolTip<public><localizes>:message = "オンなら、残り秒数と数え終わりの知らせを、子孫に加えて祖先（親から上）へも送ります。ノードの外に置いた HUD や、祖先の部品で受けたいときに使います。"

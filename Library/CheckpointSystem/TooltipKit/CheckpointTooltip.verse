@@ -1,0 +1,6 @@
+CheckpointCategory<public><localizes>:message = "チェックポイント"
+CheckpointWidthToolTip<public><localizes>:message = "足場の前後の幅（センチメートル）です。メッシュの大きさに合わせます。"
+CheckpointDepthToolTip<public><localizes>:message = "足場の左右の幅（センチメートル）です。メッシュの大きさに合わせます。"
+CheckpointThicknessToolTip<public><localizes>:message = "足場の厚さ（センチメートル）です。メッシュの大きさに合わせます。"
+CheckpointApproachToolTip<public><localizes>:message = "足場の真下のこの距離（センチメートル）以内から上へ動いているプレイヤーを、足場の上へ通します。"
+CheckpointPrefabToolTip<public><localizes>:message = "チェックポイントの見た目にする prefab です（当たり判定のあるメッシュを入れます）。既定の entity のままだと、見た目の無いチェックポイントになります。"

@@ -1,0 +1,8 @@
+InputCategory<public><localizes>:message = "入力"
+InputMappingToolTip<public><localizes>:message = "このノードにいる間だけ有効にするキー割り当て（Input Mapping）を選びます。ノードを出ると外れます。既定はメニュー用の割り当て（E / Q / C / Z / Esc、ゲームパッドは RB / LB / RT / LT / Back）です。"
+InputActionToolTip<public><localizes>:message = "押されたことを知らせる操作（Input Action）を選びます。押すと、ほかの機能へ「入力があった」と知らせます。上の Input Mapping に含まれている操作を選んでください。既定は NextTab（E キー、ゲームパッドは RB）です。"
+ReadyCategory<public><localizes>:message = "準備 OK"
+InputMappingCategory<public><localizes>:message = "キー割り当て"
+InputActionCategory<public><localizes>:message = "知らせる操作"
+InputActiveOnBeginToolTip<public><localizes>:message = "オンなら、ゲームの開始（シミュレーションの開始）からキー割り当てを足して、押されたことを知らせます。オフなら、起動の合図（ゲームの流れなら、このノードに入ったとき）から停止の合図までです。"
+ReadyActiveOnBeginToolTip<public><localizes>:message = "オンなら、ゲームの開始（シミュレーションの開始）から「準備 OK」を受け付けます。オフなら、起動の合図（ゲームの流れなら、このノードに入ったとき）から停止の合図までです。押す操作は、同じ entity に置いた「入力」の Input Action です。"

@@ -1,0 +1,31 @@
+ScheduleCategory<public><localizes>:message = "スケジュール"
+ScheduleClockCategory<public><localizes>:message = "実時刻の時計"
+ScheduleDisplayCategory<public><localizes>:message = "スケジュールの表示"
+
+ClockTimeZoneOffsetToolTip<public><localizes>:message = "現地時刻と UTC のずれ（秒）です。日本標準時は 32400（+9 時間）。毎日のスケジュールの開始時刻と「何日目」の切り替わり（現地 0 時）に使います。夏時間は考えません。"
+ClockWakeMarginToolTip<public><localizes>:message = "整数秒の境目から、どれだけ遅れて起きるか（秒）です。小さすぎると境目の手前で起きて 1 秒ずれることがあります。既定の 0.02 で問題なければ変えません。"
+
+ScheduleKindToolTip<public><localizes>:message = "繰り返しの種類です。Daily = 毎日同じ時刻に（開始時刻と長さ）。FixedInterval = 基準の時刻から一定間隔で（間隔と長さ）。OneShot = 1 回だけ（開始の時刻と長さ）。"
+ScheduleStartHourToolTip<public><localizes>:message = "Daily の開始時刻の「時」（0〜23。現地時刻。時間帯は時計の設定）。"
+ScheduleStartMinuteToolTip<public><localizes>:message = "Daily の開始時刻の「分」（0〜59）。"
+ScheduleStartSecondToolTip<public><localizes>:message = "Daily の開始時刻の「秒」（0〜59）。"
+ScheduleDurationToolTip<public><localizes>:message = "期間の長さ（秒）です。この間が Active になります。Daily では 86400 未満、FixedInterval では間隔未満にします（それ以上だと常に Active）。"
+ScheduleIntervalToolTip<public><localizes>:message = "FixedInterval の間隔（秒）です。基準の時刻から、この間隔ごとに開始します。0 以下なら 1 回だけ（OneShot と同じ）。"
+ScheduleEpochAnchorToolTip<public><localizes>:message = "FixedInterval の基準の時刻、OneShot の開始の時刻です（エポック秒 = 1970-01-01 00:00 UTC からの秒数）。例：2026-01-01 00:00 UTC = 1767225600。"
+ScheduleSendActivationToolTip<public><localizes>:message = "オンなら、Active になったとき activated_event、Active から出たとき deactivated_event を、この entity と子孫へ送ります。カウントダウン・スポナー・画面表示・能力の付与（GrantOnBegin オフ）などが、コードなしでスケジュールに合わせて動きます。"
+
+ScheduleDigitToolTip<public><localizes>:message = "何桁目を出すか（1 = 一の位、2 = 十の位、3 = 百の位）。"
+ScheduleDigitFieldToolTip<public><localizes>:message = "残り時間のどの部分の桁か。Seconds / Minutes / Hours は 0〜59（時は 0〜23）に分けた値、Days は丸 1 日の数、TotalSeconds / TotalMinutes は分けない合計です。"
+ScheduleRemainingKindToolTip<public><localizes>:message = "UntilStart = 次の開始までの残り。UntilEnd = 期間中は終わりまでの残り、それ以外は次の開始までの残り。"
+ScheduleBlankLeadingZeroToolTip<public><localizes>:message = "オンなら、上の桁が 0 のとき（例：残り 5 秒の十の位）数字を出しません（全部の数字のメッシュを隠します）。"
+ScheduleGlyphValueToolTip<public><localizes>:message = "このメッシュが表す数字（0〜9）です。同じ値のメッシュが何個あってもかまいません。"
+ScheduleTextFormatToolTip<public><localizes>:message = "文字の形です。HoursMinutesSeconds = 01:02:03、MinutesSeconds = 62:03、DaysHoursMinutesSeconds = 1d 01:02:03、Days = 1、TotalSeconds = 3723。"
+ScheduleTextPrefixToolTip<public><localizes>:message = "文字の前に付ける固定の文字列です（例：「開演まで 」）。空なら付けません。"
+ScheduleTextOnlyWhileShownToolTip<public><localizes>:message = "オンなら、Show() を呼んでいるあいだだけ毎秒文字を更新します（誰も見ていない表示の分の計算を省きます）。オフなら常に更新します。"
+
+ScheduleSequencesToolTip<public><localizes>:message = "期間中に再生するシネマティック シーケンス デバイス（Visibility = Everyone のもの）。期間に入ったら Play、途中なら経過時間に合わせ、期間から出たら Stop します。"
+ScheduleMaxLateStartToolTip<public><localizes>:message = "期間に入った時点で、開始からこの秒数より経っていたら再生しません（サーバが途中で立ち上がったとき）。0 なら制限なし（経過時間に合わせて再生）。"
+ScheduleResyncOnJoinToolTip<public><localizes>:message = "オンなら、期間中にプレイヤーが参加したとき、シーケンスを Play して経過時間に合わせ直します（途中参加の人の映像を揃えるため。全員の再生が一瞬跳ねる可能性があります。実機で確認）。"
+
+ScheduleHudShowWithinToolTip<public><localizes>:message = "開始の何秒前から画面にカウントダウンを出すか（秒）。この窓の外では何も出さず、毎秒の処理もしません。"
+ScheduleHudTextSizeToolTip<public><localizes>:message = "文字の大きさです。"

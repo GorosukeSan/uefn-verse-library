@@ -1,0 +1,11 @@
+*.tmp
+*.bak
+~*
+Thumbs.db
+desktop.ini
+__pycache__/
+*.pyc
+*.zip
+.vs/
+.vscode/
+.idea/

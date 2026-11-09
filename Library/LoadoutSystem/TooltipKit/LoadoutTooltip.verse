@@ -1,0 +1,5 @@
+LoadoutCategory<public><localizes>:message = "ロードアウト"
+LoadoutPrefabToolTip<public><localizes>:message = "1 人分のロードアウトのプレハブです。中に能力・エネルギー・HUD・付ける物・独自キャラクターなどの部品を入れておくと、その人だけに効きます。"
+LoadoutEveryoneToolTip<public><localizes>:message = "オンなら、起動したら全員に付けます（途中参加の人にも）。オフなら、コードの ApplyTo で決めた人だけです。既定 オン"
+LoadoutActiveOnBeginToolTip<public><localizes>:message = "オンなら、ゲームの開始から付けます。オフなら、起動の合図から付けます。既定 オフ"
+LoadoutGroupToolTip<public><localizes>:message = "入れ替えのグループです。空でなければ、同じグループのほかのロードアウトをその人から外してから付けます（1 人 1 つの職業など）。"

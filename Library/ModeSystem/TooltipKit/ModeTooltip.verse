@@ -1,0 +1,7 @@
+ModeCategory<public><localizes>:message = "モード"
+ModeTitleToolTip<public><localizes>:message = "画面に出すモードの名前です。"
+ModeSelectedModeToolTip<public><localizes>:message = "このモード（game_mode_component を付けた entity）が選ばれたときに、条件を満たします。"
+ModeOrderToolTip<public><localizes>:message = "候補の順番です。数字の小さいモードから並びます。投票が同数のときは、数字の小さいモードに決まります。"
+ModeActiveOnBeginToolTip<public><localizes>:message = "オンなら、ゲームの開始（シミュレーションの開始）からモードを選べるようにします。オフなら、起動の合図（ゲームの流れなら、このノードに入ったとき）から選べます。"
+ModeAllowReselectToolTip<public><localizes>:message = "オフなら、最初に決まったモードのまま変わりません。オンなら、あとから別のモードを選び直せます。"
+ModeVoteMajorityEndsToolTip<public><localizes>:message = "オフなら、全員が投票したときに一番票の多いモードに決めます。オンなら、過半数が同じモードに投票した時点で決めます。"

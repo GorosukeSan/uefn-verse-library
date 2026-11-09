@@ -1,0 +1,7 @@
+ActivationCategory<public><localizes>:message = "起動"
+EnableTargetsToolTip<public><localizes>:message = "有効・無効を切り替える entity。空なら、この entity に付いている component（メッシュ・ライト・インタラクトなど、有効・無効を持つもの）を切り替えます。"
+EnableInvertToolTip<public><localizes>:message = "オンなら逆にします（起動の合図で無効、停止の合図で有効）。既定 オフ"
+EnableApplyOnBeginToolTip<public><localizes>:message = "オンなら、ゲームの開始（シミュレーションの開始）で「停止しているとき」の状態にします（起動されるまで隠しておく、など）。既定 オン"
+RoundTargetsToolTip<public><localizes>:message = "ラウンドの開始・終了の合図を送る entity です。空なら、この entity とその子孫へ送ります。"
+RoundFirstToolTip<public><localizes>:message = "このラウンド番号から合図を送ります（1 から。0 なら最初から）。既定 0"
+RoundLastToolTip<public><localizes>:message = "このラウンド番号まで合図を送ります（0 なら最後まで）。既定 0"

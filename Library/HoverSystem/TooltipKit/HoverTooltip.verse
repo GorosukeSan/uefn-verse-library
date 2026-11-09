@@ -1,0 +1,7 @@
+HoverCategory<public><localizes>:message = "ホバー"
+HoverMaxFallSpeedToolTip<public><localizes>:message = "ホバーしているあいだの、落ちる速さの上限（センチメートル毎秒）です。0 ならその高さで止まります。"
+HoverEnergyPerSecondToolTip<public><localizes>:message = "ホバーしているあいだ、1 秒に使うエネルギーの量です。この entity か子の energy_component（無ければプレイヤーに付いたもの）から使い、0 になるとホバーできません。エネルギーが無ければ減らさずにホバーできます。"
+HoverActionToolTip<public><localizes>:message = "空中で押し続けるとホバーする操作（Input Action）です。既定は Jump です。"
+HoverMappingToolTip<public><localizes>:message = "付与しているあいだ有効にするキー割り当て（Input Mapping）です。上の操作を含むものを選びます。既定は TraversalMapping（移動の操作）です。"
+HoverRemoveMappingToolTip<public><localizes>:message = "オンにすると、剥奪したとき（アイテムなら装備を外したとき）に上のキー割り当てを外します。この能力専用の割り当てを選んだときだけオンにします。既定の TraversalMapping のままオンにすると、移動の操作も効かなくなります。"
+HoverInputCategory<public><localizes>:message = "入力"

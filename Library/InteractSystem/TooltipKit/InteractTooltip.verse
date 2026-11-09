@@ -1,0 +1,7 @@
+InteractCategory<public><localizes>:message = "押して使う"
+InteractTargetsCategory<public><localizes>:message = "起動する先"
+InteractTargetsToolTip<public><localizes>:message = "押し終わるたびに、起動の合図を送る entity を選びます（その entity と子孫に届きます）。空のときは、押されたことを上へ知らせるだけです。"
+InteractedTriggerCategory<public><localizes>:message = "見張るボタン"
+InteractedTriggerToolTip<public><localizes>:message = "押されたかを見る entity（interact_trigger_component を付けたもの）を選びます。この entity の子孫に置いたボタンは、選ばなくても数えます。"
+InteractGateOpenOnBeginToolTip<public><localizes>:message = "オンなら、ゲームの開始（シミュレーションの開始）から押せるようにします。オフなら、起動の合図（ゲームの流れなら、このノードに入ったとき）から押せます。"
+InteractToggleToolTip<public><localizes>:message = "オンなら、押すたびに Targets へ起動の合図と停止の合図を交互に送ります（スイッチ・レバー）。オフなら、押すたびに起動の合図だけを送ります。既定 オフ"
