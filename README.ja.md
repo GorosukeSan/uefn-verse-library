@@ -5,7 +5,7 @@
 UEFN（Fortnite クリエイティブ）の Scene Graph（entity / component）で、組み合わせて使う Verse の部品集です。カウントダウン・ゲームの流れ・能力・アイテム・独自キャラクター・画面（HUD）・MCP によるライブ編集など、`<名前>System/` ごとに 1 つの仕組みを持ち、差し替え部品を `Kit` として足せます。対象は UEFN **v43.00** 以降。
 
 - ライブラリのバージョン: **0.1.0**（`VERSION`・`CHANGELOG.md`）
-- 本体は [`Library/`](Library/)。中身・設計の決まり・確かめ方は [Library/README.md](Library/README.md)、各 System の使い方はその System の `README.md`
+- 本体は [`Library/`](Library/)。中身・設計の決まり・確かめ方は [Library/README.md](Library/README.md)、各 System の使い方はその System の `README.md`（MCPSystem だけ `README.md` が英語、`README.ja.md` が日本語）
 
 > **非公式**のものです。Epic Games とは関係がなく、Epic Games の承認も受けていません（Verse・Unreal Engine・UEFN・Fortnite はいずれも Epic Games のものです）。
 

@@ -6,7 +6,7 @@ A collection of Verse building blocks for UEFN (Fortnite Creative) Scene Graph (
 
 - Library version: **0.1.0** (`VERSION`, `CHANGELOG.md`)
 - The library itself lives in [`Library/`](Library/). What is inside, the design rules and how to verify it are in [Library/README.md](Library/README.md); each System has its own `README.md` with usage notes.
-- **Language note:** the top-level files are in English and Japanese. The `README.md` files inside `Library/` and the header comments in each `.verse` file are currently written in **Japanese** only.
+- **Language note:** the top-level files are in English and Japanese. Inside `Library/`, [MCPSystem](Library/MCPSystem/README.md) has an English README (the Japanese one is `README.ja.md`); the other Systems' `README.md` files and the header comments in each `.verse` file are currently written in **Japanese** only.
 
 > This is an **unofficial** project. It is not affiliated with or endorsed by Epic Games (Verse, Unreal Engine, UEFN and Fortnite are the property of Epic Games).
 

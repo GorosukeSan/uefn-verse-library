@@ -4,6 +4,7 @@ Versions follow `vA.B.C` (A: breaking change, B: new feature that may require ch
 
 ## Unreleased
 - Added an English top-level README; the Japanese one moved to `README.ja.md`. This changelog is now in English.
+- `MCPSystem/README.md` is now in English (full translation, including the tool table); the Japanese original moved to `MCPSystem/README.ja.md`.
 
 ## v0.1.0 (2026-11-09) — UEFN v43.00
 - First release (still being organized; the public API may change during 0.x).
