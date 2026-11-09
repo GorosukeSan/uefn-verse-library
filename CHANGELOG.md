@@ -1,9 +1,12 @@
-# 変更履歴
+# Changelog
 
-バージョンは `vA.B.C`（A: 破壊的変更、B: 新機能の追加（場合によっては利用側のコードの修正が必要）、C: バグ修正）。
+Versions follow `vA.B.C` (A: breaking change, B: new feature that may require changes on your side, C: bug fix).
 
-## v0.1.0（2026-11-09）— UEFN v43.00
-- 初回公開（整理中。0.x のあいだは公開 API が変わることがある）。
-- 既知の問題（standalone の型チェッカーで出る本当のエラー。UEFN でのビルドは未確認）:
-  - `CharacterSystem/CharacterMotorComponent.verse`: `MotorLedgeAssistToolTip` が未定義（TooltipKit に無い）。
-  - `CharacterSystem/CharacterMotorComponent.verse`: `StopDistance` の中の `Distance` が `/Verse.org/SpatialMath` の `Distance` と曖昧（V3532 / V3588）。
+## Unreleased
+- Added an English top-level README; the Japanese one moved to `README.ja.md`. This changelog is now in English.
+
+## v0.1.0 (2026-11-09) — UEFN v43.00
+- First release (still being organized; the public API may change during 0.x).
+- Known issues (real errors reported by the standalone type checker; not yet confirmed in a UEFN build):
+  - `CharacterSystem/CharacterMotorComponent.verse`: `MotorLedgeAssistToolTip` is undefined (missing from TooltipKit).
+  - `CharacterSystem/CharacterMotorComponent.verse`: `Distance` inside `StopDistance` is ambiguous with `Distance` from `/Verse.org/SpatialMath` (V3532 / V3588).

@@ -1,35 +1,38 @@
-# UEFN Verse Library — Scene Graph の部品集
+# UEFN Verse Library — Scene Graph building blocks
 
-UEFN（Fortnite クリエイティブ）の Scene Graph（entity / component）で、組み合わせて使う Verse の部品集です。カウントダウン・ゲームの流れ・能力・アイテム・独自キャラクター・画面（HUD）・MCP によるライブ編集など、`<名前>System/` ごとに 1 つの仕組みを持ち、差し替え部品を `Kit` として足せます。対象は UEFN **v43.00** 以降。
+English | [日本語](README.ja.md)
 
-- ライブラリのバージョン: **0.1.0**（`VERSION`・`CHANGELOG.md`）
-- 本体は [`Library/`](Library/)。中身・設計の決まり・確かめ方は [Library/README.md](Library/README.md)、各 System の使い方はその System の `README.md`
+A collection of Verse building blocks for UEFN (Fortnite Creative) Scene Graph (entity / component) that you combine on your own entities. Each `<Name>System/` folder holds one mechanism — countdowns, game flow, abilities, pickups, custom characters, HUD, live editing through MCP, and more — and swappable parts are added as `Kit`s. Targets UEFN **v43.00** or later.
 
-> **非公式**のものです。Epic Games とは関係がなく、Epic Games の承認も受けていません（Verse・Unreal Engine・UEFN・Fortnite はいずれも Epic Games のものです）。
+- Library version: **0.1.0** (`VERSION`, `CHANGELOG.md`)
+- The library itself lives in [`Library/`](Library/). What is inside, the design rules and how to verify it are in [Library/README.md](Library/README.md); each System has its own `README.md` with usage notes.
+- **Language note:** the top-level files are in English and Japanese. The `README.md` files inside `Library/` and the header comments in each `.verse` file are currently written in **Japanese** only.
 
-## 入れ方
+> This is an **unofficial** project. It is not affiliated with or endorsed by Epic Games (Verse, Unreal Engine, UEFN and Fortnite are the property of Epic Games).
 
-1. `Library/` フォルダを、UEFN プロジェクトの Verse のフォルダに置きます（作者は `Content\VerseCode\Library` に置いています）。
-2. UEFN で Verse をビルドします。`LibraryModules.verse` にすべての System の `module` 宣言があります。
-3. 使う System の component を entity に付けます。置き方は各 System の `README.md` と、component の先頭コメント（役割 / 置き方 / 親 / 子 / 同じ entity / 前提）にあります。
+## Installation
 
-- 名前が `ExperimentalKit` で終わるフォルダは `@experimental` の API を使っています。公開する島では使えないので、要らなければ消してください。
-- `_Test/` は UEFN 上で動かす動作確認、`_Samples/` は置いて試す見本です。どちらも公開 API だけで書いてあるので、使い方の見本になります。
+1. Put the `Library/` folder in the Verse folder of your UEFN project (the author keeps it at `Content\VerseCode\Library`).
+2. Build Verse in UEFN. `LibraryModules.verse` declares the `module` of every System.
+3. Attach the components of the Systems you need to your entities. Where to place each component is described in the System's `README.md` and in the header comment of the component (role / placement / parent / children / same entity / requirements).
 
-## 状態
+- Folders whose name ends in `ExperimentalKit` use `@experimental` APIs. These cannot be used on a published island; delete them if you do not need them.
+- `_Test/` contains in-editor tests and `_Samples/` contains ready-to-place examples. Both use only the public API, so they double as usage examples.
 
-0.x のあいだは整理中で、公開 API が変わることがあります。既知の問題は [CHANGELOG.md](CHANGELOG.md) に書きます。
+## Status
 
-## バージョンの決まり
+During 0.x the library is still being organized and the public API may change. Known issues are listed in [CHANGELOG.md](CHANGELOG.md).
 
-`vA.B.C` で付けます（git のタグも同じ）。
+## Versioning
 
-| 桁 | 上がるとき |
+Versions follow `vA.B.C` (git tags use the same form).
+
+| Digit | Bumped when |
 |---|---|
-| A | 破壊的変更が含まれる（公開 API の名前・型・振る舞いが変わり、利用側のコードを直さないと動かない） |
-| B | 新機能の追加（System・Kit・公開 API の追加。場合によっては利用側のコードの修正が必要） |
-| C | バグ修正 |
+| A | A breaking change: a public API name, type or behavior changes and your code needs to be updated |
+| B | A new feature: a System, Kit or public API is added (may require changes on your side) |
+| C | A bug fix |
 
-## ライセンス
+## License
 
-[MIT License](LICENSE)。Verse・Unreal Engine・UEFN・Fortnite は Epic Games, Inc. の商標または登録商標です。
+[MIT License](LICENSE). Verse, Unreal Engine, UEFN and Fortnite are trademarks or registered trademarks of Epic Games, Inc.
