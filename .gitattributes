@@ -1,7 +1,6 @@
-* text=auto
-*.verse text
-*.md text
-*.txt text
-*.py text
+* text=auto eol=lf
+*.verse text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
 *.ps1 text eol=crlf
 *.bat text eol=crlf
